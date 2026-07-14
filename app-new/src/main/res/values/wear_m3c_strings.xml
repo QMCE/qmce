@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wear_m3c_time_picker_hour">Hour</string>
+    <string name="wear_m3c_time_picker_minute">Minute</string>
+    <string name="wear_m3c_time_picker_second">Second</string>
+    <string name="wear_m3c_time_picker_period">Period</string>
+    <string name="wear_m3c_time_picker_heading">Scroll to set time</string>
+    <string name="wear_m3c_date_picker_day">Day</string>
+    <string name="wear_m3c_date_picker_month">Month</string>
+    <string name="wear_m3c_date_picker_year">Year</string>
+    <string name="wear_m3c_date_picker_heading">Scroll to set date</string>
+    <string name="wear_m3c_picker_click_to_adjust_hint">Adjust the value</string>
+    <string name="wear_m3c_picker_click_to_select_hint">Select the value</string>
+    <string name="wear_m3c_picker_confirm_button_content_description">Confirm</string>
+    <string name="wear_m3c_picker_next_button_content_description">Next</string>
+    <string name="wear_m3c_slider_decrease_content_description">Decrease</string>
+    <string name="wear_m3c_slider_increase_content_description">Increase</string>
+    <string name="wear_m3c_alert_dialog_content_description_confirm_button">Confirm</string>
+    <string name="wear_m3c_alert_dialog_content_description_dismiss_button">Dismiss</string>
+    <string name="wear_m3c_open_on_phone">Check your phone</string>
+    <string name="wear_m3c_open_on_phone_icon_content_description">Check your phone icon</string>
+    <plurals name="wear_m3c_time_picker_hours_content_description">
+        <item quantity="one">%d hour</item>
+        <item quantity="other">%d hours</item>
+    </plurals>
+    <plurals name="wear_m3c_time_picker_minutes_content_description">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="wear_m3c_time_picker_seconds_content_description">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <string name="wear_m3c_date_picker_content_description">%1$s, %2$d</string>
+    <string name="wear_m3c_capital_on_state_description">ON</string>
+    <string name="wear_m3c_capital_off_state_description">OFF</string>
+    <string name="wear_m3c_checked_state_description">checked</string>
+    <string name="wear_m3c_not_checked_state_description">not checked</string>
+</resources>

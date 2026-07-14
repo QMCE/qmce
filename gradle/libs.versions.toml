@@ -1,0 +1,67 @@
+[versions]
+agp = "9.2.1"
+kotlin = "2.4.0"
+navigationCompose = "2.9.5"
+navigation3 = "1.1.4"
+jetbrainsKotlinJvm = "2.4.0"
+appcompat = "1.7.1"
+activity = "1.10.0"
+lifecycle = "2.7.0"
+composeBom = "2026.06.01"
+coroutines = "1.11.0"
+autosize = "1.2.1"
+junit = "4.13.2"
+truth = "1.4.5"
+wear = "1.4.0"
+googleServices = "4.5.0"
+firebaseCrashlytics = "3.0.7"
+firebaseBom = "34.15.0"
+
+[libraries]
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
+androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
+androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
+androidx-core = { module = "androidx.core:core", version = "1.15.0" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-activity = { module = "androidx.activity:activity", version.ref = "activity" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+# Compose BOM
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }
+androidx-compose-animation = { module = "androidx.compose.animation:animation" }
+androidx-compose-animation-graphics = { module = "androidx.compose.animation:animation-graphics" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+androidx-compose-material-ripple = { module = "androidx.compose.material:material-ripple" }
+androidx-graphics-shapes = { module = "androidx.graphics:graphics-shapes", version = "1.0.1" }
+androidx-graphics-path = { module = "androidx.graphics:graphics-path", version = "1.0.1" }
+androidx-emoji2 = { module = "androidx.emoji2:emoji2", version = "1.5.0" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+jessyan-autosize = { module = "me.jessyan:autosize", version.ref = "autosize" }
+junit = { module = "junit:junit", version.ref = "junit" }
+truth = { module = "com.google.truth:truth", version.ref = "truth" }
+
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-crashlytics = { module = "com.google.firebase:firebase-crashlytics" }
+
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version = "3.0.4" }
+coil-gif = { module = "io.coil-kt.coil3:coil-gif", version = "3.0.4" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version = "3.0.4" }
+
+androidx-emoji2-bundled = { module = "androidx.emoji2:emoji2-bundled", version = "1.5.0" }
+androidx-compose-ui-util = { module = "androidx.compose.ui:ui-util" }
+
+# AndroidX Wear
+androidx-wear = { module = "androidx.wear:wear", version.ref = "wear" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+jetbrains-kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "jetbrainsKotlinJvm" }
+google-services = { id = "com.google.gms.google-services", version.ref = "googleServices" }
+firebase-crashlytics = { id = "com.google.firebase.crashlytics", version.ref = "firebaseCrashlytics" }

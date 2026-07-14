@@ -1,0 +1,7 @@
+Lrj/qmce/lite/QmceApplication;
+Lcom/tencent/qqnt/watch/app/WatchApplicationDelegate;
+Lcom/tencent/qqnt/watch/app/WatchApplicationDelegate$Companion;
+Lmqq/app/MobileQQ;
+Lcom/tencent/qphone/base/util/BaseApplication;
+Lcom/tencent/mobileqq/qfix/ApplicationDelegate;
+Lcom/tencent/mobileqq/msf/sdk/AppNetConnInfo;
