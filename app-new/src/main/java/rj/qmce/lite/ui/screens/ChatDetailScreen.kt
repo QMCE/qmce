@@ -121,6 +121,7 @@ fun ChatDetailScreen(
     onBack: () -> Unit,
     onOpenInput: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
+    onOpenPacketTool: () -> Unit = {},
     vm: ChatDetailViewModel = viewModel(),
 ) {
     val messages by vm.messages.collectAsState()
@@ -385,6 +386,7 @@ fun ChatDetailScreen(
                     1 -> CallPage(
                         peerName = name.ifEmpty { peerName },
                         onRequestCall = requestCall,
+                        onOpenPacketTool = onOpenPacketTool,
                     )
                 }
             }
@@ -576,7 +578,11 @@ private fun ChatHeader(title: String) {
 }
 
 @Composable
-private fun CallPage(peerName: String, onRequestCall: (CallMode) -> Unit) {
+private fun CallPage(
+    peerName: String,
+    onRequestCall: (CallMode) -> Unit,
+    onOpenPacketTool: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -606,6 +612,17 @@ private fun CallPage(peerName: String, onRequestCall: (CallMode) -> Unit) {
             ),
         ) {
             Text("视频通话", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onOpenPacketTool,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Text("发包工具", fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

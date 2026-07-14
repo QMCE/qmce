@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -52,6 +53,7 @@ fun SettingsScreen(
     qZoneVm: QZoneViewModel,
     myVm: MyViewModel,
     settingsVm: SettingsViewModel,
+    onOpenPacketTool: () -> Unit = {},
 ) {
     val settings by settingsVm.settings.collectAsState()
     val operationStatus by myVm.operationStatus.collectAsState()
@@ -102,6 +104,14 @@ fun SettingsScreen(
             )
         }
         item(key = "data-label") { SettingsSectionLabel("同步与数据") }
+        item(key = "packet-tool") {
+            SettingsActionRow(
+                icon = Icons.Default.Send,
+                title = "发包工具",
+                subtitle = "发送 PB、OIDB 或 Ark 消息",
+                onClick = onOpenPacketTool,
+            )
+        }
         item(key = "sync-messages") {
             SettingsActionRow(
                 icon = Icons.Default.Sync,

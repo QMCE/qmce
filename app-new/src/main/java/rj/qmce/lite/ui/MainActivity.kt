@@ -41,6 +41,7 @@ import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
 import rj.qmce.lite.ui.screens.MainScreen
+import rj.qmce.lite.ui.screens.PacketToolScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
 import rj.qmce.lite.ui.screens.VoiceRecordScreen
 import rj.qmce.lite.ui.theme.QmceTheme
@@ -49,6 +50,7 @@ import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
+import rj.qmce.lite.viewmodel.PacketToolViewModel
 import rj.qmce.lite.viewmodel.SettingsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material3.AppScaffold
@@ -175,6 +177,7 @@ private fun WearApp() {
             val contactsVm: ContactsViewModel = viewModel()
             val qZoneVm: QZoneViewModel = viewModel()
             val myVm: MyViewModel = viewModel()
+            val packetToolVm: PacketToolViewModel = viewModel()
             SwipeDismissableNavHost(
                 navController = navController,
                 startDestination = "main"
@@ -231,6 +234,7 @@ private fun WearApp() {
                             onBack = { navController.popBackStack() },
                             onOpenInput = { navController.navigate("chatInput") { launchSingleTop = true } },
                             onOpenContactPicker = { navController.navigate("contactPicker") { launchSingleTop = true } },
+                            onOpenPacketTool = { navController.navigate("packetToolChat") { launchSingleTop = true } },
                             vm = chatDetailVm
                         )
                     }
@@ -272,6 +276,16 @@ private fun WearApp() {
                         onBack = { navController.popBackStack() },
                     )
                 }
+                composable("packetToolChat") {
+                    val contact = selectedContact
+                    PacketToolScreen(
+                        peerUid = contact?.peerUid ?: "",
+                        peerName = contact?.peerName ?: "",
+                        chatType = contact?.chatType ?: 0,
+                        vm = packetToolVm,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
                 composable("settings") {
                     SettingsScreen(
                         runtime = runtime,
@@ -280,6 +294,15 @@ private fun WearApp() {
                         qZoneVm = qZoneVm,
                         myVm = myVm,
                         settingsVm = settingsVm,
+                        onOpenPacketTool = {
+                            navController.navigate("packetToolSettings") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("packetToolSettings") {
+                    PacketToolScreen(
+                        vm = packetToolVm,
+                        onBack = { navController.popBackStack() },
                     )
                 }
             }
