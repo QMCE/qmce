@@ -30,19 +30,24 @@ object KernelBridge {
     @Volatile private var cachedMsgService: com.tencent.qqnt.kernel.api.IMsgService? = null
     @Volatile private var cachedRecentService: com.tencent.qqnt.kernel.api.IRecentContactService? = null
     @Volatile private var cachedBuddyService: com.tencent.qqnt.kernel.api.IBuddyService? = null
+    @Volatile private var cachedGroupService: com.tencent.qqnt.kernel.api.IGroupService? = null
 
     fun getKernelService(): IKernelService? = cachedKs
     fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedMsgService
     fun getRecentContactService(): com.tencent.qqnt.kernel.api.IRecentContactService? = cachedRecentService
     fun getBuddyService(): com.tencent.qqnt.kernel.api.IBuddyService? = cachedBuddyService
+    fun getGroupService(): com.tencent.qqnt.kernel.api.IGroupService? = cachedGroupService
     fun getSelfProfileService(): ISelfProfileRuntimeService? = runCatching {
         QmceApplication.ensureRuntime()?.getRuntimeService(ISelfProfileRuntimeService::class.java, "")
     }.getOrNull()
 
-    fun awaitCoreServices(timeoutMillis: Long = 15_000): Boolean {
+    fun awaitCoreServices(
+        timeoutMillis: Long = 15_000,
+        runtimeOverride: AppRuntime? = null,
+    ): Boolean {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
-            val runtime = QmceApplication.ensureRuntime()
+            val runtime = runtimeOverride ?: QmceApplication.ensureRuntime()
             val kernelService = cachedKs ?: runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
@@ -55,17 +60,68 @@ object KernelBridge {
             }
             Thread.sleep(250)
         }
-        Log.w(TAG, "KernelBridge: timed out waiting for core services; msg=$cachedMsgService, recent=$cachedRecentService")
+        Log.w(
+            TAG,
+            "KernelBridge: timed out waiting for core services; " +
+                "runtime=${runtimeOverride ?: QmceApplication.sAppRuntime}, " +
+                "ks=$cachedKs, msg=$cachedMsgService, recent=$cachedRecentService"
+        )
         return false
     }
 
     /** bind 完成后由 waitForSession 调用，缓存各子 service */
     private fun cacheServices(ks: IKernelService) {
         cachedKs = ks
+        completeExistingKernelInit(ks)
         cachedMsgService = runCatching { ks.msgService }.getOrNull()
         cachedRecentService = runCatching { ks.recentContactService }.getOrNull()
         cachedBuddyService = runCatching { ks.buddyService }.getOrNull()
-        Log.d(TAG, "KernelBridge: cached services — ks=$cachedKs, msg=$cachedMsgService, recent=$cachedRecentService, buddy=$cachedBuddyService")
+        cachedGroupService = runCatching { ks.groupService }.getOrNull()
+        Log.d(
+            TAG,
+            "KernelBridge: cached services — ks=$cachedKs, msg=$cachedMsgService, " +
+                "recent=$cachedRecentService, buddy=$cachedBuddyService, state=${kernelState(ks)}"
+        )
+    }
+
+    /**
+     * 某些冷启动路径会先创建 wrapperSession，再错过 KernelServiceImpl 的 session listener；
+     * native 层已经能收消息，但 isNTStartFinish 仍是 false，官方 service getter 因此全部返回 null。
+     * 官方的 onSessionInitComplete 最终只做两件事：调用私有 initService()，再继续网络状态初始化。
+     * 这里仅在 session 已存在且 init 标志未完成时补做同一个幂等初始化，不伪造 service 对象。
+     */
+    private fun completeExistingKernelInit(ks: IKernelService) {
+        runCatching {
+            val impl = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
+            val wrapperField = impl.getDeclaredField("wrapperSession").apply { isAccessible = true }
+            val wrapper = wrapperField.get(ks)
+            if (wrapper == null) {
+                Log.d(TAG, "KernelBridge: completeExistingKernelInit skipped; wrapperSession=null ks=$ks")
+                return@runCatching
+            }
+            val readyField = impl.getDeclaredField("isNTStartFinish").apply { isAccessible = true }
+            val ready = (readyField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean)?.get() == true
+            if (ready) {
+                Log.d(TAG, "KernelBridge: existing kernel already ready ks=$ks wrapper=$wrapper")
+                return@runCatching
+            }
+            Log.w(TAG, "KernelBridge: existing wrapper session found with isNTStartFinish=false; completing init")
+            impl.getDeclaredMethod("initService").apply { isAccessible = true }.invoke(ks)
+            val after = (readyField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean)?.get() == true
+            Log.i(TAG, "KernelBridge: forced existing kernel init complete=$after wrapper=$wrapper")
+        }.onFailure {
+            Log.e(TAG, "KernelBridge: forced existing kernel init failed", it)
+        }
+    }
+
+    private fun kernelState(ks: IKernelService): String {
+        return runCatching {
+            val impl = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
+            val wrapper = impl.getDeclaredField("wrapperSession").apply { isAccessible = true }.get(ks)
+            val ready = (impl.getDeclaredField("isNTStartFinish").apply { isAccessible = true }.get(ks)
+                as? java.util.concurrent.atomic.AtomicBoolean)?.get()
+            "wrapper=${wrapper != null}, isNTStartFinish=$ready"
+        }.getOrElse { "stateError=${it.javaClass.simpleName}" }
     }
 
     @Volatile
@@ -128,7 +184,7 @@ object KernelBridge {
         cachedRecentService = null
         cachedBuddyService = null
 
-        val coreReady = awaitCoreServices()
+        val coreReady = awaitCoreServices(runtimeOverride = runtime)
         if (!coreReady) {
             Log.w(TAG, "login reinitialize: core services unavailable")
             return false
@@ -179,6 +235,13 @@ object KernelBridge {
     /** 锁定 mAppRuntime 字段 + serviceContent 里的 runtime，
      *  防止 waitAppRuntime 创建新未初始化实例替换 */
     private fun pinRuntime(runtime: AppRuntime?) {
+        if (runtime == null) return
+
+        // createRuntime() may be called by MobileQQ while login callbacks are running.
+        // Keep the runtime that owns the KernelService we are about to start as the
+        // application-wide source of truth as well.
+        QmceApplication.sAppRuntime = runtime
+
         // 1. MobileQQ.mAppRuntime
         runCatching {
             val f = MobileQQ::class.java.getDeclaredField("mAppRuntime")
@@ -300,6 +363,10 @@ object KernelBridge {
     }
 
     private fun startKernelSession(ks: IKernelService, runtime: AppRuntime?) {
+        val boundRuntime = runtime ?: run {
+            Log.e(TAG, "bind: cannot start kernel session without runtime")
+            return
+        }
         val setter = runCatching {
             val cls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
             cls.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
@@ -342,12 +409,10 @@ object KernelBridge {
                     runCatching {
                         // initUinToUidCache (官方 KernelInitTask 在此调用)
                         val contactSvc = runCatching {
-                            val app = MobileQQ.sMobileQQ
-                            val rt = app?.let { a -> runCatching { a.waitAppRuntime(null) }.getOrNull() }
-                            val m = rt?.javaClass?.methods?.firstOrNull {
+                            val m = boundRuntime.javaClass.methods.firstOrNull {
                                 it.name == "getRuntimeService" && it.parameterTypes.size == 2
                             }
-                            m?.invoke(rt, Class.forName("com.tencent.qqnt.watch.contact.api.IContactRuntimeService"), "")
+                            m?.invoke(boundRuntime, Class.forName("com.tencent.qqnt.watch.contact.api.IContactRuntimeService"), "")
                         }.getOrNull()
                         Log.d(TAG, "initUinToUidCache: contactSvc=$contactSvc")
                         if (contactSvc != null) {
@@ -360,12 +425,10 @@ object KernelBridge {
                     // 直接调 IBuddyService.getBuddyList(true, callback) 强制拉取
                     runCatching {
                         val ks = runCatching {
-                            val app = MobileQQ.sMobileQQ
-                            val rt = app?.let { a -> runCatching { a.waitAppRuntime(null) }.getOrNull() }
-                            val m = rt?.javaClass?.methods?.firstOrNull {
+                            val m = boundRuntime.javaClass.methods.firstOrNull {
                                 it.name == "getRuntimeService" && it.parameterTypes.size == 2
                             }
-                            m?.invoke(rt, IKernelService::class.java, "")
+                            m?.invoke(boundRuntime, IKernelService::class.java, "")
                         }.getOrNull() as? IKernelService
                         val buddySvc = ks?.buddyService
                         Log.d(TAG, "buddySvc=$buddySvc")

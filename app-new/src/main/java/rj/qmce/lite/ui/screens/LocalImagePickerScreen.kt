@@ -2,8 +2,16 @@ package rj.qmce.lite.ui.screens
 
 import android.content.ContentUris
 import android.content.Context
+import android.database.ContentObserver
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.MediaStore
+import android.util.Size
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,8 +32,10 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,10 +44,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
@@ -47,7 +57,6 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
@@ -56,7 +65,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 private data class LocalGalleryImage(
     val id: Long,
     val uri: Uri,
-    val displayName: String,
+    val dateModified: Long,
+    val sizeBytes: Long,
 )
 
 private sealed interface GalleryLoadState {
@@ -72,7 +82,18 @@ fun LocalImagePickerScreen(
     onConfirm: (List<Uri>) -> Unit,
 ) {
     val context = LocalContext.current
-    val galleryState by produceState<GalleryLoadState>(GalleryLoadState.Loading, context) {
+    var mediaRevision by remember { mutableStateOf(0) }
+    DisposableEffect(context) {
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean, uri: Uri?) {
+                mediaRevision++
+            }
+        }
+        context.contentResolver.registerContentObserver(collection, true, observer)
+        onDispose { context.contentResolver.unregisterContentObserver(observer) }
+    }
+    val galleryState by produceState<GalleryLoadState>(GalleryLoadState.Loading, context, mediaRevision) {
         value = withContext(Dispatchers.IO) {
             runCatching { GalleryLoadState.Ready(loadRecentImages(context)) }
                 .getOrElse { GalleryLoadState.Error(it.message ?: "无法读取本地图片") }
@@ -154,12 +175,7 @@ fun LocalImagePickerScreen(
                                         else selected.add(uriString)
                                     },
                             ) {
-                                AsyncImage(
-                                    model = image.uri,
-                                    contentDescription = image.displayName,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
+                                SystemMediaThumbnail(image)
                                 if (isSelected || isAdded) {
                                     Box(
                                         modifier = Modifier
@@ -183,18 +199,6 @@ fun LocalImagePickerScreen(
                                         )
                                     }
                                 }
-                                Text(
-                                    text = image.displayName,
-                                    modifier = Modifier
-                                        .align(Alignment.BottomStart)
-                                        .fillMaxWidth()
-                                        .background(Color(0x99000000))
-                                        .padding(horizontal = 6.dp, vertical = 4.dp),
-                                    color = Color.White,
-                                    fontSize = 9.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
                             }
                         }
                     }
@@ -208,7 +212,8 @@ private fun loadRecentImages(context: Context): List<LocalGalleryImage> {
     val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
     val projection = arrayOf(
         MediaStore.Images.Media._ID,
-        MediaStore.Images.Media.DISPLAY_NAME,
+        MediaStore.Images.Media.DATE_MODIFIED,
+        MediaStore.Images.Media.SIZE,
     )
     val images = ArrayList<LocalGalleryImage>()
     context.contentResolver.query(
@@ -219,15 +224,58 @@ private fun loadRecentImages(context: Context): List<LocalGalleryImage> {
         "${MediaStore.Images.Media.DATE_ADDED} DESC",
     )?.use { cursor ->
         val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-        val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+        val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
+        val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
         while (cursor.moveToNext() && images.size < 240) {
             val id = cursor.getLong(idIndex)
+            val sizeBytes = cursor.getLong(sizeIndex)
+            if (sizeBytes <= 0L) continue
             images += LocalGalleryImage(
                 id = id,
                 uri = ContentUris.withAppendedId(collection, id),
-                displayName = cursor.getString(nameIndex).orEmpty().ifBlank { "图片" },
+                dateModified = cursor.getLong(modifiedIndex),
+                sizeBytes = sizeBytes,
             )
         }
     }
     return images
+}
+
+@Composable
+private fun SystemMediaThumbnail(image: LocalGalleryImage) {
+    val context = LocalContext.current
+    val bitmap by produceState<Bitmap?>(null, image.uri, image.dateModified, image.sizeBytes) {
+        value = withContext(Dispatchers.IO) { loadSystemThumbnail(context, image) }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+    } else {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+        }
+    }
+}
+
+private fun loadSystemThumbnail(context: Context, image: LocalGalleryImage): Bitmap? {
+    val resolver = context.contentResolver
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return runCatching { resolver.loadThumbnail(image.uri, Size(320, 320), null) }.getOrNull()
+    }
+    return runCatching {
+        MediaStore.Images.Thumbnails.getThumbnail(
+            resolver,
+            image.id,
+            MediaStore.Images.Thumbnails.MINI_KIND,
+            null,
+        )
+    }.getOrNull() ?: runCatching {
+        resolver.openFileDescriptor(image.uri, "r")?.use { descriptor ->
+            BitmapFactory.decodeFileDescriptor(descriptor.fileDescriptor)
+        }
+    }.getOrNull()
 }

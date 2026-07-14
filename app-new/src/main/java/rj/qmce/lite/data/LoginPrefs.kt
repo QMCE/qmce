@@ -16,7 +16,7 @@ object LoginPrefs {
     }
 
     fun saveAccount(context: Context, account: SimpleAccount) {
-        prefs(context).edit().putString(KEY_ACCOUNT, account.toStoreString()).apply()
+        prefs(context).edit().putString(KEY_ACCOUNT, account.toStoreString()).commit()
     }
 
     fun clear(context: Context) {

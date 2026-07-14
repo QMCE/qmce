@@ -10,8 +10,10 @@ import com.tencent.qqnt.kernel.nativeinterface.GetMsgsAndStatusRecord
 import com.tencent.qqnt.kernel.nativeinterface.IGetAioFirstViewLatestMsgCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMsgWithStatusCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMultiMsgCallback
+import com.tencent.qqnt.kernel.nativeinterface.IClickInlineKeyboardButtonCallback
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgListener
 import com.tencent.qqnt.kernel.nativeinterface.IMsgOperateCallback
+import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.MsgAttributeInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
@@ -149,6 +151,33 @@ class ChatRepository {
             true
         }.onFailure {
             Log.w(TAG, "chatRepository: send message failed", it)
+        }.getOrDefault(false)
+    }
+
+    fun clickInlineKeyboardButton(
+        info: InlineKeyboardClickInfo,
+        callback: (errorCode: Int, errorMessage: String?, resultCode: Int, resultMessage: String?) -> Unit,
+    ): Boolean {
+        val currentService = service ?: return false
+        return runCatching {
+            currentService.clickInlineKeyboardButton(
+                info,
+                object : IClickInlineKeyboardButtonCallback {
+                    override fun onResult(
+                        errorCode: Int,
+                        errorMessage: String?,
+                        resultCode: Int,
+                        resultMessage: String?,
+                        retryCount: Int,
+                        cooldownSeconds: Int,
+                    ) {
+                        callback(errorCode, errorMessage, resultCode, resultMessage)
+                    }
+                },
+            )
+            true
+        }.onFailure {
+            Log.w(TAG, "chatRepository: click inline keyboard failed", it)
         }.getOrDefault(false)
     }
 

@@ -37,7 +37,10 @@ import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.OnlineStatus
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.ChatDetailScreen
+import rj.qmce.lite.ui.screens.ChatInfoScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
+import rj.qmce.lite.ui.screens.ChatMembersScreen
+import rj.qmce.lite.ui.screens.ChatSettingsScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
 import rj.qmce.lite.ui.screens.MainScreen
@@ -47,6 +50,7 @@ import rj.qmce.lite.ui.screens.VoiceRecordScreen
 import rj.qmce.lite.ui.theme.QmceTheme
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
+import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
@@ -56,7 +60,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.TimeText
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : FragmentActivity() {
@@ -79,7 +82,6 @@ private fun WearApp() {
     var ready by remember { mutableStateOf(false) }
     var runtime by remember { mutableStateOf<mqq.app.AppRuntime?>(null) }
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
-    val coroutineScope = rememberCoroutineScope()
     val settingsVm: SettingsViewModel = viewModel()
     val settings by settingsVm.settings.collectAsState()
     val logoutReason by QmceApplication.logoutReason.collectAsState()
@@ -128,7 +130,7 @@ private fun WearApp() {
                 val uin = saved.uin
                 val result = KernelBridge.bindLoggedInAccount(uin, saved)
                 if (result == "ok") {
-                    KernelBridge.awaitCoreServices()
+                    KernelBridge.awaitCoreServices(runtimeOverride = r)
                     withContext(Dispatchers.Main) { loggedUin = uin; isLoggedIn = true }
                 } else {
                     withContext(Dispatchers.Main) { LoginPrefs.clear(context) }
@@ -173,6 +175,7 @@ private fun WearApp() {
         if (isLoggedIn) {
             val navController = rememberSwipeDismissableNavController()
             val chatDetailVm: ChatDetailViewModel = viewModel()
+            val chatSettingsVm: ChatSettingsViewModel = viewModel()
             val chatListVm: ChatListViewModel = viewModel()
             val contactsVm: ContactsViewModel = viewModel()
             val qZoneVm: QZoneViewModel = viewModel()
@@ -214,7 +217,7 @@ private fun WearApp() {
                                 peerUin = uin.toLongOrNull() ?: 0L
                                 peerName = name
                                 chatType = 1
-                                id = uid
+                                id = uin
                             }
                             selectedContact = fakeContact
                             navController.navigate("chat") { launchSingleTop = true }
@@ -227,14 +230,19 @@ private fun WearApp() {
                         ChatDetailScreen(
                             runtime = runtime,
                             peerUid = contact.peerUid ?: "",
-                            peerUin = contact.id ?: contact.peerUin.toString(),
+                            peerUin = contact.peerUin.takeIf { it > 0L }?.toString()
+                                ?: contact.id.orEmpty(),
                             chatType = contact.chatType,
                             peerName = contact.peerName ?: contact.id ?: "",
+                            avatarPath = contact.avatarPath.orEmpty(),
+                            avatarUrl = contact.avatarUrl.orEmpty(),
                             myUin = loggedUin,
                             onBack = { navController.popBackStack() },
                             onOpenInput = { navController.navigate("chatInput") { launchSingleTop = true } },
                             onOpenContactPicker = { navController.navigate("contactPicker") { launchSingleTop = true } },
                             onOpenPacketTool = { navController.navigate("packetToolChat") { launchSingleTop = true } },
+                            onOpenMembers = { navController.navigate("chatMembers") { launchSingleTop = true } },
+                            onOpenChatSettings = { navController.navigate("chatSettings") { launchSingleTop = true } },
                             vm = chatDetailVm
                         )
                     }
@@ -263,10 +271,37 @@ private fun WearApp() {
                         editingText = editingText,
                         onSend = { text -> chatDetailVm.sendText(text) },
                         onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
-                        onSendMixed = { mixedText, uriMap -> chatDetailVm.sendMixed(context, mixedText, uriMap) },
+                        peerUin = chatDetailVm.currentPeerUin,
+                        onSendMixed = { mixedText, uriMap, atMap -> chatDetailVm.sendMixed(context, mixedText, uriMap, atMap) },
+                        onSendFile = { uri -> chatDetailVm.sendFile(context, uri) },
+                        onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
                         onOpenVoiceRecorder = { navController.navigate("voiceRecord") { launchSingleTop = true } },
                         onBack = { navController.popBackStack() }
                     )
+                }
+                composable("chatMembers") {
+                    val contact = selectedContact
+                    if (contact != null) {
+                        ChatMembersScreen(
+                            groupCode = contact.peerUin.takeIf { it > 0L } ?: contact.id?.toLongOrNull() ?: 0L,
+                            vm = chatDetailVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                }
+                composable("chatSettings") {
+                    val contact = selectedContact
+                    if (contact != null) {
+                        val peerUin = contact.peerUin.takeIf { it > 0L } ?: contact.id?.toLongOrNull() ?: 0L
+                        ChatSettingsScreen(
+                            contact = contact,
+                            peerUid = contact.peerUid.orEmpty(),
+                            peerUin = peerUin,
+                            displayName = contact.peerName.orEmpty().ifBlank { contact.id.orEmpty() },
+                            vm = chatSettingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
                 }
                 composable("voiceRecord") {
                     VoiceRecordScreen(
@@ -310,18 +345,8 @@ private fun WearApp() {
             LoginScreen(onLoginSuccess = { uin, account ->
                 LoginPrefs.saveAccount(context, account)
                 QmceApplication.markLoginEstablished()
-                coroutineScope.launch {
-                    val coreReady = withContext(Dispatchers.IO) {
-                        KernelBridge.awaitCoreServices()
-                    }
-                    val loggedRuntime = withContext(Dispatchers.IO) {
-                        QmceApplication.ensureRuntime()
-                    }
-                    Log.d("QMCE", "ui: login core services ready=$coreReady")
-                    runtime = loggedRuntime ?: runtime
-                    isLoggedIn = true
-                    loggedUin = uin
-                }
+                val restarted = QmceApplication.restartAfterLogin(context)
+                Log.d("QMCE", "ui: login persisted uin=$uin, scheduled fresh start=$restarted")
             })
         }
     }

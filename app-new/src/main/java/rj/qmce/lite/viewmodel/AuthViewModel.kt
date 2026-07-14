@@ -40,6 +40,8 @@ class AuthViewModel : ViewModel() {
         private const val SERVICE_INIT_TIMEOUT_MS = 12_000L
         private const val FETCH_TIMEOUT_MS = 8_000L
         private const val CALLBACK_TIMEOUT_MS = 35_000L
+        private const val MAX_TICKET_ATTEMPTS = 3
+        private const val TICKET_RETRY_DELAY_MS = 1_500L
     }
 
     sealed interface LoginUiState {
@@ -80,12 +82,16 @@ class AuthViewModel : ViewModel() {
     private var appRuntime: AppRuntime? = null
     private var wtService: IWtLoginService? = null
     private var loginObserver: QrWtLoginExtObserver? = null
+    private var observerRuntime: AppRuntime? = null
     private var buildTime = 0L
     private var expireTimeSec = 0L
     private var queryTimeSec = 5L
     private var remainingSec = 0L
     private var pollJob: Job? = null
     private var callbackWatchdogJob: Job? = null
+    private var ticketRetryJob: Job? = null
+    private var ticketAccount: String? = null
+    private var ticketAttempt = 0
     private var requestGeneration = 0L
 
     fun initWtService() {
@@ -116,7 +122,10 @@ class AuthViewModel : ViewModel() {
             setState(LoginUiState.RequestingQr, "正在获取二维码", busy = true)
             val observer = makeObserver(generation)
             loginObserver = observer
-            val registered = runCatching { services.runtime.registObserver(observer) }
+            val registered = runCatching {
+                services.runtime.registObserver(observer)
+                observerRuntime = services.runtime
+            }
                 .onFailure { appendLog("注册登录观察者失败: ${it.message}") }
                 .isSuccess
             if (!registered || !isCurrent(generation)) {
@@ -206,6 +215,10 @@ class AuthViewModel : ViewModel() {
         pollJob = null
         callbackWatchdogJob?.cancel()
         callbackWatchdogJob = null
+        ticketRetryJob?.cancel()
+        ticketRetryJob = null
+        ticketAccount = null
+        ticketAttempt = 0
         unregisterLoginObserver()
         if (clearQr) _qrBitmap.value = null
     }
@@ -241,6 +254,82 @@ class AuthViewModel : ViewModel() {
         callbackWatchdogJob = viewModelScope.launch {
             delay(CALLBACK_TIMEOUT_MS)
             if (isCurrent(generation)) failRequest(generation, message)
+        }
+    }
+
+    private fun armTicketCallbackWatchdog(generation: Long) {
+        callbackWatchdogJob?.cancel()
+        callbackWatchdogJob = viewModelScope.launch {
+            delay(CALLBACK_TIMEOUT_MS)
+            if (isCurrent(generation) && _loginUiState.value == LoginUiState.ExchangingTicket) {
+                scheduleTicketRetry(generation, "登录票据返回超时")
+            }
+        }
+    }
+
+    private fun requestTicket(generation: Long) {
+        if (!isCurrent(generation)) return
+        val account = ticketAccount
+        val service = wtService
+        if (account.isNullOrBlank()) {
+            failRequest(generation, "登录服务未返回账号")
+            return
+        }
+        if (service == null) {
+            failRequest(generation, "登录服务已断开")
+            return
+        }
+
+        ticketAttempt += 1
+        val attempt = ticketAttempt
+        setState(
+            LoginUiState.ExchangingTicket,
+            if (attempt == 1) {
+                "正在换取登录票据..."
+            } else {
+                "票据返回较慢，正在重试 ($attempt/$MAX_TICKET_ATTEMPTS)"
+            },
+            busy = true,
+        )
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { service.getStWithQrSig(account, LOGIN_APP_ID, null) }
+            }
+            if (!isCurrent(generation)) return@launch
+            val immediateRet = result.getOrNull()
+            when {
+                result.isFailure -> scheduleTicketRetry(
+                    generation,
+                    "请求登录票据异常: ${result.exceptionOrNull()?.message ?: "未知错误"}",
+                )
+
+                immediateRet != 0 -> scheduleTicketRetry(
+                    generation,
+                    "换取登录票据失败 ($immediateRet)",
+                )
+
+                _loginUiState.value == LoginUiState.ExchangingTicket && ticketAttempt == attempt -> {
+                    appendLog("换票请求已发送 attempt=$attempt")
+                    armTicketCallbackWatchdog(generation)
+                }
+            }
+        }
+    }
+
+    private fun scheduleTicketRetry(generation: Long, reason: String) {
+        if (!isCurrent(generation)) return
+        callbackWatchdogJob?.cancel()
+        if (ticketAttempt >= MAX_TICKET_ATTEMPTS) {
+            failRequest(generation, "$reason，请刷新二维码重试")
+            return
+        }
+        appendLog("$reason，准备重试 ${ticketAttempt + 1}/$MAX_TICKET_ATTEMPTS")
+        _statusText.value = "$reason，准备重试..."
+        _isBusy.value = true
+        ticketRetryJob?.cancel()
+        ticketRetryJob = viewModelScope.launch {
+            delay(TICKET_RETRY_DELAY_MS)
+            if (isCurrent(generation)) requestTicket(generation)
         }
     }
 
@@ -318,22 +407,9 @@ class AuthViewModel : ViewModel() {
                         appendLog("扫码确认 account=$cleanAccount")
                         pollJob?.cancel()
                         callbackWatchdogJob?.cancel()
-                        setState(LoginUiState.ExchangingTicket, "正在换取登录票据...", busy = true)
-                        val service = wtService
-                        if (service == null) {
-                            failRequest(generation, "登录服务已断开")
-                            return@launch
-                        }
-                        val stRet = withContext(Dispatchers.IO) {
-                            runCatching { service.getStWithQrSig(cleanAccount, LOGIN_APP_ID, null) }
-                                .getOrDefault(-1)
-                        }
-                        if (!isCurrent(generation)) return@launch
-                        if (stRet != 0) {
-                            failRequest(generation, "换取登录票据失败 ($stRet)")
-                        } else {
-                            armCallbackWatchdog(generation, "登录票据回调超时")
-                        }
+                        ticketAccount = cleanAccount
+                        ticketAttempt = 0
+                        requestTicket(generation)
                     }
                     48 -> Unit
                     53 -> {
@@ -360,13 +436,14 @@ class AuthViewModel : ViewModel() {
                 callbackWatchdogJob?.cancel()
                 val cleanAccount = userAccount.orEmpty()
                 if (ret != 0 || cleanAccount.isBlank()) {
-                    failRequest(
+                    scheduleTicketRetry(
                         generation,
                         "换票失败 ($ret)${errMsg?.title?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""}",
                     )
                     return@launch
                 }
 
+                ticketRetryJob?.cancel()
                 appendLog("换票成功 uin=$cleanAccount")
                 setState(LoginUiState.Binding, "正在绑定账号...", busy = true)
                 val account = SimpleAccount().apply {
@@ -388,6 +465,7 @@ class AuthViewModel : ViewModel() {
                     _loginResult.emit(cleanAccount to account)
                 } else {
                     failRequest(generation, "绑定失败")
+                    resetFailedLoginSession()
                 }
             }
         }
@@ -407,8 +485,21 @@ class AuthViewModel : ViewModel() {
 
     private fun unregisterLoginObserver() {
         val observer = loginObserver ?: return
-        runCatching { appRuntime?.unRegistObserver(observer) }
+        runCatching { (observerRuntime ?: appRuntime)?.unRegistObserver(observer) }
         loginObserver = null
+        observerRuntime = null
+    }
+
+    private suspend fun resetFailedLoginSession() {
+        appRuntime = null
+        wtService = null
+        withContext(Dispatchers.IO) {
+            runCatching {
+                (com.tencent.qphone.base.util.BaseApplication.getContext() as? QmceApplication)
+                    ?.clearLocalLoginState()
+            }
+                .onFailure { appendLog("清理失败登录会话失败: ${it.message}") }
+        }
     }
 
     override fun onCleared() {

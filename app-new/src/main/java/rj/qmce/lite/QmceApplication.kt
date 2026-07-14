@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.multidex.MultiDex
 import androidx.multidex.MultiDexApplication
@@ -34,6 +36,7 @@ import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.fix.SignatureProbe
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 
 @Suppress("SpellCheckingInspection")
@@ -71,9 +74,56 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
             Constants.LogoutReason.secKicked,
             Constants.LogoutReason.suspend
         )
+        private val loginRestartScheduled = AtomicBoolean(false)
 
         fun markLoginEstablished() {
             _logoutReason.value = null
+        }
+
+        /**
+         * 登录完成后重启主进程，让 MobileQQ、KernelService 和 MsgService 从全新生命周期初始化。
+         * 账号必须在调用前落盘；旧进程只负责安排启动并退出，不再尝试复用半初始化的 NT 对象。
+         */
+        fun restartAfterLogin(context: Context): Boolean {
+            if (!loginRestartScheduled.compareAndSet(false, true)) return false
+            val launchIntent = context.packageManager
+                .getLaunchIntentForPackage(context.packageName)
+                ?.apply {
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                    )
+                }
+                ?: run {
+                    loginRestartScheduled.set(false)
+                    return false
+                }
+            val pendingFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE
+            val pendingIntent = android.app.PendingIntent.getActivity(
+                context,
+                0x514D,
+                launchIntent,
+                pendingFlags,
+            )
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
+            if (alarmManager == null) {
+                loginRestartScheduled.set(false)
+                return false
+            }
+            alarmManager.set(
+                android.app.AlarmManager.ELAPSED_REALTIME,
+                SystemClock.elapsedRealtime() + 450L,
+                pendingIntent,
+            )
+            Handler(Looper.getMainLooper()).postDelayed({
+                runCatching {
+                    (context as? android.app.Activity)?.finishAndRemoveTask()
+                }
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }, 250L)
+            return true
         }
 
         fun resetRuntimeAfterLogout(app: MobileQQ? = sMobileQQ) {

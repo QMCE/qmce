@@ -3,6 +3,7 @@ package rj.qmce.lite.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -13,6 +14,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.wear.compose.material3.*
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import coil3.compose.AsyncImage
@@ -22,6 +26,7 @@ import com.tencent.qqnt.avatar.WatchAvatarView
 import kotlinx.coroutines.GlobalScope
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun ContactsScreen(
@@ -32,13 +37,35 @@ fun ContactsScreen(
     val statusText by vm.statusText.collectAsState()
     val loading by vm.loading.collectAsState()
     val scheme = MaterialTheme.colorScheme
+    var showSearch by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    val visibleCategories = remember(categories, normalizedQuery) {
+        if (normalizedQuery.isBlank()) categories else categories.mapNotNull { category ->
+            val buddies = category.buddies.filter { buddy ->
+                listOf(buddy.nick, buddy.remark, buddy.uid, buddy.uin.toString())
+                    .any { it.contains(normalizedQuery, ignoreCase = true) }
+            }
+            category.copy(buddies = buddies).takeIf { it.buddies.isNotEmpty() }
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        if (statusText.isNotEmpty()) {
-            Text(statusText, fontSize = 10.sp, color = scheme.outline, modifier = Modifier.padding(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (statusText.isNotEmpty()) {
+                Text(statusText, fontSize = 10.sp, color = scheme.outline, modifier = Modifier.weight(1f))
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+            IconButton(onClick = { showSearch = true }) {
+                Icon(Icons.Default.Search, contentDescription = "搜索联系人")
+            }
         }
 
         if (loading && categories.isEmpty()) {
@@ -46,9 +73,29 @@ fun ContactsScreen(
             return
         }
 
-        if (categories.isEmpty()) {
-            Text("暂无联系人", fontSize = 11.sp, color = scheme.outline, modifier = Modifier.padding(16.dp))
+        if (visibleCategories.isEmpty()) {
+            Text(
+                if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人",
+                fontSize = 11.sp,
+                color = scheme.outline,
+                modifier = Modifier.padding(16.dp),
+            )
+            if (showSearch) {
+                ContactSearchDialog(
+                    query = query,
+                    onQueryChange = { query = it },
+                    onDismiss = { showSearch = false },
+                )
+            }
             return
+        }
+
+        if (showSearch) {
+            ContactSearchDialog(
+                query = query,
+                onQueryChange = { query = it },
+                onDismiss = { showSearch = false },
+            )
         }
 
         androidx.wear.compose.foundation.lazy.ScalingLazyColumn(
@@ -57,7 +104,7 @@ fun ContactsScreen(
                 viewportVerticalOffsetResolver = { 0 },
             ),
         ) {
-            categories.forEach { category ->
+            visibleCategories.forEach { category ->
                 item {
                     // 分组标题
                     Text(
@@ -135,6 +182,52 @@ fun ContactsScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ContactSearchDialog(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        visible = true,
+        onDismissRequest = onDismiss,
+        title = { Text("搜索联系人") },
+        confirmButton = {},
+        dismissButton = {},
+        content = {
+            item {
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp,
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    decorationBox = { inner ->
+                        if (query.isBlank()) {
+                            Text("昵称、QQ号或UID", color = MaterialTheme.colorScheme.outline, fontSize = 11.sp)
+                        }
+                        inner()
+                    },
+                )
+            }
+            item {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                ) { Text("完成", fontSize = 11.sp) }
+            }
+        },
+    )
 }
 
 @Composable

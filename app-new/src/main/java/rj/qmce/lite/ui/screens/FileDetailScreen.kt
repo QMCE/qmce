@@ -36,6 +36,7 @@ internal fun FileDetailScreen(
     message: ChatDetailViewModel.UiMsg,
     content: ChatDetailViewModel.MessageContent.File,
     onOpenLocalFile: (File) -> Unit,
+    onDownloadFile: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
@@ -103,12 +104,15 @@ internal fun FileDetailScreen(
                 }
             }
         } else {
-            Text(
-                text = "不支持下载未缓存文件",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-            )
+            Button(
+                onClick = onDownloadFile,
+                enabled = content.invalidState == null || content.invalidState == 0,
+                modifier = Modifier.fillMaxWidth().height(38.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) { Text("下载文件", fontSize = 11.sp) }
         }
         Spacer(Modifier.height(8.dp))
         Button(

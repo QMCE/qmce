@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -29,10 +30,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -60,9 +63,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
@@ -122,6 +127,10 @@ fun ChatDetailScreen(
     onOpenInput: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
     onOpenPacketTool: () -> Unit = {},
+    onOpenMembers: () -> Unit = {},
+    onOpenChatSettings: () -> Unit = {},
+    avatarPath: String = "",
+    avatarUrl: String = "",
     vm: ChatDetailViewModel = viewModel(),
 ) {
     val messages by vm.messages.collectAsState()
@@ -132,6 +141,7 @@ fun ChatDetailScreen(
     val forwardDetailState by vm.forwardDetailState.collectAsState()
     val replySourceState by vm.replySourceState.collectAsState()
     val pttPlaybackStates by vm.pttPlaybackStates.collectAsState()
+    val inlineKeyboardActions by vm.inlineKeyboardActions.collectAsState()
     val multiSelectMode by vm.multiSelectMode.collectAsState()
     val selectedMsgIds by vm.selectedMsgIds.collectAsState()
     val timelineItems = remember(messages) { messages.toTimelineItems() }
@@ -151,6 +161,16 @@ fun ChatDetailScreen(
     var pendingReplyNavigation by remember(peerUid, chatType) {
         mutableStateOf<ChatDetailViewModel.MessageContent.Reply?>(null)
     }
+    var showMessageSearch by remember(peerUid, chatType) { mutableStateOf(false) }
+    var messageSearchQuery by remember(peerUid, chatType) { mutableStateOf("") }
+    val messageSearchMatches = remember(messages, messageSearchQuery) {
+        val query = messageSearchQuery.trim()
+        if (query.isBlank()) emptyList() else messages.filter { message ->
+            message.text.contains(query, ignoreCase = true) ||
+                message.senderNick.contains(query, ignoreCase = true)
+        }.takeLast(20).asReversed()
+    }
+    val searchScope = rememberCoroutineScope()
     val context = LocalContext.current
     var pendingCallMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     val startCall: (CallMode) -> Unit = { mode ->
@@ -301,11 +321,14 @@ fun ChatDetailScreen(
 
     val showCallPage = chatType == 1 && peerUid.isNotBlank()
     val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
-        pageCount = { if (showCallPage) 2 else 1 },
+        pageCount = { if (showCallPage) 3 else 2 },
     )
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            ChatHeader(title = name.ifEmpty { peerName })
+            ChatHeader(
+                title = name.ifEmpty { peerName },
+                onSearch = { showMessageSearch = true },
+            )
             androidx.wear.compose.foundation.pager.HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.weight(1f),
@@ -359,6 +382,10 @@ fun ChatDetailScreen(
                                                     onOpenFile = { message, file ->
                                                         if (!multiSelectMode) selectedFile = FileDetailTarget(message, file)
                                                     },
+                                                    inlineKeyboardActions = inlineKeyboardActions,
+                                                    onClickInlineKeyboard = { message, keyboard, button ->
+                                                        vm.clickInlineKeyboardButton(message, keyboard, button)
+                                                    },
                                                     voicePlaybackState = { voice ->
                                                         pttPlaybackStates[voice.media.messageId]
                                                     },
@@ -383,13 +410,55 @@ fun ChatDetailScreen(
                             }
                         }
                     }
-                    1 -> CallPage(
+                    1 -> if (showCallPage) {
+                        CallPage(
+                            peerName = name.ifEmpty { peerName },
+                            onRequestCall = requestCall,
+                            onOpenPacketTool = onOpenPacketTool,
+                        )
+                    } else {
+                        ChatInfoScreen(
+                            peerUid = peerUid,
+                            peerUin = peerUin.toLongOrNull() ?: 0L,
+                            chatType = chatType,
+                            peerName = name.ifEmpty { peerName },
+                            avatarPath = avatarPath,
+                            avatarUrl = avatarUrl,
+                            vm = vm,
+                            onOpenMembers = onOpenMembers,
+                            onOpenSettings = onOpenChatSettings,
+                        )
+                    }
+                    2 -> ChatInfoScreen(
+                        peerUid = peerUid,
+                        peerUin = peerUin.toLongOrNull() ?: 0L,
+                        chatType = chatType,
                         peerName = name.ifEmpty { peerName },
-                        onRequestCall = requestCall,
-                        onOpenPacketTool = onOpenPacketTool,
+                        avatarPath = avatarPath,
+                        avatarUrl = avatarUrl,
+                        vm = vm,
+                        onOpenMembers = onOpenMembers,
+                        onOpenSettings = onOpenChatSettings,
                     )
                 }
             }
+        }
+        if (showMessageSearch) {
+            ChatSearchDialog(
+                query = messageSearchQuery,
+                matches = messageSearchMatches,
+                onQueryChange = { messageSearchQuery = it },
+                onSelect = { target ->
+                    showMessageSearch = false
+                    val targetIndex = timelineItems.indexOfFirst { item ->
+                        (item as? ChatTimelineItem.Message)?.message?.stableKey == target.stableKey
+                    }
+                    if (targetIndex >= 0) {
+                        searchScope.launch { listState.animateScrollToItem(targetIndex) }
+                    }
+                },
+                onDismiss = { showMessageSearch = false },
+            )
         }
         if (multiSelectMode) {
             MultiSelectBottomBar(
@@ -451,6 +520,7 @@ fun ChatDetailScreen(
                 message = currentMessage,
                 content = currentFile,
                 onOpenLocalFile = { file -> openLocalFile(context, file) },
+                onDownloadFile = { vm.requestFileDownload(currentMessage, currentFile) },
                 onDismiss = { selectedFile = null },
             )
         }
@@ -504,7 +574,7 @@ fun ChatDetailScreen(
                 },
             )
         }
-        if (pagerState.currentPage == 1) {
+        if (showCallPage && pagerState.currentPage == 1) {
             AlertDialog(
                 visible = true,
                 onDismissRequest = { /* pager handles navigation */ },
@@ -560,7 +630,7 @@ private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimeline
 }
 
 @Composable
-private fun ChatHeader(title: String) {
+private fun ChatHeader(title: String, onSearch: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
         contentAlignment = Alignment.Center,
@@ -574,7 +644,92 @@ private fun ChatHeader(title: String) {
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
+        IconButton(
+            onClick = onSearch,
+            modifier = Modifier.align(Alignment.CenterEnd).size(28.dp),
+        ) {
+            Icon(Icons.Default.Search, contentDescription = "搜索消息", modifier = Modifier.size(16.dp))
+        }
     }
+}
+
+@Composable
+private fun ChatSearchDialog(
+    query: String,
+    matches: List<ChatDetailViewModel.UiMsg>,
+    onQueryChange: (String) -> Unit,
+    onSelect: (ChatDetailViewModel.UiMsg) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        visible = true,
+        onDismissRequest = onDismiss,
+        title = { Text("搜索消息") },
+        confirmButton = {},
+        dismissButton = {},
+        content = {
+            item {
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp,
+                    ),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 9.dp),
+                    decorationBox = { inner ->
+                        if (query.isBlank()) {
+                            Text("搜索当前已加载消息", color = MaterialTheme.colorScheme.outline, fontSize = 11.sp)
+                        }
+                        inner()
+                    },
+                )
+            }
+            if (query.isNotBlank() && matches.isEmpty()) {
+                item {
+                    Text(
+                        "没有匹配消息；可先向上滑动加载漫游消息",
+                        color = MaterialTheme.colorScheme.outline,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
+            matches.forEach { message ->
+                item(key = "search:${message.stableKey}") {
+                    Button(
+                        onClick = { onSelect(message) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = message.senderNick.ifBlank { if (message.isSelf) "我" else "消息" },
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                            )
+                            Text(
+                                text = message.text.ifBlank { "[非文本消息]" },
+                                fontSize = 10.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    )
 }
 
 @Composable
@@ -638,6 +793,8 @@ internal fun MessageBubble(
     onTap: (() -> Unit)? = null,
     onOpenReply: (ChatDetailViewModel.MessageContent.Reply) -> Unit,
     onOpenFile: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.File) -> Unit,
+    inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState> = emptyMap(),
+    onClickInlineKeyboard: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit = { _, _, _ -> },
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState? = { null },
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit = {},
 ) {
@@ -692,6 +849,10 @@ internal fun MessageBubble(
                         onLongClick = { onLongClick(message) },
                         onOpenReply = onOpenReply,
                         onOpenFile = onOpenFile,
+                        inlineKeyboardActions = inlineKeyboardActions,
+                        onClickInlineKeyboard = { keyboard, button ->
+                            onClickInlineKeyboard(message, keyboard, button)
+                        },
                         voicePlaybackState = voicePlaybackState,
                         onToggleVoice = onToggleVoice,
                     )
@@ -719,6 +880,8 @@ private fun MessageContentItem(
     onLongClick: () -> Unit,
     onOpenReply: (ChatDetailViewModel.MessageContent.Reply) -> Unit,
     onOpenFile: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.File) -> Unit,
+    inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState>,
+    onClickInlineKeyboard: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState?,
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit,
 ) {
@@ -772,8 +935,17 @@ private fun MessageContentItem(
         is ChatDetailViewModel.MessageContent.Location -> LocationMessageContent(content)
         is ChatDetailViewModel.MessageContent.Wallet -> WalletMessageContent(content)
         is ChatDetailViewModel.MessageContent.Calendar -> CalendarMessageContent(content)
-        is ChatDetailViewModel.MessageContent.InlineKeyboard -> InlineKeyboardMessageContent(content)
-        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback("[暂不支持的消息]")
+        is ChatDetailViewModel.MessageContent.InlineKeyboard -> InlineKeyboardMessageContent(
+            message = message,
+            content = content,
+            actionStates = inlineKeyboardActions,
+            onClick = onClickInlineKeyboard,
+        )
+        is ChatDetailViewModel.MessageContent.Markdown -> MarkdownMessageContent(content.value, onLongClick)
+        is ChatDetailViewModel.MessageContent.CallRecord -> CallRecordMessageContent(content)
+        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback(
+            content.detail?.let { "[$it · 类型 ${content.elementType}]" } ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
+        )
     }
 }
 
@@ -792,7 +964,11 @@ private fun LocalMessageImage(
     val size = mediaSize(content.width, content.height)
     if (localFile == null) {
         LaunchedEffect(content.elementId) { ensureCached() }
-        MediaPlaceholder(size, if (content.isLoading) "图片加载中" else "图片未缓存")
+        MediaPlaceholder(
+            size = size,
+            label = if (content.isLoading) "图片加载中" else "点击重试",
+            onClick = ensureCached,
+        )
     } else {
         AsyncImage(
             model = localFile,
@@ -857,6 +1033,76 @@ private fun GiphyMessageContent(
 @Composable
 private fun MessageFallback(label: String) {
     Text(label, color = Color.White, fontSize = 13.sp, lineHeight = 19.sp)
+}
+
+@Composable
+private fun MarkdownMessageContent(value: String, onLongClick: () -> Unit) {
+    val lines: List<Pair<Boolean, String>> = remember(value) {
+        value.replace("\r\n", "\n")
+            .split('\n')
+            .map { line ->
+                val code = line.trimStart().startsWith("```")
+                val rendered = line
+                    .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
+                    .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+                    .replace(Regex("__(.+?)__"), "$1")
+                    .replace(Regex("`([^`]+)`"), "$1")
+                    .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
+                    .replace(Regex("\\[([^]]+)]\\(([^)]+)\\)"), "$1 ($2)")
+                code to rendered
+            }
+            .filterNot { (code, text) -> code && text.trimStart().startsWith("```") }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        lines.forEach { (code, text) ->
+            if (code) {
+                Text(
+                    text = text,
+                    color = Color(0xFFE4DCEB),
+                    fontSize = 10.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0x44231F2B), RoundedCornerShape(5.dp))
+                        .padding(horizontal = 7.dp, vertical = 4.dp),
+                )
+            } else if (text.isNotBlank()) {
+                RichMessageText(text, onLongClick)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallRecordMessageContent(content: ChatDetailViewModel.MessageContent.CallRecord) {
+    val isVideo = content.type == 2 || content.text.contains("视频")
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .padding(horizontal = 9.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = if (isVideo) "▣" else "☎",
+            color = Color(0xFFD9C4FF),
+            fontSize = 16.sp,
+        )
+        Spacer(Modifier.width(7.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = content.text,
+                color = Color.White,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = if (content.hasRead) "通话记录" else "未读通话记录",
+                color = Color(0xFFD1CBD7),
+                fontSize = 9.sp,
+            )
+        }
+    }
 }
 
 @Composable
@@ -1286,7 +1532,12 @@ private fun CalendarMessageContent(content: ChatDetailViewModel.MessageContent.C
 }
 
 @Composable
-private fun InlineKeyboardMessageContent(content: ChatDetailViewModel.MessageContent.InlineKeyboard) {
+private fun InlineKeyboardMessageContent(
+    message: ChatDetailViewModel.UiMsg,
+    content: ChatDetailViewModel.MessageContent.InlineKeyboard,
+    actionStates: Map<String, ChatDetailViewModel.InlineKeyboardActionState>,
+    onClick: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
+) {
     if (content.rows.isEmpty()) {
         MessageFallback("[机器人消息]")
         return
@@ -1301,11 +1552,16 @@ private fun InlineKeyboardMessageContent(content: ChatDetailViewModel.MessageCon
         Text("机器人操作", color = Color(0xFFD9C4FF), fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
         content.rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                row.forEach { label ->
+                row.forEach { button ->
+                    val actionKey = "${message.stableKey}:keyboard:${button.stableKey}"
+                    val action = actionStates[actionKey]
+                    val isPending = action?.phase == ChatDetailViewModel.InlineKeyboardActionPhase.Pending
+                    val label = action?.label ?: button.label
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .background(Color(0xFF3A3442), RoundedCornerShape(5.dp))
+                            .clickable(enabled = !isPending) { onClick(content, button) }
                             .padding(horizontal = 6.dp, vertical = 5.dp),
                         contentAlignment = Alignment.Center,
                     ) {

@@ -46,23 +46,52 @@ fun LocalVideoPlayerScreen(
     title: String,
     onDismiss: () -> Unit,
 ) {
+    VideoPlayerScreen(
+        sourceKey = file.absolutePath,
+        source = file.absolutePath,
+        title = title,
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+fun RemoteVideoPlayerScreen(
+    url: String,
+    title: String,
+    onDismiss: () -> Unit,
+) {
+    VideoPlayerScreen(
+        sourceKey = url,
+        source = url,
+        title = title,
+        onDismiss = onDismiss,
+    )
+}
+
+@Composable
+private fun VideoPlayerScreen(
+    sourceKey: String,
+    source: String,
+    title: String,
+    onDismiss: () -> Unit,
+) {
     BackHandler(onBack = onDismiss)
     val context = LocalContext.current
-    var player by remember(file) { mutableStateOf<MediaPlayer?>(null) }
-    var prepared by remember(file) { mutableStateOf(false) }
-    var playing by remember(file) { mutableStateOf(false) }
-    var durationMs by remember(file) { mutableIntStateOf(0) }
-    var currentMs by remember(file) { mutableIntStateOf(0) }
-    var error by remember(file) { mutableStateOf<String?>(null) }
+    var player by remember(sourceKey) { mutableStateOf<MediaPlayer?>(null) }
+    var prepared by remember(sourceKey) { mutableStateOf(false) }
+    var playing by remember(sourceKey) { mutableStateOf(false) }
+    var durationMs by remember(sourceKey) { mutableIntStateOf(0) }
+    var currentMs by remember(sourceKey) { mutableIntStateOf(0) }
+    var error by remember(sourceKey) { mutableStateOf<String?>(null) }
     var holder by remember { mutableStateOf<SurfaceHolder?>(null) }
 
-    DisposableEffect(file, holder) {
+    DisposableEffect(sourceKey, holder) {
         val surfaceHolder = holder
         if (surfaceHolder == null) return@DisposableEffect onDispose { }
         val mediaPlayer = MediaPlayer()
         player = mediaPlayer
         runCatching {
-            mediaPlayer.setDataSource(file.absolutePath)
+            mediaPlayer.setDataSource(source)
             mediaPlayer.setDisplay(surfaceHolder)
             mediaPlayer.setOnPreparedListener {
                 prepared = true
