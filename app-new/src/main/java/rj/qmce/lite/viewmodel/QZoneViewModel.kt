@@ -30,6 +30,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import com.tencent.mobileqq.activity.photo.LocalMediaInfo
@@ -92,7 +94,11 @@ class QZoneViewModel : ViewModel() {
 
     private var runtime: AppRuntime? = null
     private var loaded = false
+    private val feedLoadLock = Any()
+    private var feedLoadGeneration = 0L
+    private var activeFeedLoad: Job? = null
     private var feedObserver: IObserver? = null
+    private var observedFeedService: QZoneFeedService? = null
     private var svcRef: QZoneFeedService? = null
     private var loadingMore = false
     private var lastLoadMoreTime = 0L
@@ -101,6 +107,7 @@ class QZoneViewModel : ViewModel() {
     val loadingMoreFlow: StateFlow<Boolean> = _loadingMore
     private var loadMoreStartTime = 0L
     private val feedDataById = HashMap<String, BusinessFeedData>()
+    private var lastSubmittedFingerprint = ""
 
     fun init(rt: AppRuntime?) {
         runtime = rt
@@ -314,22 +321,36 @@ class QZoneViewModel : ViewModel() {
             try {
                 val prevSize = _feeds.value.size
                 svc.n(Handler(Looper.getMainLooper()))
-                Thread.sleep(3000)
-                val fresh = svc.h?.n()
+                var fresh: List<BusinessFeedData>? = null
+                var lastFingerprint = feedFingerprint(svc.h?.n().orEmpty())
+                for (attempt in 0 until 30) {
+                    delay(400)
+                    val candidate = svc.h?.n()
+                    if (!candidate.isNullOrEmpty()) {
+                        fresh = candidate
+                        val fingerprint = feedFingerprint(candidate)
+                        if (fingerprint != lastFingerprint || candidate.size > prevSize) {
+                            processFeeds(candidate)
+                            lastFingerprint = fingerprint
+                            if (candidate.size > prevSize) break
+                        }
+                    }
+                }
                 val newSize = fresh?.size ?: 0
-                // 保证加载指示器至少显示 500ms，避免快速滑动时闪烁
                 val elapsed = System.currentTimeMillis() - loadMoreStartTime
                 if (elapsed < 500) Thread.sleep(500 - elapsed)
                 loadingMore = false
                 _loadingMore.value = false
                 Log.d(TAG, "loadMore done: prev=$prevSize, now=$newSize")
                 if (!fresh.isNullOrEmpty() && newSize > prevSize) {
-                    processFeeds(fresh)
+                    noMoreData = false
+                    Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
                 } else {
-                    noMoreData = true
-                    Log.d(TAG, "no more data")
+                    noMoreData = false
+                    Log.d(TAG, "loadMore produced no new page; keeping pagination retryable")
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.e(TAG, "loadMore error", e)
             } finally {
                 loadingMore = false
@@ -339,19 +360,25 @@ class QZoneViewModel : ViewModel() {
     }
 
     fun loadFeeds(forceRefresh: Boolean = false) {
-        if (loaded && !forceRefresh) return
-        loaded = true
+        val generation: Long
+        synchronized(feedLoadLock) {
+            if (loaded && !forceRefresh) return
+            activeFeedLoad?.cancel()
+            generation = ++feedLoadGeneration
+            loaded = true
+            activeFeedLoad = null
+        }
         noMoreData = false
         _loading.value = true
         _statusText.value = "加载空间动态..."
 
-        viewModelScope.launch(Dispatchers.IO) {
+        val job = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val svc = QZoneFeedService.h()
                 svcRef = svc
                 if (svc == null) {
                     _statusText.value = "QZoneFeedService 不可用"
-                    _loading.value = false
+                    finishFeedLoad(generation, false)
                     return@launch
                 }
 
@@ -369,7 +396,7 @@ class QZoneViewModel : ViewModel() {
                     val cached = feedMgr.n()
                     if (!cached.isNullOrEmpty()) {
                         Log.d(TAG, "got ${cached.size} cached feeds")
-                        processFeeds(cached)
+                        processFeeds(cached, finishLoading = false)
                     }
 
                     // 触发网络加载
@@ -378,41 +405,59 @@ class QZoneViewModel : ViewModel() {
                     feedMgr.b(0, wrapper, false)
                     Log.d(TAG, "triggered feed load")
 
-                    // 等待回调到达后再次读取
-                    Thread.sleep(3000)
-                    val fresh = feedMgr.n()
-                    if (!fresh.isNullOrEmpty() && fresh.size != (cached?.size ?: 0)) {
-                        processFeeds(fresh)
+                    var lastFingerprint = feedFingerprint(cached.orEmpty())
+                    repeat(30) {
+                        delay(400)
+                        if (!isCurrentFeedLoad(generation)) return@launch
+                        val fresh = feedMgr.n()
+                        if (!fresh.isNullOrEmpty()) {
+                            val fingerprint = feedFingerprint(fresh)
+                            if (fingerprint != lastFingerprint) {
+                                processFeeds(fresh)
+                                lastFingerprint = fingerprint
+                            }
+                        }
                     }
+                    finishFeedLoad(generation, true)
                 } else {
                     Log.w(TAG, "IFeedManager is null")
                     _statusText.value = "FeedManager 不可用"
-                    _loading.value = false
+                    finishFeedLoad(generation, false)
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Log.e(TAG, "loadFeeds error", e)
                 _statusText.value = "加载失败: ${e.message}"
-                _loading.value = false
+                finishFeedLoad(generation, false)
+            } finally {
+                synchronized(feedLoadLock) {
+                    if (feedLoadGeneration == generation) activeFeedLoad = null
+                }
             }
+        }
+        synchronized(feedLoadLock) {
+            if (feedLoadGeneration == generation) activeFeedLoad = job
         }
     }
 
     private fun registerFeedObserver(svc: QZoneFeedService) {
-        if (feedObserver != null) return
+        if (feedObserver != null && observedFeedService === svc) return
         try {
+            feedObserver?.let { oldObserver ->
+                runCatching { EventCenter.b().g(oldObserver) }
+            }
             val observer = object : IObserver.main {
                 override fun s(event: Event) {
                     Log.d(TAG, "feed event: type=${event.a}")
                     if (event.a == 1 || event.a == 4) {
                         val feedMgr = svc.h ?: return
                         val list = feedMgr.n()
-                        if (!list.isNullOrEmpty()) {
-                            processFeeds(list)
-                        }
+                        if (!list.isNullOrEmpty()) processFeeds(list)
                     }
                 }
             }
             feedObserver = observer
+            observedFeedService = svc
             val ec = EventCenter.b()
             val src = EventSource("Feed", null)
             ec.a(observer, 0, src, 1, 4)
@@ -422,7 +467,13 @@ class QZoneViewModel : ViewModel() {
         }
     }
 
-    private fun processFeeds(list: List<BusinessFeedData>) {
+    private fun processFeeds(list: List<BusinessFeedData>, finishLoading: Boolean = true) {
+        if (list.isEmpty()) return
+        val currentFingerprint = feedFingerprint(list)
+        if (currentFingerprint == lastSubmittedFingerprint) {
+            if (finishLoading) _loading.value = false
+            return
+        }
         synchronized(feedDataById) {
             list.forEach { data ->
                 val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
@@ -504,10 +555,53 @@ class QZoneViewModel : ViewModel() {
                 null
             }
         }
-        _feeds.value = items
-        _statusText.value = if (items.isEmpty()) "暂无动态" else ""
+        val distinctItems = items.distinctBy { it.feedId.ifBlank { "${it.uin}:${it.time}:${it.content}" } }
+        if (distinctItems.isNotEmpty()) {
+            lastSubmittedFingerprint = currentFingerprint
+            _feeds.value = distinctItems
+        }
+        _statusText.value = if (distinctItems.isEmpty()) "暂无动态" else ""
+        if (finishLoading) _loading.value = false
+        Log.d(TAG, "processed ${distinctItems.size} feeds")
+    }
+
+    private fun finishFeedLoad(generation: Long, success: Boolean) {
+        if (!isCurrentFeedLoad(generation)) return
         _loading.value = false
-        Log.d(TAG, "processed ${items.size} feeds")
+        synchronized(feedLoadLock) {
+            if (feedLoadGeneration == generation) loaded = success
+        }
+        if (!success && _feeds.value.isEmpty()) _statusText.value = "加载失败，请重试"
+    }
+
+    private fun isCurrentFeedLoad(generation: Long): Boolean = synchronized(feedLoadLock) {
+        feedLoadGeneration == generation
+    }
+
+    private fun feedFingerprint(list: List<BusinessFeedData>): String = list.joinToString("|") { data ->
+        val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
+        val time = runCatching { data.cellFeedCommInfo?.time }.getOrNull() ?: 0L
+        val summary = runCatching { data.getCellSummaryV2()?.summary }.getOrNull().orEmpty()
+        val title = runCatching { data.cellTitleInfo?.title }.getOrNull().orEmpty()
+        val nick = runCatching { data.cellUserInfo?.user?.nickName }.getOrNull().orEmpty()
+        val likes = runCatching { data.cellLikeInfo?.likeNum }.getOrNull() ?: 0
+        val comments = runCatching {
+            data.cellCommentInfo?.c.orEmpty().joinToString(",") { comment ->
+                "${comment.commentid}:${comment.user?.uin}:${comment.comment}:${comment.replies?.size ?: 0}"
+            }
+        }.getOrNull().orEmpty()
+        val pictures = runCatching {
+            data.cellPictureInfo?.pics.orEmpty().joinToString(",") {
+                it.currentUrl?.url ?: it.bigUrl?.url ?: it.originUrl?.url.orEmpty()
+            }
+        }.getOrNull().orEmpty()
+        val video = runCatching { data.cellVideoInfo?.videoUrl?.url }.getOrNull().orEmpty()
+        val original = runCatching {
+            data.originalInfo?.let { originalData ->
+                "${originalData.cellUserInfo?.user?.nickName}:${originalData.getCellSummaryV2()?.summary}:${originalData.cellTitleInfo?.title}"
+            }
+        }.getOrNull().orEmpty()
+        "$id:$time:$nick:$summary:$title:$likes:$comments:$pictures:$video:$original"
     }
 
     private fun probeStrings(obj: Any?, depth: Int = 0): String {
