@@ -12,6 +12,7 @@ import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.*
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import rj.qmce.lite.ui.settingsVm
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
@@ -84,12 +85,16 @@ private fun TopPageIndicator(
     pagerState: androidx.wear.compose.foundation.pager.PagerState,
     pointsUp: Boolean,
 ) {
-    HorizontalPageIndicator(
-        pagerState = pagerState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .wrapContentHeight(Alignment.CenterVertically)
-            .graphicsLayer { scaleY = if (pointsUp) -1f else 1f },
-    )
+    val settings by settingsVm.settings.collectAsState()
+    if (!settings.showTimeText)
+    {
+        HorizontalPageIndicator(
+            pagerState = pagerState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+                .wrapContentHeight(Alignment.CenterVertically)
+                .graphicsLayer { scaleY = if (pointsUp) -1f else 1f },
+        )
+    }
 }

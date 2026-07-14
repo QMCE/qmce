@@ -103,6 +103,15 @@ fun SettingsScreen(
                 secondaryLabel = { Text("需开启时间显示") },
             )
         }
+        item(key = "fullscreen-dialogs") {
+            SwitchButton(
+                checked = settings.fullscreenDialogs,
+                onCheckedChange = settingsVm::setFullscreenDialogs,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                label = { Text("对话框全屏") },
+                secondaryLabel = { Text("对话框默认铺满手表屏幕") },
+            )
+        }
         item(key = "data-label") { SettingsSectionLabel("同步与数据") }
         item(key = "packet-tool") {
             SettingsActionRow(

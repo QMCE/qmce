@@ -326,7 +326,6 @@ fun ChatDetailScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         Column(modifier = Modifier.fillMaxSize()) {
             ChatHeader(
-                title = name.ifEmpty { peerName },
                 onSearch = { showMessageSearch = true },
             )
             androidx.wear.compose.foundation.pager.HorizontalPager(
@@ -630,26 +629,20 @@ private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimeline
 }
 
 @Composable
-private fun ChatHeader(title: String, onSearch: () -> Unit) {
+private fun ChatHeader(onSearch: () -> Unit) {
     Box(
         modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = title,
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
+        // 没做完 藏起来
+        /*
         IconButton(
             onClick = onSearch,
             modifier = Modifier.align(Alignment.CenterEnd).size(28.dp),
         ) {
             Icon(Icons.Default.Search, contentDescription = "搜索消息", modifier = Modifier.size(16.dp))
         }
+         */
     }
 }
 

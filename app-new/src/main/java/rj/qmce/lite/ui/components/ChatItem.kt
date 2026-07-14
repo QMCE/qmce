@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,61 +54,52 @@ fun ChatItem(
 
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = scheme.surfaceContainerHigh,
             contentColor = scheme.onSurface,
+            secondaryContentColor = scheme.onSurfaceVariant,
         ),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
+        icon = {
             AsyncImage(
                 model = avatarModel,
                 contentDescription = null,
                 modifier = Modifier
-                    .size(32.dp)
+                    .size(ButtonDefaults.ExtraLargeIconSize)
                     .clip(CircleShape)
-                    .background(scheme.surfaceContainerHigh, CircleShape),
-                contentScale = ContentScale.Crop
+                    .background(scheme.surfaceContainer, CircleShape),
+                contentScale = ContentScale.Crop,
             )
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.titleSmall.copy(
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp
-                        ),
-                        color = scheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (timeStr.isNotEmpty()) {
-                        Text(
-                            text = timeStr,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = scheme.outline,
-                            fontSize = 9.sp,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(1.dp))
+        },
+        secondaryLabel = {
+            Text(
+                text = preview,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = name,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (timeStr.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = preview,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = scheme.onSurfaceVariant,
+                    text = timeStr,
+                    color = scheme.outline,
+                    style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

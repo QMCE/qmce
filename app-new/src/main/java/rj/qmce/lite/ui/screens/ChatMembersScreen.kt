@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +36,8 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
@@ -76,26 +81,20 @@ fun ChatMembersScreen(
             ) {
                 Button(
                     onClick = onBack,
-                    modifier = Modifier.size(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) { Text("‹", fontSize = 24.sp) }
+                    modifier = Modifier.size(40.dp),
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                }
                 Text(
                     text = "群成员${members.takeIf { it.isNotEmpty() }?.let { " (${it.size})" } ?: ""}",
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                Button(
+                IconButton(
                     onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
-                    modifier = Modifier.size(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) { Text("↻", fontSize = 18.sp) }
+                    modifier = Modifier.size(40.dp),
+                ) { Icon(Icons.Default.Refresh, contentDescription = "刷新群成员") }
             }
         }
         item(key = "members-search") {
@@ -157,13 +156,10 @@ private fun GroupMemberRow(member: GroupMemberRepository.Member) {
             containerColor = scheme.surfaceContainerHigh,
             contentColor = scheme.onSurface,
         ),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+        icon = {
             androidx.compose.foundation.layout.Box(
-                modifier = Modifier.size(30.dp).clip(CircleShape).background(scheme.surfaceContainer),
+                modifier = Modifier.size(ButtonDefaults.LargeIconSize).clip(CircleShape).background(scheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(member.displayName.firstOrNull()?.toString() ?: "?", fontSize = 12.sp, color = scheme.primary)
@@ -171,16 +167,9 @@ private fun GroupMemberRow(member: GroupMemberRepository.Member) {
                     AsyncImage(model, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
                 }
             }
-            Spacer(Modifier.width(8.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(member.displayName, fontSize = 11.sp, maxLines = 1)
-                Text(
-                    text = member.uin.takeIf { it > 0L }?.toString() ?: member.uid,
-                    fontSize = 9.sp,
-                    color = scheme.outline,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
+        },
+        secondaryLabel = {
+            Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid, maxLines = 1)
+        },
+    ) { Text(member.displayName, maxLines = 1) }
 }

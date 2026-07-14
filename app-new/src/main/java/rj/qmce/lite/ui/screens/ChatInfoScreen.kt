@@ -12,6 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +37,7 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
@@ -125,13 +129,18 @@ fun ChatInfoScreen(
                     colors = ButtonDefaults.buttonColors(
                         containerColor = scheme.primaryContainer,
                         contentColor = scheme.onPrimaryContainer,
+                        secondaryContentColor = scheme.onPrimaryContainer,
                     ),
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("群成员", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        Text("查看并搜索群成员", fontSize = 9.sp, color = scheme.onPrimaryContainer)
-                    }
-                }
+                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Group,
+                            contentDescription = null,
+                            modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                        )
+                    },
+                    secondaryLabel = { Text("查看并搜索群成员") },
+                ) { Text("群成员") }
             }
         }
         item(key = "chat-info-settings") {
@@ -143,13 +152,18 @@ fun ChatInfoScreen(
                 colors = ButtonDefaults.buttonColors(
                     containerColor = scheme.surfaceContainerHigh,
                     contentColor = scheme.onSurface,
+                    secondaryContentColor = scheme.onSurfaceVariant,
                 ),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (isGroup) "群聊设置" else "好友设置", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    Text("置顶会话和消息提醒", fontSize = 9.sp, color = scheme.onSurfaceVariant)
-                }
-            }
+                contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                    )
+                },
+                secondaryLabel = { Text("置顶会话和消息提醒") },
+            ) { Text(if (isGroup) "群聊设置" else "好友设置") }
         }
     }
 }

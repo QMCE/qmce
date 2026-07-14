@@ -24,6 +24,7 @@ import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import android.util.Log
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.wear.compose.material3.curvedText
 import androidx.wear.compose.material3.TimeTextDefaults
 import androidx.wear.compose.material3.timeTextCurvedText
@@ -73,6 +74,7 @@ class MainActivity : FragmentActivity() {
         }
     }
 }
+lateinit var settingsVm: SettingsViewModel
 
 @Composable
 private fun WearApp() {
@@ -82,8 +84,9 @@ private fun WearApp() {
     var ready by remember { mutableStateOf(false) }
     var runtime by remember { mutableStateOf<mqq.app.AppRuntime?>(null) }
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
-    val settingsVm: SettingsViewModel = viewModel()
+    settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
+
     val logoutReason by QmceApplication.logoutReason.collectAsState()
 
     // OnlineStatus state

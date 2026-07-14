@@ -16,6 +16,7 @@
 
 package androidx.wear.compose.material3
 
+import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.SnapSpec
@@ -24,6 +25,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -94,6 +96,9 @@ public fun Dialog(
     val backgroundAnimationSpec = MaterialTheme.motionScheme.defaultEffectsSpec<Float>().faster(50f)
 
     val isReduceMotionEnabled = LocalReduceMotion.current
+    val fullscreen = LocalView.current.context.applicationContext
+        .getSharedPreferences("qmce_settings", android.content.Context.MODE_PRIVATE)
+        .getBoolean("fullscreen_dialogs", true)
 
     val screenWidthPx =
         with(LocalDensity.current) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
@@ -127,21 +132,42 @@ public fun Dialog(
     if (shouldShow) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = onDismissRequest,
-            properties = properties,
+            properties = if (fullscreen) {
+                DialogProperties(
+                    dismissOnBackPress = properties.dismissOnBackPress,
+                    dismissOnClickOutside = properties.dismissOnClickOutside,
+                    securePolicy = properties.securePolicy,
+                    usePlatformDefaultWidth = false,
+                )
+            } else {
+                properties
+            },
         ) {
             // Disable System dialog animations
             val view = LocalView.current
             val dialogWindowProvider = view.parent as DialogWindowProvider
-            dialogWindowProvider.window.setWindowAnimations(android.R.style.Animation)
-            dialogWindowProvider.window.setDimAmount(0f)
+            dialogWindowProvider.window.apply {
+                setWindowAnimations(android.R.style.Animation)
+                setDimAmount(0f)
+                if (fullscreen) {
+                    setLayout(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                    )
+                }
+            }
 
             val contentAlpha by animateContentAlpha(transition)
             val scale by animateDialogScale(transition)
 
             SwipeToDismissBox(
                 state = swipeToDismissBoxState,
-                modifier =
-                    modifier.graphicsLayer {
+                modifier = if (fullscreen) {
+                    Modifier.fillMaxSize().then(modifier)
+                } else {
+                    modifier
+                }
+                    .graphicsLayer {
                         alpha = contentAlpha
                         scaleX = scale
                         scaleY = scale

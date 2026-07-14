@@ -11,6 +11,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val showTimeText: Boolean = true,
         val showPageIndicator: Boolean = true,
         val showOnlineStatus: Boolean = false,
+        val fullscreenDialogs: Boolean = true,
     )
 
     private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Application.MODE_PRIVATE)
@@ -19,6 +20,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             showTimeText = preferences.getBoolean(KEY_SHOW_TIME_TEXT, true),
             showPageIndicator = preferences.getBoolean(KEY_SHOW_PAGE_INDICATOR, true),
             showOnlineStatus = preferences.getBoolean(KEY_SHOW_ONLINE_STATUS, false),
+            fullscreenDialogs = preferences.getBoolean(KEY_FULLSCREEN_DIALOGS, true),
         )
     )
     val settings: StateFlow<UiSettings> = _settings.asStateFlow()
@@ -35,6 +37,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         update { it.copy(showOnlineStatus = show) }
     }
 
+    fun setFullscreenDialogs(fullscreen: Boolean) {
+        update { it.copy(fullscreenDialogs = fullscreen) }
+    }
+
     private fun update(transform: (UiSettings) -> UiSettings) {
         val updated = transform(_settings.value)
         _settings.value = updated
@@ -42,6 +48,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .putBoolean(KEY_SHOW_TIME_TEXT, updated.showTimeText)
             .putBoolean(KEY_SHOW_PAGE_INDICATOR, updated.showPageIndicator)
             .putBoolean(KEY_SHOW_ONLINE_STATUS, updated.showOnlineStatus)
+            .putBoolean(KEY_FULLSCREEN_DIALOGS, updated.fullscreenDialogs)
             .apply()
     }
 
@@ -50,5 +57,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val KEY_SHOW_TIME_TEXT = "show_time_text"
         const val KEY_SHOW_PAGE_INDICATOR = "show_page_indicator"
         const val KEY_SHOW_ONLINE_STATUS = "show_online_status"
+        const val KEY_FULLSCREEN_DIALOGS = "fullscreen_dialogs"
     }
 }

@@ -3,6 +3,10 @@ package rj.qmce.lite.ui.screens
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,6 +21,7 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
@@ -53,14 +58,16 @@ fun ChatSettingsScreen(
             )
         }
         item(key = "settings-back") {
-            Button(
+                Button(
                 onClick = onBack,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-            ) { Text("返回聊天", fontSize = 11.sp) }
+                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    icon = { Icon(Icons.Default.ArrowBack, contentDescription = "返回") },
+                ) { Text("返回聊天") }
         }
         item(key = "settings-top") {
             Button(
@@ -71,9 +78,10 @@ fun ChatSettingsScreen(
                     containerColor = if (state.pinned) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = if (state.pinned) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                 ),
-            ) {
-                Text(if (state.pinned) "已置顶会话" else "置顶会话", fontSize = 12.sp)
-            }
+                contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                icon = { Icon(Icons.Default.PushPin, contentDescription = null) },
+                secondaryLabel = { Text("保持会话显示在顶部") },
+            ) { Text(if (state.pinned) "已置顶会话" else "置顶会话") }
         }
         item(key = "settings-muted") {
             Button(
@@ -84,9 +92,10 @@ fun ChatSettingsScreen(
                     containerColor = if (state.muted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = if (state.muted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                 ),
-            ) {
-                Text(if (state.muted) "已开启消息免打扰" else "消息免打扰", fontSize = 12.sp)
-            }
+                contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                icon = { Icon(Icons.Default.NotificationsOff, contentDescription = null) },
+                secondaryLabel = { Text("控制这个会话的通知推送") },
+            ) { Text(if (state.muted) "已开启消息免打扰" else "消息免打扰") }
         }
         if (state.busy) {
             item(key = "settings-busy") { CircularProgressIndicator(Modifier.padding(8.dp).fillMaxWidth(), strokeWidth = 2.dp) }

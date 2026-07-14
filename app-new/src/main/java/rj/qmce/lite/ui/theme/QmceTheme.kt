@@ -16,13 +16,12 @@ fun QmceTheme(content: @Composable () -> Unit) {
             density = deviceDensity.density * 1.5f,
             fontScale = deviceDensity.fontScale,
         ),
+        LocalContentColor provides MaterialTheme.colorScheme.onSurface,
     ) {
         MaterialTheme(
             colorScheme = ColorScheme(),
         ) {
-            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-                content()
-            }
+            content()
         }
     }
 }
