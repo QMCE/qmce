@@ -36,7 +36,14 @@ fun QmceTheme(
     }
     MaterialTheme {
         if (autoScale) {
-            content()
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = deviceDensity.density * 1.0f,
+                    fontScale = deviceDensity.fontScale,
+                ),
+            ) {
+                content()
+            }
         } else {
             val scale = manualScale.coerceIn(MIN_SCALE, MAX_SCALE)
             CompositionLocalProvider(

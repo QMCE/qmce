@@ -162,11 +162,13 @@ class ContactsViewModel : ViewModel() {
         nickMap: Map<String, String>,
         recentByUid: Map<String?, com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo>,
         uinsByUid: Map<String, Long>,
-    ): List<UiCategory> = list.map { category ->
-        UiCategory(
-            id = category.categoryId,
-            name = category.categroyName.ifEmpty { "我的好友" },
-            buddies = category.buddyUids.map { uid ->
+    ): List<UiCategory> {
+        return list.mapNotNull { category ->
+            val buddies = category.buddyUids
+                .asSequence()
+                .filter { uid -> uid.isNotBlank() }
+                .distinct()
+                .map { uid ->
                 val uin = uinsByUid[uid] ?: 0L
                 val recent = recentByUid[uid]
                 val fallbackUrls = if (uin > 0L) listOf(
@@ -184,7 +186,15 @@ class ContactsViewModel : ViewModel() {
                     categoryId = category.categoryId,
                     categoryName = category.categroyName.orEmpty(),
                 )
-            },
-        )
-    }.sortedBy { it.id }
+                }
+                .toList()
+            buddies.takeIf { it.isNotEmpty() }?.let {
+                UiCategory(
+                    id = category.categoryId,
+                    name = category.categroyName.ifEmpty { "我的好友" },
+                    buddies = it,
+                )
+            }
+        }.sortedBy { it.id }
+    }
 }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -51,11 +52,15 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -102,45 +107,21 @@ fun LocalVideoPickerScreen(
     }
     var selected by remember { mutableStateOf<Uri?>(null) }
     val scheme = MaterialTheme.colorScheme
+    val scaffoldState = rememberLazyListState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onDismiss,
-                modifier = Modifier.touchTargetAwareSize(
-                    androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize,
-                ),
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-            }
-            Spacer(Modifier.width(4.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("选择视频", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    if (selected == null) "选择一个视频" else "已选择视频",
-                    color = scheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Button(
+    BackHandler(onBack = onDismiss)
+    ScreenScaffold(
+        scrollState = scaffoldState,
+        scrollIndicator = null,
+        edgeButton = {
+            EdgeButton(
                 onClick = { selected?.let(onConfirm) },
                 enabled = selected != null,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primaryContainer,
-                    contentColor = scheme.onPrimaryContainer,
-                ),
+                buttonSize = EdgeButtonSize.Small,
             ) { Text("发送") }
-        }
-
-        Spacer(Modifier.height(6.dp))
+        },
+        edgeButtonSpacing = 2.5.dp,
+    ) { contentPadding ->
         when (val state = galleryState) {
             VideoGalleryLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
@@ -157,7 +138,7 @@ fun LocalVideoPickerScreen(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 8.dp),
+                        contentPadding = contentPadding,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {

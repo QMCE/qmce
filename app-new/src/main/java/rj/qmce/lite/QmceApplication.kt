@@ -11,10 +11,10 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.util.Log
 import androidx.multidex.MultiDex
-import androidx.multidex.MultiDexApplication
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.GifDecoder
@@ -26,17 +26,17 @@ import com.tencent.qqnt.watch.app.WatchAppInterface
 import com.tencent.qqnt.watch.app.WatchApplicationDelegate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moye.signature.KillerApplication
 import moye.wearqq.compat.signing.PackageSignatureProvider
 import mqq.app.AppRuntime
 import mqq.app.Constants
 import mqq.app.IAccountCallback
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
+import rj.qmce.lite.fix.LegacyKiller
 import rj.qmce.lite.fix.SignatureProbe
 import java.lang.reflect.Method
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 
 @Suppress("SpellCheckingInspection")
@@ -121,7 +121,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 runCatching {
                     (context as? android.app.Activity)?.finishAndRemoveTask()
                 }
-                android.os.Process.killProcess(android.os.Process.myPid())
+                Process.killProcess(Process.myPid())
             }, 250L)
             return true
         }
@@ -208,7 +208,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
     override fun attachBaseContext(base: Context) {
         Log.d("QMCE", "attachBaseContext start")
         Flag.USE_OLD_SIGNKILL = false          // disable old signature spoofing, use PackageSignatureProvider
-        KillerApplication.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
+        LegacyKiller.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
         PackageSignatureProvider.install()                 // new CREATOR hook for IPC signature
         if (isMainProcess()) {
             setMainProcessName(BuildConfig.APPLICATION_ID)

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -55,7 +57,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.EdgeButton
@@ -63,8 +64,11 @@ import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.chat.DraftStore
 import rj.qmce.lite.data.chat.GroupMemberRepository
@@ -313,7 +317,29 @@ fun ChatInputScreen(
         return
     }
 
+    if (showAtPicker) {
+        AtMemberPickerScreen(
+            query = atQuery,
+            members = groupMembers,
+            errorMessage = vm.groupMembersError.value,
+            onQueryChange = { atQuery = it },
+            onSelect = { member ->
+                addAtMention(member)
+                if (member.uid.isNotBlank()) {
+                    showAtPicker = false
+                    atQuery = ""
+                }
+            },
+            onBack = {
+                showAtPicker = false
+                atQuery = ""
+            },
+        )
+        return
+    }
+
     val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
     val canSend = textFieldValue.text
         .replace(IMG_MARKER.toString(), "")
         .replace(AT_MARKER.toString(), "")
@@ -388,6 +414,13 @@ fun ChatInputScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(horizontal = 14.dp, vertical = 2.dp)
                             .background(Color(0xFF4F378A), RoundedCornerShape(8.dp)),
                         verticalAlignment = Alignment.CenterVertically,
@@ -407,7 +440,15 @@ fun ChatInputScreen(
                         text = notice,
                         color = scheme.error,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 2.dp),
                     )
                 }
             }
@@ -435,6 +476,13 @@ fun ChatInputScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
                         .padding(horizontal = 10.dp)
                         .defaultMinSize(minHeight = 100.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
@@ -465,7 +513,9 @@ fun ChatInputScreen(
                     onClick = { showToolPanel = true },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 10.dp),
+                    transformation = SurfaceTransformation(transformationSpec),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = scheme.surfaceContainerHigh,
                         contentColor = scheme.onSurface,
@@ -483,83 +533,6 @@ fun ChatInputScreen(
             }
         }
     }
-
-
-    if (showAtPicker) {
-        val normalizedQuery = atQuery.trim()
-        val visibleMembers = groupMembers.filter { member ->
-            normalizedQuery.isBlank() || listOf(
-                member.displayName,
-                member.nick,
-                member.cardName,
-                member.uid,
-                member.uin.toString(),
-            ).any { it.contains(normalizedQuery, ignoreCase = true) }
-        }
-        AlertDialog(
-            visible = true,
-            onDismissRequest = {
-                showAtPicker = false
-                atQuery = ""
-            },
-            title = { Text("@成员") },
-            confirmButton = {},
-            dismissButton = {},
-            content = {
-                item {
-                    BasicTextField(
-                        value = atQuery,
-                        onValueChange = { atQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                            .background(scheme.surfaceContainerHigh, RoundedCornerShape(16.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
-                        cursorBrush = SolidColor(scheme.primary),
-                        decorationBox = { inner ->
-                            if (atQuery.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
-                            inner()
-                        },
-                    )
-                }
-                if (groupMembers.isEmpty()) {
-                    item {
-                        Text(
-                            text = vm.groupMembersError.value ?: "暂无可用群成员",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.outline,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                } else if (visibleMembers.isEmpty()) {
-                    item { Text("没有匹配成员", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp)) }
-                } else {
-                    visibleMembers.take(40).forEach { member ->
-                        item {
-                            Button(
-                                onClick = {
-                                    addAtMention(member)
-                                    if (member.uid.isNotBlank()) {
-                                        showAtPicker = false
-                                        atQuery = ""
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = scheme.surfaceContainerHigh,
-                                    contentColor = scheme.onSurface,
-                                ),
-                                secondaryLabel = {
-                                    Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid)
-                                },
-                            ) { Text(member.displayName, maxLines = 1) }
-                        }
-                    }
-                }
-            },
-        )
-    }
 }
 
 @Composable
@@ -575,32 +548,34 @@ private fun ChatInputToolsScreen(
     onRecordVoice: () -> Unit,
 ) {
     var showVideoActions by remember { mutableStateOf(false) }
-    val scheme = MaterialTheme.colorScheme
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack) { Text("返回") }
-            Spacer(Modifier.width(8.dp))
-            Text("更多功能", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        }
-
+    BackHandler(onBack = onBack)
+    ScreenScaffold(scrollState = listState) { contentPadding ->
         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
         ) {
+            item(key = "tools-title") {
+                Text(
+                    "更多功能",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                )
+            }
             item(key = "image") {
                 ChatInputToolButton(
                     icon = Icons.Default.Image,
                     label = "图片",
                     description = "从本地图片库选择",
                     onClick = onSelectImage,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             item(key = "photo") {
@@ -609,6 +584,8 @@ private fun ChatInputToolsScreen(
                     label = "拍照",
                     description = "拍摄后插入到消息中",
                     onClick = onCapturePhoto,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             item(key = "video") {
@@ -617,6 +594,8 @@ private fun ChatInputToolsScreen(
                     label = "视频",
                     description = "从本地选择或直接拍摄",
                     onClick = { showVideoActions = !showVideoActions },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             if (showVideoActions) {
@@ -626,6 +605,8 @@ private fun ChatInputToolsScreen(
                         label = "选择本地视频",
                         description = "浏览系统媒体库",
                         onClick = onSelectVideo,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
                     )
                 }
                 item(key = "video-capture") {
@@ -634,6 +615,8 @@ private fun ChatInputToolsScreen(
                         label = "拍摄视频",
                         description = "使用系统相机拍摄",
                         onClick = onCaptureVideo,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
                     )
                 }
             }
@@ -643,6 +626,8 @@ private fun ChatInputToolsScreen(
                     label = "文件",
                     description = "从设备中选择文件",
                     onClick = onSelectFile,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             item(key = "voice") {
@@ -651,6 +636,8 @@ private fun ChatInputToolsScreen(
                     label = "语音",
                     description = "按住录制语音消息",
                     onClick = onRecordVoice,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             if (isGroupChat) {
@@ -660,6 +647,8 @@ private fun ChatInputToolsScreen(
                         label = "@成员",
                         description = "从群成员中选择",
                         onClick = onSelectMember,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
                     )
                 }
             }
@@ -673,13 +662,16 @@ private fun ChatInputToolButton(
     label: String,
     description: String,
     onClick: () -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
 ) {
     val scheme = MaterialTheme.colorScheme
     Button(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
+        transformation = transformation,
         colors = ButtonDefaults.buttonColors(
             containerColor = scheme.surfaceContainerHigh,
             contentColor = scheme.onSurface,

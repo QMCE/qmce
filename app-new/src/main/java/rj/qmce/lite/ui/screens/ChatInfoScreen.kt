@@ -32,14 +32,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
@@ -67,103 +71,111 @@ fun ChatInfoScreen(
         }
     }
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        scalingParams = ScalingLazyColumnDefaults.scalingParams(
-            viewportVerticalOffsetResolver = { 0 },
-        ),
-    ) {
-        item(key = "chat-info-header") {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) {
-                Column(
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "chat-info-header") {
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        .transformedHeight(this, transformationSpec)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    transformation = SurfaceTransformation(transformationSpec),
                 ) {
-                    ChatInfoAvatar(
-                        chatType = chatType,
-                        peerUin = peerUin,
-                        peerName = displayName,
-                        avatarPath = avatarPath,
-                        avatarUrl = avatarUrl,
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    Text(
-                        text = displayName,
-                        style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = if (isGroup) "群号：${peerUin.takeIf { it > 0L } ?: "未知"}"
-                        else "QQ：${peerUin.takeIf { it > 0L } ?: "未知"}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                    if (isGroup && members.isNotEmpty()) {
-                        Text(
-                            text = "${members.size} 名成员",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.outline,
-                            modifier = Modifier.padding(top = 2.dp),
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        ChatInfoAvatar(
+                            chatType = chatType,
+                            peerUin = peerUin,
+                            peerName = displayName,
+                            avatarPath = avatarPath,
+                            avatarUrl = avatarUrl,
                         )
+                        Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = if (isGroup) "群号：${peerUin.takeIf { it > 0L } ?: "未知"}"
+                            else "QQ：${peerUin.takeIf { it > 0L } ?: "未知"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (isGroup && members.isNotEmpty()) {
+                            Text(
+                                text = "${members.size} 名成员",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline,
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
                     }
                 }
             }
-        }
-        if (isGroup) {
-            item(key = "chat-info-members") {
+            if (isGroup) {
+                item(key = "chat-info-members") {
+                    Button(
+                        onClick = onOpenMembers,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = scheme.primaryContainer,
+                            contentColor = scheme.onPrimaryContainer,
+                            secondaryContentColor = scheme.onPrimaryContainer,
+                        ),
+                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.Group,
+                                contentDescription = null,
+                                modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                            )
+                        },
+                        secondaryLabel = { Text("查看并搜索群成员") },
+                    ) { Text("群成员") }
+                }
+            }
+            item(key = "chat-info-settings") {
                 Button(
-                    onClick = onOpenMembers,
+                    onClick = onOpenSettings,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = scheme.primaryContainer,
-                        contentColor = scheme.onPrimaryContainer,
-                        secondaryContentColor = scheme.onPrimaryContainer,
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                        secondaryContentColor = scheme.onSurfaceVariant,
                     ),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = {
                         Icon(
-                            imageVector = Icons.Default.Group,
+                            imageVector = Icons.Default.Settings,
                             contentDescription = null,
                             modifier = Modifier.size(ButtonDefaults.LargeIconSize),
                         )
                     },
-                    secondaryLabel = { Text("查看并搜索群成员") },
-                ) { Text("群成员") }
+                    secondaryLabel = { Text("置顶会话和消息提醒") },
+                ) { Text(if (isGroup) "群聊设置" else "好友设置") }
             }
-        }
-        item(key = "chat-info-settings") {
-            Button(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.surfaceContainerHigh,
-                    contentColor = scheme.onSurface,
-                    secondaryContentColor = scheme.onSurfaceVariant,
-                ),
-                contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                icon = {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.LargeIconSize),
-                    )
-                },
-                secondaryLabel = { Text("置顶会话和消息提醒") },
-            ) { Text(if (isGroup) "群聊设置" else "好友设置") }
         }
     }
 }

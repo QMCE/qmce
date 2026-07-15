@@ -3,6 +3,12 @@
 package rj.qmce.lite.ui
 
 import android.os.Bundle
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.foundation.Image
@@ -36,6 +42,7 @@ import rj.qmce.lite.R
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.OnlineStatus
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.ui.screens.AboutScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
 import rj.qmce.lite.ui.screens.ChatInfoScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
@@ -43,8 +50,14 @@ import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
+import rj.qmce.lite.ui.screens.LogoutConfirmationScreen
 import rj.qmce.lite.ui.screens.MainScreen
+import rj.qmce.lite.ui.screens.MyClearChatCacheScreen
 import rj.qmce.lite.ui.screens.PacketToolScreen
+import rj.qmce.lite.ui.screens.LocalImagePickerScreen
+import rj.qmce.lite.ui.screens.QZoneCommentScreen
+import rj.qmce.lite.ui.screens.QZoneComposerScreen
+import rj.qmce.lite.ui.screens.SettingsClearChatCacheScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
 import rj.qmce.lite.ui.screens.VoiceRecordScreen
 import rj.qmce.lite.ui.theme.QmceTheme
@@ -80,6 +93,10 @@ private fun WearApp() {
     var ready by remember { mutableStateOf(false) }
     var runtime by remember { mutableStateOf<mqq.app.AppRuntime?>(null) }
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
+    var qZoneDraft by remember { mutableStateOf("") }
+    var qZoneUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var qZoneCommentTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
+    var qZoneCommentDraft by remember { mutableStateOf("") }
     settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
 
@@ -196,6 +213,13 @@ private fun WearApp() {
             val qZoneVm: QZoneViewModel = viewModel()
             val myVm: MyViewModel = viewModel()
             val packetToolVm: PacketToolViewModel = viewModel()
+            val imagePermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestMultiplePermissions(),
+            ) {
+                if (hasQZoneGalleryAccess(context)) {
+                    navController.navigate("qzoneImagePicker") { launchSingleTop = true }
+                }
+            }
             SwipeDismissableNavHost(
                 navController = navController,
                 startDestination = "main"
@@ -213,6 +237,23 @@ private fun WearApp() {
                         showPageIndicator = settings.showPageIndicator,
                         onOpenSettings = {
                             navController.navigate("settings") { launchSingleTop = true }
+                        },
+                        onOpenMyClearCache = {
+                            navController.navigate("myClearChatCache") { launchSingleTop = true }
+                        },
+                        onOpenLogoutConfirmation = {
+                            navController.navigate("logoutConfirmation") { launchSingleTop = true }
+                        },
+                        onOpenAbout = {
+                            navController.navigate("about") { launchSingleTop = true }
+                        },
+                        onOpenQZoneComposer = {
+                            navController.navigate("qzoneComposer") { launchSingleTop = true }
+                        },
+                        onOpenQZoneComment = { feed ->
+                            qZoneCommentTarget = feed
+                            qZoneCommentDraft = ""
+                            navController.navigate("qzoneComment") { launchSingleTop = true }
                         },
                         onLogout = {
                             (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
@@ -347,7 +388,94 @@ private fun WearApp() {
                         onOpenPacketTool = {
                             navController.navigate("packetToolSettings") { launchSingleTop = true }
                         },
+                        onOpenClearCache = {
+                            navController.navigate("settingsClearChatCache") { launchSingleTop = true }
+                        },
                     )
+                }
+                composable("qzoneComposer") {
+                    QZoneComposerScreen(
+                        draft = qZoneDraft,
+                        selectedUris = qZoneUris,
+                        onDraftChange = { qZoneDraft = it },
+                        onPickMedia = {
+                            if (hasQZoneGalleryAccess(context)) {
+                                navController.navigate("qzoneImagePicker") { launchSingleTop = true }
+                            } else {
+                                imagePermissionLauncher.launch(qZoneGalleryPermissions())
+                            }
+                        },
+                        onPublish = {
+                            qZoneVm.publishImages(context, qZoneDraft, qZoneUris)
+                            qZoneDraft = ""
+                            qZoneUris = emptyList()
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("qzoneImagePicker") {
+                    LocalImagePickerScreen(
+                        existingUris = qZoneUris.mapTo(linkedSetOf()) { it.toString() },
+                        onDismiss = { navController.popBackStack() },
+                        onConfirm = { uris ->
+                            qZoneUris = (qZoneUris + uris).distinctBy(Uri::toString)
+                            navController.popBackStack()
+                        },
+                    )
+                }
+                composable("qzoneComment") {
+                    qZoneCommentTarget?.let { feed ->
+                        QZoneCommentScreen(
+                            feed = feed,
+                            draft = qZoneCommentDraft,
+                            onDraftChange = { qZoneCommentDraft = it },
+                            onSend = {
+                                qZoneVm.comment(feed.feedId, qZoneCommentDraft)
+                                qZoneCommentDraft = ""
+                                qZoneCommentTarget = null
+                                navController.popBackStack()
+                            },
+                            onBack = {
+                                qZoneCommentDraft = ""
+                                qZoneCommentTarget = null
+                                navController.popBackStack()
+                            },
+                        )
+                    }
+                }
+                composable("myClearChatCache") {
+                    MyClearChatCacheScreen(
+                        onConfirm = {
+                            myVm.clearChatCache()
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("settingsClearChatCache") {
+                    SettingsClearChatCacheScreen(
+                        onConfirm = {
+                            myVm.clearChatCache()
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("logoutConfirmation") {
+                    LogoutConfirmationScreen(
+                        onConfirm = {
+                            (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
+                                ?: LoginPrefs.clear(context)
+                            selectedContact = null
+                            isLoggedIn = false
+                            loggedUin = ""
+                        },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("about") {
+                    AboutScreen(onBack = { navController.popBackStack() })
                 }
                 composable("packetToolSettings") {
                     PacketToolScreen(
@@ -390,4 +518,34 @@ private fun SplashScreen() {
             )
         }
     }
+}
+
+private fun qZoneGalleryPermissions(): Array<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+    )
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+private fun hasQZoneGalleryAccess(context: android.content.Context): Boolean = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_MEDIA_IMAGES,
+        ) == PackageManager.PERMISSION_GRANTED || androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_MEDIA_IMAGES,
+        ) == PackageManager.PERMISSION_GRANTED
+    else -> androidx.core.content.ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+    ) == PackageManager.PERMISSION_GRANTED
 }

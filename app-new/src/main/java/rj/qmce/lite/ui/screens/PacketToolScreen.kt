@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
@@ -21,19 +20,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.RadioButton
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.packet.PacketMode
 import rj.qmce.lite.data.packet.PacketPayloadFormat
 import rj.qmce.lite.data.packet.PacketTarget
@@ -54,34 +60,40 @@ fun PacketToolScreen(
         )
     }
     val scheme = MaterialTheme.colorScheme
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
 
-    LazyColumn(
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+    TransformingLazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
+        contentPadding = contentPadding,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-                Text(
-                    text = "发包工具",
-                    color = scheme.onBackground,
-                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.weight(0.35f))
-            }
+            Text(
+                text = "发包工具",
+                color = scheme.onBackground,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+            )
         }
         item {
             ModeRow(
                 selected = state.mode,
                 onSelected = vm::setMode,
+                modifier = Modifier
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
+                        }
+                    },
             )
         }
         if (state.mode == PacketMode.Ark) {
@@ -94,7 +106,15 @@ fun PacketToolScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
                 )
             }
         } else {
@@ -105,12 +125,28 @@ fun PacketToolScreen(
                     label = if (state.mode == PacketMode.Oidb) "服务命令" else "PB 命令",
                     hint = if (state.mode == PacketMode.Oidb) "例如 OidbSvcTrpcTcp.0x..." else "例如 MessageSvc.PbSendMsg",
                     singleLine = true,
+                    modifier = Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
                 )
             }
             if (state.mode == PacketMode.Oidb) {
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            },
                         horizontalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         PacketInput(
@@ -138,6 +174,14 @@ fun PacketToolScreen(
                         label = "客户端版本",
                         hint = "可留空",
                         singleLine = true,
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            },
                     )
                 }
             } else {
@@ -145,6 +189,14 @@ fun PacketToolScreen(
                     FormatRow(
                         selected = state.payloadFormat,
                         onSelected = vm::setPayloadFormat,
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            },
                     )
                 }
             }
@@ -156,20 +208,31 @@ fun PacketToolScreen(
                 label = if (state.mode == PacketMode.Ark) "Ark JSON" else "Payload",
                 hint = payloadHint(state.mode, state.payloadFormat),
                 singleLine = false,
-                modifier = Modifier.height(if (state.mode == PacketMode.Ark) 132.dp else 116.dp),
+                modifier = Modifier
+                    .height(if (state.mode == PacketMode.Ark) 132.dp else 116.dp)
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
+                        }
+                    },
             )
         }
         item {
             Button(
                 onClick = vm::send,
                 enabled = !state.sending,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .transformedHeight(this, transformationSpec),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = scheme.primaryContainer,
                     contentColor = scheme.onPrimaryContainer,
                     disabledContainerColor = scheme.surfaceContainer,
                     disabledContentColor = scheme.outline,
                 ),
+                transformation = SurfaceTransformation(transformationSpec),
             ) {
                 Text(if (state.sending) "发送中…" else "发送")
             }
@@ -181,17 +244,31 @@ fun PacketToolScreen(
                     color = if (state.status.contains("失败") || state.status.contains("不可用")) scheme.error else scheme.outline,
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(bottom = 8.dp),
                 )
             }
         }
     }
+    }
 }
 
 @Composable
-private fun ModeRow(selected: PacketMode, onSelected: (PacketMode) -> Unit) {
+private fun ModeRow(
+    selected: PacketMode,
+    onSelected: (PacketMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         PacketChoice("PB", selected == PacketMode.Pb, { onSelected(PacketMode.Pb) }, Modifier.weight(1f))
@@ -201,9 +278,13 @@ private fun ModeRow(selected: PacketMode, onSelected: (PacketMode) -> Unit) {
 }
 
 @Composable
-private fun FormatRow(selected: PacketPayloadFormat, onSelected: (PacketPayloadFormat) -> Unit) {
+private fun FormatRow(
+    selected: PacketPayloadFormat,
+    onSelected: (PacketPayloadFormat) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         PacketChoice("字段 JSON", selected == PacketPayloadFormat.FieldJson, { onSelected(PacketPayloadFormat.FieldJson) }, Modifier.weight(1f))

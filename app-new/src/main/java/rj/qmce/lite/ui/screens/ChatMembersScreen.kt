@@ -21,14 +21,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
@@ -36,8 +37,12 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -66,65 +71,107 @@ fun ChatMembersScreen(
         vm.loadGroupMembers(groupCode)
     }
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        scalingParams = ScalingLazyColumnDefaults.scalingParams(
-            viewportVerticalOffsetResolver = { 0 },
-        ),
-    ) {
-        item(key = "members-title") {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = onBack,
-                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "members-title") {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                    Text(
+                        text = "群成员${members.takeIf { it.isNotEmpty() }?.let { " (${it.size})" } ?: ""}",
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    )
+                    IconButton(
+                        onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
+                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
+                    ) { Icon(Icons.Default.Refresh, contentDescription = "刷新群成员") }
                 }
-                Text(
-                    text = "群成员${members.takeIf { it.isNotEmpty() }?.let { " (${it.size})" } ?: ""}",
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+            }
+            item(key = "members-search") {
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner ->
+                        if (query.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        inner()
+                    },
                 )
-                IconButton(
-                    onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
-                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
-                ) { Icon(Icons.Default.Refresh, contentDescription = "刷新群成员") }
             }
-        }
-        item(key = "members-search") {
-            BasicTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                decorationBox = { inner ->
-                    if (query.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    inner()
-                },
-            )
-        }
-        if (loading && members.isEmpty()) {
-            item(key = "members-loading") { CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) }
-        } else if (error != null && members.isEmpty()) {
-            item(key = "members-error") {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "获取群成员失败", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                    Button(onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) }) { Text("重试") }
+            if (loading && members.isEmpty()) {
+                item(key = "members-loading") {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .transformedHeight(this, transformationSpec),
+                        strokeWidth = 2.dp,
+                    )
                 }
-            }
-        } else if (visibleMembers.isEmpty()) {
-            item(key = "members-empty") { Text("没有匹配成员", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
-        } else {
-            items(visibleMembers, key = { memberKey(it) }) { member ->
-                GroupMemberRow(member)
+            } else if (error != null && members.isEmpty()) {
+                item(key = "members-error") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(error ?: "获取群成员失败", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        Button(onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) }) { Text("重试") }
+                    }
+                }
+            } else if (visibleMembers.isEmpty()) {
+                item(key = "members-empty") {
+                    Text(
+                        "没有匹配成员",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                    )
+                }
+            } else {
+                items(visibleMembers, key = { memberKey(it) }) { member ->
+                    GroupMemberRow(
+                        member = member,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
         }
     }
@@ -134,7 +181,11 @@ private fun memberKey(member: GroupMemberRepository.Member): String =
     member.uid.ifBlank { "uin:${member.uin}" }
 
 @Composable
-private fun GroupMemberRow(member: GroupMemberRepository.Member) {
+private fun GroupMemberRow(
+    member: GroupMemberRepository.Member,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
+) {
     val scheme = MaterialTheme.colorScheme
     val local = member.avatarPath.removePrefix("file://")
         .takeIf { it.isNotBlank() }
@@ -145,7 +196,10 @@ private fun GroupMemberRow(member: GroupMemberRepository.Member) {
     }
     Button(
         onClick = {},
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        transformation = transformation,
         colors = ButtonDefaults.buttonColors(
             containerColor = scheme.surfaceContainerHigh,
             contentColor = scheme.onSurface,

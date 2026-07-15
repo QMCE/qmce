@@ -34,6 +34,11 @@ fun MainScreen(
     showTimeText: Boolean,
     showPageIndicator: Boolean,
     onOpenSettings: () -> Unit,
+    onOpenMyClearCache: () -> Unit,
+    onOpenLogoutConfirmation: () -> Unit,
+    onOpenAbout: () -> Unit,
+    onOpenQZoneComposer: () -> Unit,
+    onOpenQZoneComment: (rj.qmce.lite.viewmodel.QZoneViewModel.FeedItem) -> Unit,
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
     onOpenChatFromContacts: (String, String, String) -> Unit, // uid, uin, name
@@ -67,12 +72,18 @@ fun MainScreen(
                     vm = contactsVm,
                     onOpenChat = onOpenChatFromContacts,
                 )
-                2 -> QZoneScreen(vm = qZoneVm)
+                2 -> QZoneScreen(
+                    vm = qZoneVm,
+                    onOpenComposer = onOpenQZoneComposer,
+                    onOpenComment = onOpenQZoneComment,
+                )
                 3 -> MyScreen(
                     uin = uin,
                     chatListVm = chatListVm,
                     onOpenSettings = onOpenSettings,
-                    onLogout = onLogout,
+                    onOpenClearCache = onOpenMyClearCache,
+                    onOpenLogoutConfirmation = onOpenLogoutConfirmation,
+                    onOpenAbout = onOpenAbout,
                     vm = myVm,
                 )
             }

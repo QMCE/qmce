@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -54,11 +55,15 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
+import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
@@ -104,44 +109,21 @@ fun LocalImagePickerScreen(
     }
     val selected = remember { mutableStateListOf<String>() }
     val scheme = MaterialTheme.colorScheme
+    val scaffoldState = rememberLazyListState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onDismiss, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize)) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-            }
-            Spacer(Modifier.width(4.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("选择图片", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "已选 ${selected.size} 张",
-                    color = scheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            Button(
-                onClick = {
-                    onConfirm(selected.map(Uri::parse))
-                },
+    BackHandler(onBack = onDismiss)
+    ScreenScaffold(
+        scrollState = scaffoldState,
+        scrollIndicator = null,
+        edgeButton = {
+            EdgeButton(
+                onClick = { onConfirm(selected.map(Uri::parse)) },
                 enabled = selected.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primaryContainer,
-                    contentColor = scheme.onPrimaryContainer,
-                ),
-            ) {
-                Text("添加")
-            }
-        }
-
-        Spacer(Modifier.height(6.dp))
+                buttonSize = EdgeButtonSize.Small,
+            ) { Text("添加 ${selected.size}") }
+        },
+        edgeButtonSpacing = 2.5.dp,
+    ) { contentPadding ->
         when (val state = galleryState) {
             GalleryLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
@@ -158,7 +140,7 @@ fun LocalImagePickerScreen(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 8.dp),
+                        contentPadding = contentPadding,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {

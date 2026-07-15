@@ -76,7 +76,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
@@ -84,6 +83,7 @@ import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
@@ -191,6 +191,25 @@ fun ChatDetailScreen(
         }.takeLast(20).asReversed()
     }
     val searchScope = rememberCoroutineScope()
+
+    if (showMessageSearch) {
+        ChatMessageSearchScreen(
+            query = messageSearchQuery,
+            matches = messageSearchMatches,
+            onQueryChange = { messageSearchQuery = it },
+            onSelect = { target ->
+                showMessageSearch = false
+                val targetIndex = timelineItems.indexOfFirst { item ->
+                    (item as? ChatTimelineItem.Message)?.message?.stableKey == target.stableKey
+                }
+                if (targetIndex >= 0) {
+                    searchScope.launch { listState.animateScrollToItem(targetIndex) }
+                }
+            },
+            onBack = { showMessageSearch = false },
+        )
+        return
+    }
     val context = LocalContext.current
     var pendingCallMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     val startCall: (CallMode) -> Unit = { mode ->
@@ -365,11 +384,21 @@ fun ChatDetailScreen(
                                     maxLines = 1,
                                 )
                             }
-                            LazyColumn(
+                            ScreenScaffold(
+                                scrollState = listState,
                                 modifier = Modifier.fillMaxWidth().weight(1f),
-                                state = listState,
-                                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 52.dp),
-                            ) {
+                                contentPadding = PaddingValues(
+                                    start = 10.dp,
+                                    end = 10.dp,
+                                    top = 6.dp,
+                                    bottom = 52.dp,
+                                ),
+                            ) { contentPadding ->
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    state = listState,
+                                    contentPadding = contentPadding,
+                                ) {
                                 items(timelineItems, key = { item -> item.key }) { item ->
                                     when (item) {
                                         is ChatTimelineItem.DateDivider -> ChatDateDivider(item.label)
@@ -431,6 +460,7 @@ fun ChatDetailScreen(
                                         }
                                     }
                                 }
+                                }
                             }
                         }
                     }
@@ -466,23 +496,6 @@ fun ChatDetailScreen(
                     )
                 }
             }
-        }
-        if (showMessageSearch) {
-            ChatSearchDialog(
-                query = messageSearchQuery,
-                matches = messageSearchMatches,
-                onQueryChange = { messageSearchQuery = it },
-                onSelect = { target ->
-                    showMessageSearch = false
-                    val targetIndex = timelineItems.indexOfFirst { item ->
-                        (item as? ChatTimelineItem.Message)?.message?.stableKey == target.stableKey
-                    }
-                    if (targetIndex >= 0) {
-                        searchScope.launch { listState.animateScrollToItem(targetIndex) }
-                    }
-                },
-                onDismiss = { showMessageSearch = false },
-            )
         }
         if (multiSelectMode) {
             MultiSelectBottomBar(
@@ -556,10 +569,10 @@ fun ChatDetailScreen(
                 } else null
                 MessageActionContext(isLastMessage = isLast, previousMessage = prevMsg)
             }
-            MessageActionsDialog(
+            MessageActionsScreen(
                 message = message,
                 context = actionContext,
-                onDismiss = { selectedActionMessage = null },
+                onBack = { selectedActionMessage = null },
                 onAction = { action ->
                     selectedActionMessage = null
                     when (action.id) {
@@ -631,74 +644,6 @@ private fun ChatHeader(onSearch: () -> Unit) {
         }
          */
     }
-}
-
-@Composable
-private fun ChatSearchDialog(
-    query: String,
-    matches: List<ChatDetailViewModel.UiMsg>,
-    onQueryChange: (String) -> Unit,
-    onSelect: (ChatDetailViewModel.UiMsg) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        visible = true,
-        onDismissRequest = onDismiss,
-        title = { Text("搜索消息") },
-        confirmButton = {},
-        dismissButton = {},
-        content = {
-            item {
-                BasicTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    decorationBox = { inner ->
-                        if (query.isBlank()) {
-                            Text("搜索当前已加载消息", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
-                        }
-                        inner()
-                    },
-                )
-            }
-            if (query.isNotBlank() && matches.isEmpty()) {
-                item {
-                    Text(
-                        "没有匹配消息；可先向上滑动加载漫游消息",
-                        color = MaterialTheme.colorScheme.outline,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                    )
-                }
-            }
-            matches.forEach { message ->
-                item(key = "search:${message.stableKey}") {
-                    Button(
-                        onClick = { onSelect(message) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                            secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        contentPadding = ButtonDefaults.ContentPadding,
-                        secondaryLabel = {
-                            Text(message.text.ifBlank { "[非文本消息]" }, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        },
-                    ) { Text(message.senderNick.ifBlank { if (message.isSelf) "我" else "消息" }, maxLines = 1) }
-                }
-            }
-        },
-    )
 }
 
 @Composable

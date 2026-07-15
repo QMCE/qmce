@@ -8,25 +8,36 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.net.URLConnection
@@ -122,43 +133,60 @@ private fun List<ChatDetailViewModel.MessageContent>.copyableText(): String =
         }
 
 @Composable
-fun MessageActionsDialog(
+fun MessageActionsScreen(
     message: ChatDetailViewModel.UiMsg,
     context: MessageActionContext = MessageActionContext(),
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onAction: (MessageAction) -> Unit,
 ) {
     val actions = MessageActionResolver.resolve(message, context)
-    if (actions.isEmpty()) return
-    AlertDialog(
-        visible = true,
-        onDismissRequest = onDismiss,
-        title = { Text("消息操作", textAlign = TextAlign.Center) },
-        confirmButton = {},
-        dismissButton = {},
-        content = {
-            actions.forEach { action ->
-                item {
-                    CompactButton(
+    BackHandler(onBack = onBack)
+
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val scheme = MaterialTheme.colorScheme
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().background(scheme.background),
+            contentPadding = contentPadding,
+        ) {
+            item(key = "message-actions-header") {
+                Text(
+                    "消息操作",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                )
+            }
+            actions.forEachIndexed { index, action ->
+                item(key = "message-action:$index:${action.id}") {
+                    Button(
                         onClick = { onAction(action) },
                         enabled = action.enabled,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         colors = if (action.destructive) ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            containerColor = scheme.errorContainer,
+                            contentColor = scheme.onErrorContainer,
                         ) else ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            containerColor = scheme.surfaceContainerHigh,
+                            contentColor = scheme.onSurface,
                         ),
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = action.icon?.let { actionIcon ->
                             { Icon(actionIcon, contentDescription = null) }
                         },
-                        label = { Text(action.label) },
-                    )
+                    ) {
+                        Text(action.label)
+                    }
                 }
             }
-        },
-    )
+        }
+    }
 }
 
 fun copyMessageText(context: Context, text: String) {

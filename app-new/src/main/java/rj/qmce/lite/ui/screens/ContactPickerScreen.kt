@@ -1,9 +1,8 @@
 package rj.qmce.lite.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -21,12 +20,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import mqq.app.AppRuntime
 import rj.qmce.lite.viewmodel.ContactsViewModel
@@ -42,50 +48,60 @@ fun ContactPickerScreen(
 ) {
     val categories by contactsVm.categories.collectAsState()
     val statusText by contactsVm.statusText.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
 
     LaunchedEffect(Unit) { contactsVm.loadBuddies(runtime) }
+    BackHandler(onBack = onBack)
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
-            contentAlignment = Alignment.Center,
+    val allBuddies = categories.flatMap { it.buddies }
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
         ) {
-            IconButton(
-                onClick = onBack,
-                modifier = Modifier.align(Alignment.CenterStart),
-            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-            Text(
-                text = title,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 29.dp),
-                color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
-        }
-
-        if (statusText.isNotEmpty()) {
-            Text(
-                text = statusText,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall,
-            )
-        }
-
-        val allBuddies = categories.flatMap { it.buddies }
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().weight(1f),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-        ) {
-            items(allBuddies, key = { it.uid }) { buddy ->
+            item(key = "contact-picker-title") {
+                Text(
+                    text = title,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (statusText.isNotEmpty()) {
+                item(key = "contact-picker-status") {
+                    Text(
+                        text = statusText,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 16.dp, vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+            items(allBuddies, key = { "${it.categoryId}:${it.uid}" }) { buddy ->
                 val name = buddy.remark.takeIf { it.isNotBlank() } ?: buddy.nick
                 Button(
                     onClick = { onSelect(buddy.uid, buddy.uin, name) },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .padding(vertical = 2.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                         secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    transformation = SurfaceTransformation(transformationSpec),
                     icon = {
                     val localAvatar = buddy.avatarPath
                         .takeIf { it.isNotBlank() }

@@ -18,7 +18,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -27,17 +26,21 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
-import androidx.wear.compose.foundation.lazy.ScalingLazyListState
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.ui.components.ChatItem
 import rj.qmce.lite.viewmodel.ChatListViewModel
+import kotlin.time.Duration.Companion.seconds
 
 private const val KERNEL_INIT_ACTION = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
 
@@ -53,7 +56,8 @@ fun ChatListScreen(
     val contactsSnapshot by vm.contacts.collectAsState()
     val contacts = contactsSnapshot.contacts
     val isRefreshing by vm.isRefreshing.collectAsState()
-    val listState = remember { ScalingLazyListState(initialCenterItemIndex = 0) }
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
     val pullRefreshState = rememberPullToRefreshState()
 
     Log.d("QMCE", "ChatListScreen: recompose, revision=${contactsSnapshot.revision}, contacts.size=${contacts.size}, top1=${contacts.firstOrNull()?.let { "${it.id}:${it.msgTime}:${it.abstractContent?.firstOrNull()?.content}" }}")
@@ -75,7 +79,7 @@ fun ChatListScreen(
         Log.d("QMCE", "ChatList: registered ON_KERNEL_INIT_COMPLETE receiver")
         vm.loadContacts(runtime)
         val fallback = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            kotlinx.coroutines.delay(3000)
+            kotlinx.coroutines.delay(3.seconds)
             vm.loadContacts(runtime)
         }
         onDispose {
@@ -86,33 +90,38 @@ fun ChatListScreen(
     }
 
     if (contacts.isNotEmpty()) {
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = vm::refreshContacts,
-            modifier = Modifier.fillMaxSize(),
-            state = pullRefreshState,
-            indicator = {
-                WearPullRefreshIndicator(
-                    state = pullRefreshState,
-                    isRefreshing = isRefreshing,
-                )
-            },
-        ) {
-            ScalingLazyColumn(
+        ScreenScaffold(
+            scrollState = listState,
+            overscrollEffect = null,
+        ) { contentPadding ->
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = vm::refreshContacts,
                 modifier = Modifier.fillMaxSize(),
-                state = listState,
-                scalingParams = ScalingLazyColumnDefaults.scalingParams(
-                    viewportVerticalOffsetResolver = { 0 },
-                ),
-                overscrollEffect = null,
-            ) {
-                items(
-                    items = contacts,
-                ) { contact ->
-                    ChatItem(
-                        contact = contact,
-                        onClick = { onOpenChat(contact) }
+                state = pullRefreshState,
+                indicator = {
+                    WearPullRefreshIndicator(
+                        state = pullRefreshState,
+                        isRefreshing = isRefreshing,
                     )
+                }, // fixme: sometimes wrong state (or caused by scrcpy?)
+            ) {
+                TransformingLazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = contentPadding,
+                    overscrollEffect = null,
+                ) {
+                    items(
+                        items = contacts,
+                    ) { contact ->
+                        ChatItem(
+                            contact = contact,
+                            onClick = { onOpenChat(contact) },
+                            modifier = Modifier.transformedHeight(this, transformationSpec),
+                            transformation = SurfaceTransformation(transformationSpec),
+                        )
+                    }
                 }
             }
         }
@@ -150,34 +159,4 @@ private fun BoxScope.WearPullRefreshIndicator(
             )
         }
     }
-}
-
-private fun makeSampleContact(
-    id: String,
-    chatType: Int,
-    peerName: String,
-    memberName: String,
-    lastMsg: String,
-    msgTime: Long,
-): RecentContactInfo {
-    val c = RecentContactInfo()
-    c.id = id
-    c.contactId = id.hashCode().toLong()
-    c.chatType = chatType
-    c.peerName = peerName
-    c.peerUid = "u_$id"
-    c.peerUin = 100000L + id.hashCode().toLong() % 900000
-    c.remark = ""
-    c.memberName = memberName
-    c.msgTime = msgTime
-    c.avatarUrl = ""
-    c.avatarPath = ""
-    c.unreadCnt = 0L
-    c.topFlag = 0
-    c.sessionType = if (chatType == 2) 2 else 1
-    val el = com.tencent.qqnt.kernel.nativeinterface.MsgAbstractElement()
-    el.content = lastMsg
-    el.elementType = 1
-    c.abstractContent = arrayListOf(el)
-    return c
 }

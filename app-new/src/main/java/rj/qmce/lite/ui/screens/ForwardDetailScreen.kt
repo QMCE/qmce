@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import kotlinx.coroutines.launch
@@ -46,7 +48,7 @@ internal fun ForwardDetailScreen(
     onDismiss: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     val title = when (state) {
         ChatDetailViewModel.ForwardDetailState.Idle -> "聊天记录"
@@ -89,11 +91,12 @@ internal fun ForwardDetailScreen(
                 }
             }
             is ChatDetailViewModel.ForwardDetailState.Ready -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp),
-                ) {
+                ScreenScaffold(scrollState = listState) { contentPadding ->
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = contentPadding,
+                    ) {
                     itemsIndexed(
                         items = state.messages,
                         key = { index, message -> "forward:${message.stableKey}:$index" },
@@ -116,6 +119,7 @@ internal fun ForwardDetailScreen(
                             },
                             onOpenFile = onOpenFile,
                         )
+                    }
                     }
                 }
             }

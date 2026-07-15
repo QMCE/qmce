@@ -1,4 +1,4 @@
-package moye.signature;
+package rj.qmce.lite.fix;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -22,7 +22,7 @@ import java.util.Map;
 
 /** Adapted from Lmoye\signature\KillerApplication. */
 @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
-public final class KillerApplication {
+public final class LegacyKiller {
     private static final String TAG = "QMCE-Killer";
 
     private static final String CURRENT_PACKAGE_NAME = BuildConfig.APPLICATION_ID;
@@ -51,7 +51,7 @@ public final class KillerApplication {
         installForCurrentPackage();
     }
 
-    private KillerApplication() {
+    private LegacyKiller() {
     }
 
     public static void installForCurrentPackage() {
@@ -86,7 +86,7 @@ public final class KillerApplication {
     private static void killPM() {
         try {
             exemptHiddenApi();
-            Signature signature = new Signature(Base64.decode(KillerApplication.ORIGIN_SIGNATURE_BASE64, Base64.DEFAULT));
+            Signature signature = new Signature(Base64.decode(LegacyKiller.ORIGIN_SIGNATURE_BASE64, Base64.DEFAULT));
             installCreatorHook(signature);
             installPackageManagerProxy();
             clearPmParcelCaches();
@@ -102,7 +102,7 @@ public final class KillerApplication {
             return;
         }
         Parcelable.Creator<PackageInfo> originalCreator = PackageInfo.CREATOR;
-        a(PackageInfo.class, "CREATOR").set(null, new PackageInfoCreator(originalCreator, KillerApplication.CURRENT_PACKAGE_NAME, signature));
+        a(PackageInfo.class, "CREATOR").set(null, new PackageInfoCreator(originalCreator, LegacyKiller.CURRENT_PACKAGE_NAME, signature));
         creatorInstalled = true;
     }
 
@@ -216,7 +216,7 @@ public final class KillerApplication {
     private static boolean contains(String[] array) {
         if (array == null) return false;
         for (String item : array) {
-            if (KillerApplication.CURRENT_PACKAGE_NAME.equals(item)) return true;
+            if (LegacyKiller.CURRENT_PACKAGE_NAME.equals(item)) return true;
         }
         return false;
     }

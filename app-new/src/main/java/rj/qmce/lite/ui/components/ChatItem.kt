@@ -24,7 +24,8 @@ import java.util.*
 fun ChatItem(
     contact: RecentContactInfo,
     onClick: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    transformation: SurfaceTransformation? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val isGroup = contact.chatType == 2
@@ -62,6 +63,7 @@ fun ChatItem(
             contentColor = scheme.onSurface,
             secondaryContentColor = scheme.onSurfaceVariant,
         ),
+        transformation = transformation,
         contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
         icon = {
             AsyncImage(

@@ -11,18 +11,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
-import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -31,12 +28,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -44,17 +41,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
-import androidx.wear.compose.material3.AlertDialog
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.BuildConfig
 import rj.qmce.lite.viewmodel.ChatListViewModel
@@ -66,145 +65,154 @@ fun MyScreen(
     uin: String,
     chatListVm: ChatListViewModel,
     onOpenSettings: () -> Unit,
-    onLogout: () -> Unit,
+    onOpenClearCache: () -> Unit,
+    onOpenLogoutConfirmation: () -> Unit,
+    onOpenAbout: () -> Unit,
     vm: MyViewModel = viewModel(),
 ) {
     val profile by vm.profile.collectAsState()
     val operationStatus by vm.operationStatus.collectAsState()
     val context = LocalContext.current
-    var showLogoutConfirmation by remember { mutableStateOf(false) }
-    var showClearCacheConfirmation by remember { mutableStateOf(false) }
-    var showAbout by remember { mutableStateOf(false) }
     var avatarIndex by remember(profile.uin, profile.avatarPath) { mutableIntStateOf(0) }
     val avatarModel = profile.avatarPath.takeIf { it.isNotBlank() }?.let(::File)
         ?: profile.avatarUrls.getOrNull(avatarIndex)
 
     LaunchedEffect(uin) { vm.load(uin) }
 
-    ScalingLazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        scalingParams = ScalingLazyColumnDefaults.scalingParams(
-            viewportVerticalOffsetResolver = { 0 },
-        ),
-    ) {
-        item(key = "profile") {
-            ProfileHeader(
-                profile = profile,
-                avatarModel = avatarModel,
-                onAvatarError = {
-                    if (profile.avatarPath.isBlank() && avatarIndex < profile.avatarUrls.lastIndex) avatarIndex++
-                },
-                onCopyUin = { copyUin(context, profile.uin) },
-            )
-        }
-        item(key = "account-label") { MySectionLabel("账号") }
-        item(key = "copy-account") {
-            MyActionRow(
-                icon = Icons.Default.ContentCopy,
-                title = "复制 QQ 号",
-                subtitle = profile.uin.ifBlank { "账号未就绪" },
-                onClick = { copyUin(context, profile.uin) },
-            )
-        }
-        item(key = "refresh-profile") {
-            MyActionRow(
-                icon = Icons.Default.Refresh,
-                title = "刷新资料",
-                subtitle = if (profile.refreshing) "正在请求最新资料" else "同步昵称、签名和头像缓存",
-                onClick = { vm.load(uin, forceRefresh = true) },
-            )
-        }
-        item(key = "debug-label") { MySectionLabel("Debug") }
-        item(key = "sync-messages") {
-            MyActionRow(
-                icon = Icons.Default.Sync,
-                title = "同步消息列表",
-                subtitle = "立即请求 NT 消息同步",
-                onClick = { vm.syncMessages(chatListVm) },
-            )
-        }
-        item(key = "clear-cache") {
-            MyActionRow(
-                icon = Icons.Default.DeleteSweep,
-                title = "清理聊天缓存",
-                subtitle = "清除内核的聊天媒体缓存",
-                destructive = true,
-                onClick = { showClearCacheConfirmation = true },
-            )
-        }
-        item(key = "about-label") { MySectionLabel("应用") }
-        item(key = "settings") {
-            MyActionRow(
-                icon = Icons.Default.Settings,
-                title = "设置",
-                subtitle = "显示、同步与缓存管理",
-                onClick = onOpenSettings,
-            )
-        }
-        item(key = "about") {
-            MyActionRow(
-                icon = Icons.Default.Info,
-                title = "关于 QMCE Lite X",
-                subtitle = "版本 ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）",
-                onClick = { showAbout = true },
-            )
-        }
-        item(key = "logout") {
-            MyActionRow(
-                icon = Icons.AutoMirrored.Filled.Logout,
-                title = "退出登录",
-                destructive = true,
-                onClick = { showLogoutConfirmation = true },
-            )
-        }
-        if (operationStatus.isNotBlank()) {
-            item(key = "operation-status") {
-                Text(
-                    text = operationStatus,
-                    color = MaterialTheme.colorScheme.outline,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "profile") {
+                ProfileHeader(
+                    profile = profile,
+                    avatarModel = avatarModel,
+                    onAvatarError = {
+                        if (profile.avatarPath.isBlank() && avatarIndex < profile.avatarUrls.lastIndex) avatarIndex++
+                    },
+                    onCopyUin = { copyUin(context, profile.uin) },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
+            item(key = "account-label") {
+                MySectionLabel(
+                    text = "账号",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "copy-account") {
+                MyActionRow(
+                    icon = Icons.Default.ContentCopy,
+                    title = "复制 QQ 号",
+                    subtitle = profile.uin.ifBlank { "账号未就绪" },
+                    onClick = { copyUin(context, profile.uin) },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "refresh-profile") {
+                MyActionRow(
+                    icon = Icons.Default.Refresh,
+                    title = "刷新资料",
+                    subtitle = if (profile.refreshing) "正在请求最新资料" else "同步昵称、签名和头像缓存",
+                    onClick = { vm.load(uin, forceRefresh = true) },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "debug-label") {
+                MySectionLabel(
+                    text = "Debug",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "sync-messages") {
+                MyActionRow(
+                    icon = Icons.Default.Sync,
+                    title = "同步消息列表",
+                    subtitle = "立即请求 NT 消息同步",
+                    onClick = { vm.syncMessages(chatListVm) },
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "clear-cache") {
+                MyActionRow(
+                    icon = Icons.Default.DeleteSweep,
+                    title = "清理聊天缓存",
+                    subtitle = "清除内核的聊天媒体缓存",
+                    destructive = true,
+                    onClick = onOpenClearCache,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "about-label") {
+                MySectionLabel(
+                    text = "应用",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "settings") {
+                MyActionRow(
+                    icon = Icons.Default.Settings,
+                    title = "设置",
+                    subtitle = "显示、同步与缓存管理",
+                    onClick = onOpenSettings,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "about") {
+                MyActionRow(
+                    icon = Icons.Default.Info,
+                    title = "关于 QMCE Lite X",
+                    subtitle = "版本 ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）",
+                    onClick = onOpenAbout,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "logout") {
+                MyActionRow(
+                    icon = Icons.AutoMirrored.Filled.Logout,
+                    title = "退出登录",
+                    destructive = true,
+                    onClick = onOpenLogoutConfirmation,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            if (operationStatus.isNotBlank()) {
+                item(key = "operation-status") {
+                    Text(
+                        text = operationStatus,
+                        color = MaterialTheme.colorScheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
-    }
-
-    if (showClearCacheConfirmation) {
-        ConfirmActionDialog(
-            title = "清理聊天缓存？",
-            detail = "图片、表情和其他聊天媒体会在需要时重新下载。",
-            confirmLabel = "清理",
-            destructive = true,
-            onDismiss = { showClearCacheConfirmation = false },
-            onConfirm = {
-                showClearCacheConfirmation = false
-                vm.clearChatCache()
-            },
-        )
-    }
-    if (showLogoutConfirmation) {
-        ConfirmActionDialog(
-            title = "退出当前账号？",
-            detail = "本机保存的登录票据将被清除，需要重新扫码登录。",
-            confirmLabel = "退出登录",
-            destructive = true,
-            onDismiss = { showLogoutConfirmation = false },
-            onConfirm = {
-                showLogoutConfirmation = false
-                onLogout()
-            },
-        )
-    }
-    if (showAbout) {
-        ConfirmActionDialog(
-            title = "QMCE Lite X",
-            detail = "独立轻量 QQ 客户端\n版本 ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）\n包名 ${BuildConfig.APPLICATION_ID}",
-            confirmLabel = "关闭",
-            destructive = false,
-            onDismiss = { showAbout = false },
-            onConfirm = { showAbout = false },
-        )
     }
 }
 
@@ -214,11 +222,14 @@ private fun ProfileHeader(
     avatarModel: Any?,
     onAvatarError: () -> Unit,
     onCopyUin: () -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
 ) {
     val scheme = MaterialTheme.colorScheme
     Button(
         onClick = onCopyUin,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
+        transformation = transformation,
         colors = ButtonDefaults.buttonColors(
             containerColor = scheme.primaryContainer,
             contentColor = scheme.onPrimaryContainer,
@@ -272,13 +283,25 @@ private fun ProfileHeader(
 }
 
 @Composable
-private fun MySectionLabel(text: String) {
+private fun MySectionLabel(
+    text: String,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
+) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.primary,
         style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Medium,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                with(transformation) {
+                    applyContainerTransformation()
+                    applyContentTransformation()
+                }
+            }
+            .padding(horizontal = 16.dp, vertical = 5.dp),
     )
 }
 
@@ -289,13 +312,16 @@ private fun MyActionRow(
     subtitle: String? = null,
     destructive: Boolean = false,
     onClick: () -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
 ) {
     val scheme = MaterialTheme.colorScheme
     val containerColor = if (destructive) scheme.errorContainer else scheme.surfaceContainerHigh
     val contentColor = if (destructive) scheme.onErrorContainer else scheme.onSurface
     Button(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        transformation = transformation,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
@@ -305,36 +331,6 @@ private fun MyActionRow(
         icon = { Icon(icon, contentDescription = null) },
         secondaryLabel = subtitle?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
     ) { Text(title, fontWeight = FontWeight.Medium, maxLines = 1) }
-}
-
-@Composable
-private fun ConfirmActionDialog(
-    title: String,
-    detail: String,
-    confirmLabel: String,
-    destructive: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    AlertDialog(
-        visible = true,
-        onDismissRequest = onDismiss,
-        title = { Text(title, textAlign = TextAlign.Center) },
-        text = { Text(detail, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall) },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onDismiss()
-                    onConfirm()
-                },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (destructive) scheme.error else scheme.primary,
-                    contentColor = if (destructive) scheme.onError else scheme.onPrimary,
-                ),
-            ) { Text(confirmLabel) }
-        },
-    )
 }
 
 private fun copyUin(context: Context, uin: String) {

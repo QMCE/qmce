@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -36,18 +37,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
-import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CheckboxButton
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.RadioButton
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qphone.base.remote.SimpleAccount
 import rj.qmce.lite.R
 import rj.qmce.lite.viewmodel.AuthViewModel
@@ -117,10 +121,20 @@ fun LoginScreen(
 
 @Composable
 private fun WelcomeGuide(onContinue: () -> Unit) {
+    val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
         item(key = "welcome-content") {
         Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 30.dp),
+                modifier = Modifier
+                .fillMaxWidth()
+                .transformedHeight(this, transformationSpec)
+                .graphicsLayer {
+                    with(SurfaceTransformation(transformationSpec)) {
+                        applyContainerTransformation()
+                        applyContentTransformation()
+                    }
+                }
+                .padding(horizontal = 6.dp, vertical = 30.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             QQLogo(68.dp)
@@ -146,13 +160,27 @@ private fun ScreenTypeGuide(
     onContinue: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
             item(key = "back") {
-                GuideBackButton(onBack)
+                GuideBackButton(
+                    onBack = onBack,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
             }
             item(key = "title") {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text("选择屏幕适配类型", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -165,20 +193,43 @@ private fun ScreenTypeGuide(
                 }
             }
             item(key = "round") {
-                Box(Modifier.padding(vertical = 4.dp)) {
-                    ScreenTypeOption(ScreenType.Round, selected == ScreenType.Round, onSelected)
+                Box(
+                    Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .padding(vertical = 4.dp),
+                ) {
+                    ScreenTypeOption(
+                        type = ScreenType.Round,
+                        selected = selected == ScreenType.Round,
+                        onSelected = onSelected,
+                        modifier = Modifier,
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
                 }
             }
             item(key = "square") {
-                Box(Modifier.padding(vertical = 4.dp)) {
-                    ScreenTypeOption(ScreenType.Square, selected == ScreenType.Square, onSelected)
+                Box(
+                    Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .padding(vertical = 4.dp),
+                ) {
+                    ScreenTypeOption(
+                        type = ScreenType.Square,
+                        selected = selected == ScreenType.Square,
+                        onSelected = onSelected,
+                        modifier = Modifier,
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
                 }
             }
             item(key = "continue") {
                 PrimaryGuideButton(
                     text = "继续",
                     onClick = onContinue,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 10.dp),
+                    modifier = Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .padding(top = 8.dp, bottom = 10.dp),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
         }
     }
@@ -191,14 +242,28 @@ private fun AgreementGuide(
     onContinue: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val transformationSpec = rememberTransformationSpec()
     val scheme = MaterialTheme.colorScheme
     GuideScrollColumn {
         item(key = "back") {
-            GuideBackButton(onBack)
+            GuideBackButton(
+                onBack = onBack,
+                modifier = Modifier.transformedHeight(this, transformationSpec),
+                transformation = SurfaceTransformation(transformationSpec),
+            )
         }
         item(key = "agreement-content") {
         Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 12.dp),
+                modifier = Modifier
+                .fillMaxWidth()
+                .transformedHeight(this, transformationSpec)
+                .graphicsLayer {
+                    with(SurfaceTransformation(transformationSpec)) {
+                        applyContainerTransformation()
+                        applyContentTransformation()
+                    }
+                }
+                .padding(horizontal = 2.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             QQLogo(54.dp)
@@ -236,13 +301,27 @@ private fun QrLoginGuide(
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
         item(key = "back") {
-            GuideBackButton(onBack)
+            GuideBackButton(
+                onBack = onBack,
+                modifier = Modifier.transformedHeight(this, transformationSpec),
+                transformation = SurfaceTransformation(transformationSpec),
+            )
         }
         item(key = "qr-content") {
         Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 4.dp),
+                modifier = Modifier
+                .fillMaxWidth()
+                .transformedHeight(this, transformationSpec)
+                .graphicsLayer {
+                    with(SurfaceTransformation(transformationSpec)) {
+                        applyContainerTransformation()
+                        applyContentTransformation()
+                    }
+                }
+                .padding(horizontal = 2.dp, vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when {
@@ -349,12 +428,19 @@ private fun LoginStatus(statusText: String, isBusy: Boolean) {
 }
 
 @Composable
-private fun ScreenTypeOption(type: ScreenType, selected: Boolean, onSelected: (ScreenType) -> Unit) {
+private fun ScreenTypeOption(
+    type: ScreenType,
+    selected: Boolean,
+    onSelected: (ScreenType) -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
+) {
     val scheme = MaterialTheme.colorScheme
     RadioButton(
         selected = selected,
         onSelect = { onSelected(type) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
+        transformation = transformation,
         icon = { ScreenPreview(type, selected) },
         secondaryLabel = { Text(type.detail) },
         label = { Text(type.title, fontWeight = FontWeight.Medium) },
@@ -384,19 +470,17 @@ private fun GuideSurface(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun GuideScrollColumn(content: ScalingLazyListScope.() -> Unit) {
-    val listState = rememberScalingLazyListState()
+private fun GuideScrollColumn(content: TransformingLazyColumnScope.() -> Unit) {
+    val listState = rememberTransformingLazyColumnState()
     GuideSurface {
-        ScalingLazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
-            scalingParams = ScalingLazyColumnDefaults.scalingParams(
-                viewportVerticalOffsetResolver = { 0 },
-            ),
-            autoCentering = null,
-            content = content,
-        )
+        ScreenScaffold(scrollState = listState) { contentPadding ->
+            TransformingLazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                state = listState,
+                contentPadding = contentPadding,
+                content = content,
+            )
+        }
     }
 }
 
@@ -416,8 +500,22 @@ private fun QQLogo(size: androidx.compose.ui.unit.Dp) {
 }
 
 @Composable
-private fun GuideBackButton(onBack: () -> Unit) {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) {
+private fun GuideBackButton(
+    onBack: () -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .graphicsLayer {
+                with(transformation) {
+                    applyContainerTransformation()
+                    applyContentTransformation()
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
         TextButton(onClick = onBack) {
             Text("返回", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -430,11 +528,13 @@ private fun PrimaryGuideButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    transformation: SurfaceTransformation? = null,
 ) {
     Button(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.fillMaxWidth(),
+        transformation = transformation,
         colors = ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,

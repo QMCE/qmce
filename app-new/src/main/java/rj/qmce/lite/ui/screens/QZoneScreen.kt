@@ -1,17 +1,9 @@
 package rj.qmce.lite.ui.screens
 
-import android.Manifest
-import android.content.Context
-import android.net.Uri
-import android.os.Build
-import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -19,6 +11,7 @@ import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -27,19 +20,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.material3.*
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
-import androidx.core.content.ContextCompat
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun QZoneScreen(vm: QZoneViewModel) {
-    val context = LocalContext.current
+fun QZoneScreen(
+    vm: QZoneViewModel,
+    onOpenComposer: () -> Unit,
+    onOpenComment: (QZoneViewModel.FeedItem) -> Unit,
+) {
     val feeds by vm.feeds.collectAsState()
     val statusText by vm.statusText.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -48,103 +45,83 @@ fun QZoneScreen(vm: QZoneViewModel) {
     val scheme = MaterialTheme.colorScheme
     var gallery by remember { mutableStateOf<List<ViewerMedia>>(emptyList()) }
     var videoUrl by remember { mutableStateOf<String?>(null) }
-    var showComposer by remember { mutableStateOf(false) }
-    var commentTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
-    var showImagePicker by remember { mutableStateOf(false) }
-    var publishDraft by remember { mutableStateOf("") }
-    var publishUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
-    var pickerNotice by remember { mutableStateOf<String?>(null) }
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
 
-    val galleryPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
-        if (hasQZoneGalleryAccess(context)) {
-            pickerNotice = null
-            showImagePicker = true
-        } else {
-            pickerNotice = "未获得图片访问权限"
+    LaunchedEffect(listState.canScrollForward, feeds.isNotEmpty(), loading, isLoadingMore) {
+        if (!listState.canScrollForward && feeds.isNotEmpty() && !loading && !isLoadingMore && vm.hasMoreData()) {
+            vm.loadMore()
         }
     }
 
-    if (showImagePicker) {
-        LocalImagePickerScreen(
-            existingUris = publishUris.mapTo(linkedSetOf()) { it.toString() },
-            onDismiss = {
-                showImagePicker = false
-                showComposer = true
-            },
-            onConfirm = { uris ->
-                publishUris = (publishUris + uris).distinctBy(Uri::toString)
-                showImagePicker = false
-                showComposer = true
-            },
-        )
-        return
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Button(
-            onClick = { showComposer = true },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = scheme.primary,
-                contentColor = scheme.onPrimary,
-            ),
-        ) {
-            Text("发表动态")
-        }
-        if (statusText.isNotEmpty()) {
-            Text(statusText, style = MaterialTheme.typography.bodySmall, color = scheme.outline, modifier = Modifier.padding(4.dp))
-        }
-        if (operationStatus.isNotEmpty()) {
-            Text(operationStatus, style = MaterialTheme.typography.bodySmall, color = scheme.primary, modifier = Modifier.padding(2.dp))
-        }
-        pickerNotice?.let { notice ->
-            Text(notice, style = MaterialTheme.typography.bodySmall, color = scheme.error, modifier = Modifier.padding(2.dp))
-        }
-
-        if (loading && feeds.isEmpty()) {
-            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-            return
-        }
-
-        if (feeds.isEmpty()) {
-            Text("暂无动态", style = MaterialTheme.typography.bodySmall, color = scheme.outline, modifier = Modifier.padding(16.dp))
-            return
-        }
-
-        val listState = rememberScalingLazyListState()
-
-        // 到底过滑时触发加载更多
-        LaunchedEffect(listState.canScrollForward) {
-            if (!listState.canScrollForward && feeds.isNotEmpty() && !loading && !isLoadingMore && vm.hasMoreData()) {
-                vm.loadMore()
-            }
-        }
-
-        androidx.wear.compose.foundation.lazy.ScalingLazyColumn(
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
-            scalingParams = ScalingLazyColumnDefaults.scalingParams(
-                viewportVerticalOffsetResolver = { 0 },
-            ),
+            contentPadding = contentPadding,
         ) {
+            item(key = "qzone-compose") {
+                Button(
+                    onClick = onOpenComposer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.primary,
+                        contentColor = scheme.onPrimary,
+                    ),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) { Text("发表动态") }
+            }
+            if (statusText.isNotEmpty()) {
+                item(key = "qzone-status") {
+                    QZoneListNotice(statusText, scheme.outline, transformationSpec)
+                }
+            }
+            if (operationStatus.isNotEmpty()) {
+                item(key = "qzone-operation") {
+                    QZoneListNotice(operationStatus, scheme.primary, transformationSpec)
+                }
+            }
+            if (loading && feeds.isEmpty()) {
+                item(key = "qzone-initial-loading") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(vertical = 16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                }
+            } else if (feeds.isEmpty()) {
+                item(key = "qzone-empty") {
+                    QZoneListNotice("暂无动态", scheme.outline, transformationSpec, verticalPadding = 16.dp)
+                }
+            } else {
             feeds.forEach { feed ->
-                item {
+                item(key = "feed:${feed.feedId}") {
                     FeedCard(
                         feed = feed,
                         vm = vm,
                         onToggleLike = { vm.toggleLike(feed.feedId) },
-                        onComment = { commentTarget = feed },
+                        onComment = { onOpenComment(feed) },
                         onOpenMedia = { urls ->
                             gallery = urls.mapIndexed { index, url ->
                                 ViewerMedia("qzone:${feed.feedId}:$index", url, "动态图片")
                             }
                         },
                         onOpenVideo = { videoUrl = it },
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
                     )
                 }
             }
@@ -154,6 +131,13 @@ fun QZoneScreen(vm: QZoneViewModel) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
@@ -173,9 +157,18 @@ fun QZoneScreen(vm: QZoneViewModel) {
                         "— 已经到底了 —",
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.outline,
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(vertical = 8.dp),
                     )
                 }
+            }
             }
         }
     }
@@ -193,196 +186,32 @@ fun QZoneScreen(vm: QZoneViewModel) {
             onDismiss = { videoUrl = null },
         )
     }
-    if (showComposer) {
-        QZoneTextInputDialog(
-            title = "发表动态",
-            hint = "写点什么…",
-            confirmLabel = "发表",
-            initialValue = publishDraft,
-            mediaCount = publishUris.size,
-            onTextChanged = { publishDraft = it },
-            onPickMedia = {
-                showComposer = false
-                if (hasQZoneGalleryAccess(context)) {
-                    showImagePicker = true
-                } else {
-                    galleryPermissionLauncher.launch(qZoneGalleryPermissions())
-                }
-            },
-            onDismiss = { showComposer = false },
-            onSubmit = { text ->
-                showComposer = false
-                vm.publishImages(context, text, publishUris)
-                publishDraft = ""
-                publishUris = emptyList()
-            },
-        )
-    }
-    commentTarget?.let { feed ->
-        QZoneTextInputDialog(
-            title = "评论 ${feed.nick}",
-            hint = "写下评论…",
-            confirmLabel = "发送",
-            comments = feed.comments,
-            onDismiss = { commentTarget = null },
-            onSubmit = { text ->
-                commentTarget = null
-                vm.comment(feed.feedId, text)
-            },
-        )
-    }
 }
 
 @Composable
-private fun QZoneTextInputDialog(
-    title: String,
-    hint: String,
-    confirmLabel: String,
-    initialValue: String = "",
-    mediaCount: Int = 0,
-    comments: List<QZoneViewModel.FeedComment> = emptyList(),
-    onTextChanged: (String) -> Unit = {},
-    onPickMedia: (() -> Unit)? = null,
-    onDismiss: () -> Unit,
-    onSubmit: (String) -> Unit,
+private fun TransformingLazyColumnItemScope.QZoneListNotice(
+    text: String,
+    color: Color,
+    transformationSpec: androidx.wear.compose.material3.lazy.TransformationSpec,
+    verticalPadding: androidx.compose.ui.unit.Dp = 4.dp,
 ) {
-    var value by remember { mutableStateOf(initialValue) }
-    val scheme = MaterialTheme.colorScheme
-    AlertDialog(
-        visible = true,
-        onDismissRequest = onDismiss,
-        title = { Text(title, textAlign = androidx.compose.ui.text.style.TextAlign.Center) },
-        confirmButton = {
-            Button(
-                onClick = { onSubmit(value.trim()) },
-                enabled = value.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primary,
-                    contentColor = scheme.onPrimary,
-                ),
-            ) { Text(confirmLabel) }
-        },
-        dismissButton = {
-            Button(
-                onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.surfaceContainerHigh,
-                    contentColor = scheme.onSurface,
-                ),
-            ) { Text("取消") }
-        },
-        content = {
-            if (comments.isEmpty()) {
-                item {
-                    Text(
-                        "暂无评论",
-                        color = scheme.outline,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
-            } else {
-                comments.takeLast(12).forEach { comment ->
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 10.dp, vertical = 3.dp)
-                                .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                        ) {
-                            Text(comment.author, color = scheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                            if (comment.text.isNotBlank()) {
-                                Text(comment.text, color = scheme.onSurface, style = MaterialTheme.typography.bodyLarge)
-                            }
-                            comment.replies.takeLast(4).forEach { reply ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(top = 2.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.Reply,
-                                        contentDescription = "回复",
-                                        tint = scheme.onSurfaceVariant,
-                                        modifier = Modifier.size(12.dp),
-                                    )
-                                    Spacer(Modifier.width(3.dp))
-                                    Text(
-                                        "${reply.author}: ${reply.text}",
-                                        color = scheme.onSurfaceVariant,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
-                        }
-                    }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = color,
+        modifier = Modifier
+            .fillMaxWidth()
+            .transformedHeight(this, transformationSpec)
+            .graphicsLayer {
+                with(SurfaceTransformation(transformationSpec)) {
+                    applyContainerTransformation()
+                    applyContentTransformation()
                 }
             }
-            item {
-                BasicTextField(
-                    value = value,
-                    onValueChange = {
-                        value = it
-                        onTextChanged(it)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(scheme.surfaceContainerHigh)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                        color = scheme.onSurface,
-                    ),
-                    decorationBox = { innerTextField ->
-                        Box {
-                            if (value.isBlank()) {
-                                Text(hint, color = scheme.outline, style = MaterialTheme.typography.bodySmall)
-                            }
-                            innerTextField()
-                        }
-                    },
-                )
-            }
-            onPickMedia?.let { pickMedia ->
-                item {
-                    Button(
-                        onClick = pickMedia,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = scheme.surfaceContainerHigh,
-                            contentColor = scheme.onSurface,
-                        ),
-                    ) {
-                        Text(
-                            if (mediaCount == 0) "添加图片" else "已选 $mediaCount 张图片 · 继续添加",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                    }
-                }
-            }
-        },
+            .padding(horizontal = 12.dp, vertical = verticalPadding),
     )
 }
 
-private fun qZoneGalleryPermissions(): Array<String> = when {
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
-        Manifest.permission.READ_MEDIA_IMAGES,
-        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-    )
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
-    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-}
-
-private fun hasQZoneGalleryAccess(context: Context): Boolean = when {
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == PackageManager.PERMISSION_GRANTED
-    }
-    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PackageManager.PERMISSION_GRANTED
-    else -> ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-}
 
 @Composable
 private fun FeedCard(
@@ -392,6 +221,8 @@ private fun FeedCard(
     onComment: () -> Unit,
     onOpenMedia: (List<String>) -> Unit,
     onOpenVideo: (String) -> Unit,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
 ) {
     val scheme = MaterialTheme.colorScheme
     val timeText = remember(feed.displayTime, feed.time) {
@@ -407,9 +238,10 @@ private fun FeedCard(
                 feed.picUrls.isNotEmpty() -> onOpenMedia(feed.picUrls)
             }
         },
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp),
+        transformation = transformation,
     ) {
         Column(
             modifier = Modifier
