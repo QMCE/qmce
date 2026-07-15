@@ -1,24 +1,40 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.wear.compose.material3.*
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.wear.compose.material3.AlertDialog
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.avatar.IAvatarLoaderApi
@@ -54,20 +70,6 @@ fun ContactsScreen(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (statusText.isNotEmpty()) {
-                Text(statusText, fontSize = 10.sp, color = scheme.outline, modifier = Modifier.weight(1f))
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            IconButton(onClick = { showSearch = true }) {
-                Icon(Icons.Default.Search, contentDescription = "搜索联系人")
-            }
-        }
-
         if (loading && categories.isEmpty()) {
             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             return
@@ -76,7 +78,7 @@ fun ContactsScreen(
         if (visibleCategories.isEmpty()) {
             Text(
                 if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人",
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = scheme.outline,
                 modifier = Modifier.padding(16.dp),
             )
@@ -98,18 +100,24 @@ fun ContactsScreen(
             )
         }
 
-        androidx.wear.compose.foundation.lazy.ScalingLazyColumn(
+        androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
             modifier = Modifier.fillMaxSize(),
-            scalingParams = ScalingLazyColumnDefaults.scalingParams(
-                viewportVerticalOffsetResolver = { 0 },
-            ),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 4.dp),
         ) {
+            item {
+                androidx.wear.compose.material3.Button(
+                    onClick = { showSearch = true }
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "搜索联系人")
+                    Text("搜索联系人")
+                }
+            }
             visibleCategories.forEach { category ->
                 item {
                     // 分组标题
                     Text(
                         text = category.name + " (${category.buddies.size})",
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.titleSmall,
                         color = scheme.primary,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier
@@ -132,18 +140,14 @@ fun ContactsScreen(
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = scheme.surfaceContainerHigh,
                                 contentColor = scheme.onSurface,
+                                secondaryContentColor = scheme.onSurfaceVariant,
                             ),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
+                            contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            icon = {
                                 Box(
                                     modifier = Modifier
-                                        .size(32.dp)
-                                        .background(scheme.surfaceContainerHigh, CircleShape),
+                                        .size(ButtonDefaults.LargeIconSize)
+                                        .background(scheme.surfaceContainer, CircleShape),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     ContactAvatar(
@@ -169,14 +173,9 @@ fun ContactsScreen(
                                         )
                                     }
                                 }
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    text = buddy.remark.ifEmpty { buddy.nick },
-                                    fontSize = 12.sp,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
+                            },
+                            secondaryLabel = { Text(buddy.uin.toString(), maxLines = 1) },
+                        ) { Text(buddy.remark.ifEmpty { buddy.nick }, maxLines = 1) }
                     }
                 }
             }
@@ -202,10 +201,7 @@ private fun ContactSearchDialog(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 13.sp,
-                    ),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -214,7 +210,7 @@ private fun ContactSearchDialog(
                         .padding(horizontal = 12.dp, vertical = 9.dp),
                     decorationBox = { inner ->
                         if (query.isBlank()) {
-                            Text("昵称、QQ号或UID", color = MaterialTheme.colorScheme.outline, fontSize = 11.sp)
+                            Text("昵称、QQ号或UID", color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall)
                         }
                         inner()
                     },
@@ -223,8 +219,10 @@ private fun ContactSearchDialog(
             item {
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
-                ) { Text("完成", fontSize = 11.sp) }
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp),
+                ) { Text("完成") }
             }
         },
     )
@@ -241,8 +239,7 @@ private fun ContactAvatar(
     val model = localAvatar ?: remoteAvatarUrls.getOrNull(remoteIndex)
     Text(
         text = fallbackText,
-        fontSize = 14.sp,
-        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
         color = scheme.primary,
     )
     if (model != null) {

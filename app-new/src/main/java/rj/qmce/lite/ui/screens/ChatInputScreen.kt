@@ -1,48 +1,77 @@
 package rj.qmce.lite.ui.screens
 
-import android.net.Uri
-import android.os.Build
 import android.Manifest
 import android.content.pm.PackageManager
-import androidx.core.content.FileProvider
+import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.*
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.input.TransformedText
-import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.wear.compose.material3.*
-import java.util.UUID
-import java.io.File
-import rj.qmce.lite.data.chat.DraftStore
+import androidx.core.content.FileProvider
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.AlertDialog
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextButton
 import rj.qmce.lite.data.chat.AtMention
+import rj.qmce.lite.data.chat.DraftStore
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import java.io.File
+import java.util.UUID
+import androidx.compose.material3.TextField as MaterialTextField
+import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
 // 不可见标记字符（Unicode 私用区），用户不会输入
 private const val IMG_MARKER = ''
@@ -83,7 +112,8 @@ fun ChatInputScreen(
     var pendingCameraAction by remember { mutableStateOf<CameraAction?>(null) }
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
-    var showVideoCaptureOptions by remember { mutableStateOf(false) }
+    var showVideoPicker by remember { mutableStateOf(false) }
+    var showToolPanel by remember { mutableStateOf(false) }
     var showAtPicker by remember { mutableStateOf(false) }
     var atQuery by remember { mutableStateOf("") }
 
@@ -144,10 +174,15 @@ fun ChatInputScreen(
         uri?.let(onSendFile)
     }
 
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri ->
-        uri?.let(onSendVideo)
+    val videoPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) {
+        if (hasVideoGalleryAccess(context)) {
+            showVideoPicker = true
+            pickerNotice = null
+        } else {
+            pickerNotice = "未获得视频访问权限"
+        }
     }
 
     val takePhotoLauncher = rememberLauncherForActivityResult(
@@ -222,67 +257,162 @@ fun ChatInputScreen(
         return
     }
 
-    Column(
+    if (showVideoPicker) {
+        LocalVideoPickerScreen(
+            onDismiss = { showVideoPicker = false },
+            onConfirm = { uri ->
+                showVideoPicker = false
+                showToolPanel = false
+                onSendVideo(uri)
+            },
+        )
+        return
+    }
+
+    if (showToolPanel) {
+        ChatInputToolsScreen(
+            isGroupChat = chatType == 2 && peerUin.toLongOrNull() != null,
+            onBack = { showToolPanel = false },
+            onSelectImage = {
+                showToolPanel = false
+                if (hasGalleryAccess(context)) {
+                    showImagePicker = true
+                    pickerNotice = null
+                } else {
+                    galleryPermissionLauncher.launch(galleryReadPermissions())
+                }
+            },
+            onSelectFile = { filePickerLauncher.launch(arrayOf("*/*")) },
+            onSelectVideo = {
+                if (hasVideoGalleryAccess(context)) {
+                    showVideoPicker = true
+                    pickerNotice = null
+                } else {
+                    videoPermissionLauncher.launch(videoReadPermissions())
+                }
+            },
+            onCapturePhoto = {
+                showToolPanel = false
+                launchCamera(CameraAction.Photo)
+            },
+            onCaptureVideo = {
+                showToolPanel = false
+                launchCamera(CameraAction.Video)
+            },
+            onSelectMember = {
+                val uin = peerUin.toLongOrNull() ?: return@ChatInputToolsScreen
+                showToolPanel = false
+                vm.loadGroupMembers(uin)
+                showAtPicker = true
+            },
+            onRecordVoice = {
+                showToolPanel = false
+                onOpenVoiceRecorder()
+            },
+        )
+        return
+    }
+
+    val listState = rememberTransformingLazyColumnState()
+    val canSend = textFieldValue.text
+        .replace(IMG_MARKER.toString(), "")
+        .replace(AT_MARKER.toString(), "")
+        .isNotBlank() || imageSlots.isNotEmpty() || atSlots.isNotEmpty()
+
+    ScreenScaffold(
+        scrollState = listState,
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
-            .padding(top = 8.dp, bottom = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "‹ 返回",
-                modifier = Modifier.clickable(onClick = onBack).padding(vertical = 4.dp),
-                color = Color.White,
-                fontSize = 12.sp,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("编辑消息", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-        }
-        if (isEditing) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 2.dp)
-                    .background(Color(0xFF4F378A), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            .background(scheme.background),
+        edgeButton = {
+            EdgeButton(
+                onClick = {
+                    val text = textFieldValue.text
+                    val hasText = text
+                        .replace(IMG_MARKER.toString(), "")
+                        .replace(AT_MARKER.toString(), "")
+                        .isNotBlank()
+                    val hasImages = imageSlots.isNotEmpty()
+                    val hasMentions = atSlots.isNotEmpty()
+
+                    if (!hasText && !hasImages && !hasMentions) return@EdgeButton
+
+                    if (hasImages || hasMentions) {
+                        val uriMap = imageSlots.associate { it.id to it.uri }
+                        val atMap = atSlots.mapIndexed { index, mention -> "at-$index" to mention }.toMap()
+                        var imageIndex = 0
+                        var atIndex = 0
+                        val mappedText = buildString {
+                            text.forEach { ch ->
+                                when (ch) {
+                                    IMG_MARKER -> {
+                                        val id = imageSlots.getOrNull(imageIndex++)?.id.orEmpty()
+                                        append(BOUNDARY_START).append("img:").append(id).append(BOUNDARY_END)
+                                    }
+                                    AT_MARKER -> {
+                                        append(BOUNDARY_START).append("at:").append("at-$atIndex").append(BOUNDARY_END)
+                                        atIndex++
+                                    }
+                                    else -> append(ch)
+                                }
+                            }
+                        }
+                        onSendMixed(mappedText, uriMap, atMap)
+                    } else if (isEditing) {
+                        onSendEdited(text)
+                    } else {
+                        onSend(text)
+                    }
+                    textFieldValue = TextFieldValue("")
+                    imageSlots.clear()
+                    atSlots.clear()
+                    if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
+                    onBack()
+                },
+                enabled = canSend,
+                buttonSize = EdgeButtonSize.Medium,
             ) {
-                Text("编辑中", color = Color(0xFFD9C4FF), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "取消",
-                    color = Color(0xFFD1CBD7), fontSize = 10.sp,
-                    modifier = Modifier.clickable {
-                        vm.cancelEdit()
-                        onBack()
-                    },
-                )
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
             }
-        }
-        pickerNotice?.let { notice ->
-            Text(
-                text = notice,
-                color = scheme.error,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
-            )
-        }
-        // 可滚动输入区域
-        androidx.compose.foundation.lazy.LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp),
-            reverseLayout = false
+        },
+        edgeButtonSpacing = 2.5.dp
+    ) {
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = it,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            item {
-                BasicTextField(
+            if (isEditing) {
+                item(key = "edit-banner") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 2.dp)
+                            .background(Color(0xFF4F378A), RoundedCornerShape(8.dp)),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = {
+                            vm.cancelEdit()
+                            onBack()
+                        }) {
+                            Text("取消", color = Color(0xFFD1CBD7))
+                        }
+                    }
+                }
+            }
+            pickerNotice?.let { notice ->
+                item(key = "picker-notice") {
+                    Text(
+                        text = notice,
+                        color = scheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            item(key = "input") {
+                MaterialTextField(
                     value = textFieldValue,
                     onValueChange = { newValue ->
                         // 检测标记被删除 → 移除对应图片
@@ -305,153 +435,55 @@ fun ChatInputScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFF1D1B20), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 4.dp)
-                        .defaultMinSize(minHeight = 88.dp),
-                    textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
-                    cursorBrush = SolidColor(scheme.primary),
+                        .padding(horizontal = 10.dp)
+                        .defaultMinSize(minHeight = 100.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
                     visualTransformation = imgMarkerTransformation(imageSlots.size, atSlots),
-                    decorationBox = { innerTextField ->
-                        Box(modifier = Modifier.padding(10.dp)) {
-                            if (textFieldValue.text.isEmpty()) {
-                                Text("输入消息", fontSize = 12.sp, color = scheme.outline)
-                            }
-                            innerTextField()
-                        }
-                    }
+                    placeholder = {
+                        Text("输入消息", style = MaterialTheme.typography.bodySmall)
+                    },
+                    minLines = 3,
+                    maxLines = 6,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = MaterialTextFieldDefaults.colors(
+                        focusedContainerColor = scheme.surfaceContainerHigh,
+                        unfocusedContainerColor = scheme.surfaceContainerHigh,
+                        disabledContainerColor = scheme.surfaceContainerHigh,
+                        focusedTextColor = scheme.onSurface,
+                        unfocusedTextColor = scheme.onSurface,
+                        cursorColor = scheme.primary,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                        focusedPlaceholderColor = scheme.onSurfaceVariant,
+                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
+                    ),
                 )
             }
-        }
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // 功能按钮行
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircleIconButton(Icons.Default.Image, "图片") {
-                if (hasGalleryAccess(context)) {
-                    showImagePicker = true
-                    pickerNotice = null
-                } else {
-                    galleryPermissionLauncher.launch(galleryReadPermissions())
-                }
+            item(key = "more") {
+                Button(
+                    onClick = { showToolPanel = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                        secondaryContentColor = scheme.onSurfaceVariant,
+                    ),
+                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    icon = {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                        )
+                    },
+                ) { Text("更多") }
             }
-            CircleIconButton(Icons.Default.AttachFile, "文件") {
-                filePickerLauncher.launch(arrayOf("*/*"))
-            }
-            CircleIconButton(Icons.Default.VideoLibrary, "视频") {
-                showVideoCaptureOptions = true
-            }
-            CircleIconButton(Icons.Default.PhotoCamera, "拍照") {
-                launchCamera(CameraAction.Photo)
-            }
-            if (chatType == 2 && peerUin.toLongOrNull() != null) {
-                CircleIconButton(Icons.Default.AlternateEmail, "@成员") {
-                    vm.loadGroupMembers(peerUin.toLong())
-                    showAtPicker = true
-                }
-            }
-            CircleIconButton(Icons.Default.Mic, "语音", onOpenVoiceRecorder)
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // 发送按钮
-        Button(
-            onClick = {
-                val text = textFieldValue.text
-                val hasText = text
-                    .replace(IMG_MARKER.toString(), "")
-                    .replace(AT_MARKER.toString(), "")
-                    .isNotBlank()
-                val hasImages = imageSlots.isNotEmpty()
-                val hasMentions = atSlots.isNotEmpty()
-
-                if (!hasText && !hasImages && !hasMentions) return@Button
-
-                if (hasImages || hasMentions) {
-                    val uriMap = imageSlots.associate { it.id to it.uri }
-                    val atMap = atSlots.mapIndexed { index, mention -> "at-$index" to mention }.toMap()
-                    var imageIndex = 0
-                    var atIndex = 0
-                    val mappedText = buildString {
-                        text.forEach { ch ->
-                            when (ch) {
-                                IMG_MARKER -> {
-                                    val id = imageSlots.getOrNull(imageIndex++)?.id.orEmpty()
-                                    append(BOUNDARY_START).append("img:").append(id).append(BOUNDARY_END)
-                                }
-                                AT_MARKER -> {
-                                    append(BOUNDARY_START).append("at:").append("at-$atIndex").append(BOUNDARY_END)
-                                    atIndex++
-                                }
-                                else -> append(ch)
-                            }
-                        }
-                    }
-                    onSendMixed(mappedText, uriMap, atMap)
-                } else if (isEditing) {
-                    onSendEdited(text)
-                } else {
-                    onSend(text)
-                }
-                textFieldValue = TextFieldValue("")
-                imageSlots.clear()
-                atSlots.clear()
-                if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
-                onBack()
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp)
-                .height(36.dp),
-            enabled = textFieldValue.text.replace(IMG_MARKER.toString(), "").isNotBlank() || imageSlots.isNotEmpty(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF4F378A),
-                contentColor = Color.White
-            ),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Send, "发送", Modifier.size(14.dp))
-            Spacer(Modifier.width(4.dp))
-            Text("发送", fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
     }
 
-    if (showVideoCaptureOptions) {
-        AlertDialog(
-            visible = true,
-            onDismissRequest = { showVideoCaptureOptions = false },
-            title = { Text("发送视频") },
-            confirmButton = {},
-            dismissButton = {},
-            content = {
-                item {
-                    Button(
-                        onClick = {
-                            showVideoCaptureOptions = false
-                            videoPickerLauncher.launch("video/*")
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                    ) { Text("选择视频", fontSize = 12.sp) }
-                }
-                item {
-                    Button(
-                        onClick = {
-                            showVideoCaptureOptions = false
-                            launchCamera(CameraAction.Video)
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                    ) { Text("拍摄视频", fontSize = 12.sp) }
-                }
-            },
-        )
-    }
 
     if (showAtPicker) {
         val normalizedQuery = atQuery.trim()
@@ -483,13 +515,10 @@ fun ChatInputScreen(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                             .background(scheme.surfaceContainerHigh, RoundedCornerShape(16.dp))
                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                        textStyle = androidx.compose.ui.text.TextStyle(
-                            color = scheme.onSurface,
-                            fontSize = 11.sp,
-                        ),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
                         cursorBrush = SolidColor(scheme.primary),
                         decorationBox = { inner ->
-                            if (atQuery.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", fontSize = 11.sp, color = scheme.outline)
+                            if (atQuery.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
                             inner()
                         },
                     )
@@ -498,13 +527,13 @@ fun ChatInputScreen(
                     item {
                         Text(
                             text = vm.groupMembersError.value ?: "暂无可用群成员",
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = scheme.outline,
                             modifier = Modifier.padding(12.dp),
                         )
                     }
                 } else if (visibleMembers.isEmpty()) {
-                    item { Text("没有匹配成员", fontSize = 11.sp, modifier = Modifier.padding(12.dp)) }
+                    item { Text("没有匹配成员", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp)) }
                 } else {
                     visibleMembers.take(40).forEach { member ->
                         item {
@@ -521,23 +550,151 @@ fun ChatInputScreen(
                                     containerColor = scheme.surfaceContainerHigh,
                                     contentColor = scheme.onSurface,
                                 ),
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(member.displayName, fontSize = 11.sp, maxLines = 1)
-                                    Text(
-                                        member.uin.takeIf { it > 0L }?.toString() ?: member.uid,
-                                        fontSize = 9.sp,
-                                        color = scheme.outline,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
+                                secondaryLabel = {
+                                    Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid)
+                                },
+                            ) { Text(member.displayName, maxLines = 1) }
                         }
                     }
                 }
             },
         )
     }
+}
+
+@Composable
+private fun ChatInputToolsScreen(
+    isGroupChat: Boolean,
+    onBack: () -> Unit,
+    onSelectImage: () -> Unit,
+    onSelectFile: () -> Unit,
+    onSelectVideo: () -> Unit,
+    onCapturePhoto: () -> Unit,
+    onCaptureVideo: () -> Unit,
+    onSelectMember: () -> Unit,
+    onRecordVoice: () -> Unit,
+) {
+    var showVideoActions by remember { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(scheme.background)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onBack) { Text("返回") }
+            Spacer(Modifier.width(8.dp))
+            Text("更多功能", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        }
+
+        androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "image") {
+                ChatInputToolButton(
+                    icon = Icons.Default.Image,
+                    label = "图片",
+                    description = "从本地图片库选择",
+                    onClick = onSelectImage,
+                )
+            }
+            item(key = "photo") {
+                ChatInputToolButton(
+                    icon = Icons.Default.PhotoCamera,
+                    label = "拍照",
+                    description = "拍摄后插入到消息中",
+                    onClick = onCapturePhoto,
+                )
+            }
+            item(key = "video") {
+                ChatInputToolButton(
+                    icon = Icons.Default.VideoLibrary,
+                    label = "视频",
+                    description = "从本地选择或直接拍摄",
+                    onClick = { showVideoActions = !showVideoActions },
+                )
+            }
+            if (showVideoActions) {
+                item(key = "video-library") {
+                    ChatInputToolButton(
+                        icon = Icons.Default.VideoLibrary,
+                        label = "选择本地视频",
+                        description = "浏览系统媒体库",
+                        onClick = onSelectVideo,
+                    )
+                }
+                item(key = "video-capture") {
+                    ChatInputToolButton(
+                        icon = Icons.Default.PhotoCamera,
+                        label = "拍摄视频",
+                        description = "使用系统相机拍摄",
+                        onClick = onCaptureVideo,
+                    )
+                }
+            }
+            item(key = "file") {
+                ChatInputToolButton(
+                    icon = Icons.Default.AttachFile,
+                    label = "文件",
+                    description = "从设备中选择文件",
+                    onClick = onSelectFile,
+                )
+            }
+            item(key = "voice") {
+                ChatInputToolButton(
+                    icon = Icons.Default.Mic,
+                    label = "语音",
+                    description = "按住录制语音消息",
+                    onClick = onRecordVoice,
+                )
+            }
+            if (isGroupChat) {
+                item(key = "mention") {
+                    ChatInputToolButton(
+                        icon = Icons.Default.AlternateEmail,
+                        label = "@成员",
+                        description = "从群成员中选择",
+                        onClick = onSelectMember,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatInputToolButton(
+    icon: ImageVector,
+    label: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Button(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = scheme.surfaceContainerHigh,
+            contentColor = scheme.onSurface,
+            secondaryContentColor = scheme.onSurfaceVariant,
+        ),
+        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+        icon = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+            )
+        },
+        secondaryLabel = { Text(description) },
+    ) { Text(label) }
 }
 
 private enum class CameraAction { Photo, Video }
@@ -566,13 +723,13 @@ private fun deleteCaptureUri(uri: Uri) {
 
 private fun galleryReadPermissions(): Array<String> = when {
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
-        android.Manifest.permission.READ_MEDIA_IMAGES,
-        android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
-        android.Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_IMAGES,
     )
-    else -> arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
 private fun hasGalleryAccess(context: android.content.Context): Boolean = when {
@@ -580,23 +737,59 @@ private fun hasGalleryAccess(context: android.content.Context): Boolean = when {
         ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.READ_MEDIA_IMAGES,
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+        ) == PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(
                 context,
                 android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) == PackageManager.PERMISSION_GRANTED
     }
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
         ContextCompat.checkSelfPermission(
             context,
-            android.Manifest.permission.READ_MEDIA_IMAGES,
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            Manifest.permission.READ_MEDIA_IMAGES,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+    else -> {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+}
+
+private fun videoReadPermissions(): Array<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
+        Manifest.permission.READ_MEDIA_VIDEO,
+        android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+    )
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
+        Manifest.permission.READ_MEDIA_VIDEO,
+    )
+    else -> arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+private fun hasVideoGalleryAccess(context: android.content.Context): Boolean = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_MEDIA_VIDEO,
+        ) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+            ) == PackageManager.PERMISSION_GRANTED
+    }
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.READ_MEDIA_VIDEO,
+        ) == PackageManager.PERMISSION_GRANTED
     }
     else -> {
         ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.READ_EXTERNAL_STORAGE,
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED
     }
 }
 
@@ -673,20 +866,4 @@ private fun findRemovedMarkerIndex(oldText: String, newText: String, marker: Cha
         if (oldText[i] == marker) markerIdx++
     }
     return -1
-}
-
-@Composable
-private fun CircleIconButton(icon: ImageVector, label: String, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        IconButton(
-            onClick = onClick,
-            modifier = Modifier
-                .size(42.dp)
-                .background(Color(0xFF1D1B20), CircleShape)
-        ) {
-            Icon(icon, label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-        }
-        Text(label, fontSize = 9.sp, color = scheme.outline)
-    }
 }

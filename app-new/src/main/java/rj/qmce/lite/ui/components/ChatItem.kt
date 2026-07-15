@@ -98,7 +98,7 @@ fun ChatItem(
                 Text(
                     text = timeStr,
                     color = scheme.outline,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                 )
             }

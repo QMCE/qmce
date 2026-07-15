@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
 
@@ -53,7 +54,7 @@ fun FullscreenMediaGallery(
         Text(
             text = "${pagerState.currentPage + 1}/${media.size}",
             color = Color.White,
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
         )
     }

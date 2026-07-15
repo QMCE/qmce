@@ -162,7 +162,7 @@ fun MyScreen(
                 Text(
                     text = operationStatus,
                     color = MaterialTheme.colorScheme.outline,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -223,14 +223,11 @@ private fun ProfileHeader(
             containerColor = scheme.primaryContainer,
             contentColor = scheme.onPrimaryContainer,
         ),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
+        icon = {
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(ButtonDefaults.ExtraLargeIconSize)
                     .clip(CircleShape)
                     .background(scheme.surfaceContainerHigh, CircleShape),
                 contentAlignment = Alignment.Center,
@@ -244,46 +241,32 @@ private fun ProfileHeader(
                         onError = { onAvatarError() },
                     )
                 } else {
-                    Text(profile.nickname.take(1).ifBlank { "Q" }, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    Text(profile.nickname.take(1).ifBlank { "Q" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = profile.nickname,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (profile.refreshing) {
-                    Spacer(Modifier.width(6.dp))
-                    CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
+        },
+        secondaryLabel = {
+            Column {
+                Text("QQ：${profile.uin}", maxLines = 1)
+                if (profile.signature.isNotBlank()) {
+                    Text(profile.signature, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                Text("轻触复制账号", style = MaterialTheme.typography.bodySmall)
             }
+        },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "QQ：${profile.uin}",
-                color = scheme.onPrimaryContainer,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(top = 2.dp),
+                text = profile.nickname,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (profile.signature.isNotBlank()) {
-                Text(
-                    text = profile.signature,
-                    color = scheme.onPrimaryContainer,
-                    fontSize = 10.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 7.dp),
-                )
+            if (profile.refreshing) {
+                Spacer(Modifier.width(6.dp))
+                CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
             }
-            Text(
-                text = "轻触复制账号",
-                color = scheme.onPrimaryContainer,
-                fontSize = 8.sp,
-                modifier = Modifier.padding(top = 8.dp),
-            )
         }
     }
 }
@@ -293,7 +276,7 @@ private fun MySectionLabel(text: String) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.primary,
-        fontSize = 10.sp,
+        style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Medium,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
     )
@@ -316,34 +299,12 @@ private fun MyActionRow(
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
+            secondaryContentColor = contentColor.copy(alpha = 0.78f),
         ),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(19.dp),
-            )
-            Spacer(Modifier.width(9.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = contentColor, maxLines = 1)
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        fontSize = 9.sp,
-                        color = contentColor.copy(alpha = 0.78f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
-            }
-        }
-    }
+        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+        icon = { Icon(icon, contentDescription = null) },
+        secondaryLabel = subtitle?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
+    ) { Text(title, fontWeight = FontWeight.Medium, maxLines = 1) }
 }
 
 @Composable
@@ -360,7 +321,7 @@ private fun ConfirmActionDialog(
         visible = true,
         onDismissRequest = onDismiss,
         title = { Text(title, textAlign = TextAlign.Center) },
-        text = { Text(detail, textAlign = TextAlign.Center, fontSize = 11.sp) },
+        text = { Text(detail, textAlign = TextAlign.Center, style = MaterialTheme.typography.bodySmall) },
         confirmButton = {
             Button(
                 onClick = {
@@ -371,7 +332,7 @@ private fun ConfirmActionDialog(
                     containerColor = if (destructive) scheme.error else scheme.primary,
                     contentColor = if (destructive) scheme.onError else scheme.onPrimary,
                 ),
-            ) { Text(confirmLabel, fontSize = 11.sp) }
+            ) { Text(confirmLabel) }
         },
     )
 }

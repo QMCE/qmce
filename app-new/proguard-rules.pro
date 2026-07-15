@@ -19,6 +19,8 @@
 # QQ PB Micro resolves message fields by their original names via Class.getField().
 # Preserve every generated message and its fields so R8 cannot break serialization.
 -keep class * extends com.tencent.mobileqq.pb.MessageMicro { *; }
+-keep class com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
+-keep class * extends com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
 -keep class tencent.im.** { *; }
 -dontwarn com.tencent.**
 -dontwarn mqq.**
@@ -30,6 +32,8 @@
 # ── 应用代码 ──
 #-keep class rj.qmce.lite.** { *; }
 -keep class rj.qmce.lite.QmceApplication { *; }
+-keep class androidx.core.app.CoreComponentFactory { *; }
+
 
 # Keep lazy call (?)
 -keepclasseswithmembers class * {

@@ -39,9 +39,15 @@ import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.touchTargetAwareSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Stop
 import com.tencent.mobileqq.ptt.IQQRecorder
 import com.tencent.mobileqq.ptt.IQQRecorderUtils
 import com.tencent.mobileqq.qroute.QRoute
@@ -219,112 +225,104 @@ fun VoiceRecordScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("语音消息", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text("语音消息", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(12.dp))
         Text(
             text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(elapsedMillis) else stateLabel,
             color = if (recordState is VoiceRecordState.Error) MaterialTheme.colorScheme.error else Color.White,
-            fontSize = 24.sp,
+            style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
         )
         if (recordState is VoiceRecordState.Recording) {
-            Text("再次点击结束录音", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            Text("再次点击结束录音", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         }
         if (recordState is VoiceRecordState.Ready) {
             val state = recordState as VoiceRecordState.Ready
             Text(
                 text = formatVoiceRecordDuration(state.durationMillis),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
         Spacer(Modifier.height(18.dp))
 
         when (recordState) {
             VoiceRecordState.Idle, is VoiceRecordState.Error -> {
-                Button(
+                FilledIconButton(
                     onClick = ::requestOrStartRecording,
-                    modifier = Modifier.size(96.dp),
-                    colors = ButtonDefaults.buttonColors(
+                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
+                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                 ) {
-                    Text("开始", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Default.Mic, contentDescription = "开始录音")
                 }
             }
             VoiceRecordState.Recording -> {
-                Button(
+                FilledIconButton(
                     onClick = { stopRecording(discard = false) },
-                    modifier = Modifier.size(96.dp),
-                    colors = ButtonDefaults.buttonColors(
+                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
+                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError,
                     ),
                 ) {
-                    Text("结束", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Icon(Icons.Default.Stop, contentDescription = "结束录音")
                 }
                 Spacer(Modifier.height(8.dp))
-                Button(
+                CompactButton(
                     onClick = { stopRecording(discard = true) },
-                    modifier = Modifier.height(34.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ),
-                ) {
-                    Text("取消录音", fontSize = 11.sp)
-                }
+                    label = { Text("取消录音") },
+                )
             }
             VoiceRecordState.Finalizing -> CircularProgressIndicator(modifier = Modifier.size(42.dp), strokeWidth = 3.dp)
             is VoiceRecordState.Ready -> {
                 val state = recordState as VoiceRecordState.Ready
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                    CompactButton(
                         onClick = {
                             state.file.delete()
                             recordState = VoiceRecordState.Idle
                             elapsedMillis = 0L
                         },
-                        modifier = Modifier.height(38.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
-                    ) {
-                        Text("重录", fontSize = 11.sp)
-                    }
-                    Button(
+                    label = { Text("重录") },
+                    )
+                    CompactButton(
                         onClick = {
                             onSendVoice(state.file, state.durationMillis, state.formatType)
                             onBack()
                         },
-                        modifier = Modifier.height(38.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
-                    ) {
-                        Text("发送", fontSize = 11.sp)
-                    }
+                    label = { Text("发送") },
+                    )
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Button(
+        CompactButton(
             onClick = {
                 if (recordState is VoiceRecordState.Recording) stopRecording(discard = true)
                 onBack()
             },
-            modifier = Modifier.fillMaxWidth().height(34.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
-        ) {
-            Text("返回", fontSize = 11.sp)
-        }
+            label = { Text("返回") },
+        )
     }
 }
 

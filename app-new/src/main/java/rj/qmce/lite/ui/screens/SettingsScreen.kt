@@ -6,13 +6,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -35,6 +34,7 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import mqq.app.AppRuntime
@@ -68,7 +68,7 @@ fun SettingsScreen(
         item(key = "title") {
             Text(
                 text = "设置",
-                fontSize = 18.sp,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -112,10 +112,45 @@ fun SettingsScreen(
                 secondaryLabel = { Text("对话框默认铺满手表屏幕") },
             )
         }
+        item(key = "auto-scale") {
+            SwitchButton(
+                checked = settings.autoScale,
+                onCheckedChange = settingsVm::setAutoScale,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                label = { Text("自动缩放") },
+                secondaryLabel = { Text("使用系统原生尺寸和密度") },
+            )
+        }
+        item(key = "manual-scale") {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("手动缩放")
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.2fx", settings.manualScale),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Slider(
+                    value = settings.manualScale,
+                    onValueChange = settingsVm::setManualScale,
+                    enabled = !settings.autoScale,
+                    steps = 24,
+                    valueRange = 0.75f..2.0f,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         item(key = "data-label") { SettingsSectionLabel("同步与数据") }
         item(key = "packet-tool") {
             SettingsActionRow(
-                icon = Icons.Default.Send,
+                icon = Icons.AutoMirrored.Filled.Send,
                 title = "发包工具",
                 subtitle = "发送 PB、OIDB 或 Ark 消息",
                 onClick = onOpenPacketTool,
@@ -159,7 +194,7 @@ fun SettingsScreen(
             Text(
                 text = "QMCE Lite X ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）\n${BuildConfig.APPLICATION_ID}",
                 color = MaterialTheme.colorScheme.outline,
-                fontSize = 10.sp,
+                style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -169,7 +204,7 @@ fun SettingsScreen(
                 Text(
                     text = operationStatus,
                     color = MaterialTheme.colorScheme.outline,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -187,7 +222,7 @@ fun SettingsScreen(
                 Text(
                     text = "图片、表情和其他聊天媒体会在需要时重新下载。",
                     textAlign = TextAlign.Center,
-                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.titleSmall,
                 )
             },
             confirmButton = {
@@ -200,7 +235,7 @@ fun SettingsScreen(
                         containerColor = scheme.error,
                         contentColor = scheme.onError,
                     ),
-                ) { Text("清理", fontSize = 11.sp) }
+                ) { Text("清理") }
             },
         )
     }
@@ -211,7 +246,7 @@ private fun SettingsSectionLabel(text: String) {
     Text(
         text = text,
         color = MaterialTheme.colorScheme.primary,
-        fontSize = 10.sp,
+        style = MaterialTheme.typography.titleSmall,
         fontWeight = FontWeight.Medium,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
     )
@@ -234,36 +269,10 @@ private fun SettingsActionRow(
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
+            secondaryContentColor = contentColor.copy(alpha = 0.78f),
         ),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(19.dp),
-            )
-            Spacer(Modifier.width(9.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    color = contentColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                )
-                Text(
-                    text = subtitle,
-                    color = contentColor.copy(alpha = 0.78f),
-                    fontSize = 9.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-    }
+        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+        icon = { Icon(icon, contentDescription = null) },
+        secondaryLabel = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+    ) { Text(title, color = contentColor, fontWeight = FontWeight.Medium, maxLines = 1) }
 }

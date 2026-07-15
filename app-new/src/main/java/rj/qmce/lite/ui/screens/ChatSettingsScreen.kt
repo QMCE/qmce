@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.runtime.Composable
@@ -18,12 +18,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumnDefaults
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.Alignment
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.touchTargetAwareSize
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 
@@ -49,25 +55,25 @@ fun ChatSettingsScreen(
         ),
     ) {
         item(key = "settings-title") {
-            Text(
-                text = if (isGroup) "群聊设置" else "好友设置",
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                fontSize = 16.sp,
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回聊天")
+                }
+                Text(
+                    text = if (isGroup) "群聊设置" else "好友设置",
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-            )
-        }
-        item(key = "settings-back") {
-                Button(
-                onClick = onBack,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                ),
-                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                    icon = { Icon(Icons.Default.ArrowBack, contentDescription = "返回") },
-                ) { Text("返回聊天") }
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.size(40.dp))
+            }
         }
         item(key = "settings-top") {
             Button(
@@ -102,7 +108,7 @@ fun ChatSettingsScreen(
         }
         state.error?.let { message ->
             item(key = "settings-error") {
-                Text(message, fontSize = 10.sp, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
             }
         }
     }

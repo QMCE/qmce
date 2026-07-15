@@ -6,7 +6,6 @@ import android.view.SurfaceView
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -119,7 +118,7 @@ private fun VideoPlayerScreen(
         modifier = Modifier.fillMaxSize().background(Color.Black).padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(title, color = Color.White, fontSize = 14.sp, maxLines = 1)
+        Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         Box(
             modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp).background(Color(0xFF121212)),
             contentAlignment = Alignment.Center,
@@ -137,7 +136,7 @@ private fun VideoPlayerScreen(
                 modifier = Modifier.fillMaxSize(),
             )
             if (!prepared && error == null) CircularProgressIndicator(modifier = Modifier.size(30.dp))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 11.sp) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Button(
@@ -147,21 +146,19 @@ private fun VideoPlayerScreen(
                     else { mediaPlayer.start(); playing = true }
                 },
                 enabled = prepared && error == null,
-                modifier = Modifier.height(38.dp),
-            ) { Text(if (playing) "暂停" else "播放", fontSize = 11.sp) }
+            ) { Text(if (playing) "暂停" else "播放") }
             Text(
                 "${formatMediaDuration(currentMs / 1000)} / ${formatMediaDuration(durationMs / 1000)}",
                 color = Color.White,
-                fontSize = 10.sp,
+                style = MaterialTheme.typography.bodySmall,
             )
             Button(
                 onClick = onDismiss,
-                modifier = Modifier.height(38.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-            ) { Text("关闭", fontSize = 11.sp) }
+            ) { Text("关闭") }
         }
     }
 }

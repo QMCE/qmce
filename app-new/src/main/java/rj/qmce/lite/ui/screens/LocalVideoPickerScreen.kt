@@ -29,16 +29,13 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,35 +56,32 @@ import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 
-private data class LocalGalleryImage(
+private data class LocalGalleryVideo(
     val id: Long,
     val uri: Uri,
     val dateModified: Long,
     val sizeBytes: Long,
 )
 
-private sealed interface GalleryLoadState {
-    data object Loading : GalleryLoadState
-    data class Ready(val images: List<LocalGalleryImage>) : GalleryLoadState
-    data class Error(val message: String) : GalleryLoadState
+private sealed interface VideoGalleryLoadState {
+    data object Loading : VideoGalleryLoadState
+    data class Ready(val videos: List<LocalGalleryVideo>) : VideoGalleryLoadState
+    data class Error(val message: String) : VideoGalleryLoadState
 }
 
 @Composable
-fun LocalImagePickerScreen(
-    existingUris: Set<String>,
+fun LocalVideoPickerScreen(
     onDismiss: () -> Unit,
-    onConfirm: (List<Uri>) -> Unit,
+    onConfirm: (Uri) -> Unit,
 ) {
     val context = LocalContext.current
     var mediaRevision by remember { mutableStateOf(0) }
     DisposableEffect(context) {
-        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean, uri: Uri?) {
                 mediaRevision++
@@ -96,13 +90,17 @@ fun LocalImagePickerScreen(
         context.contentResolver.registerContentObserver(collection, true, observer)
         onDispose { context.contentResolver.unregisterContentObserver(observer) }
     }
-    val galleryState by produceState<GalleryLoadState>(GalleryLoadState.Loading, context, mediaRevision) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { GalleryLoadState.Ready(loadRecentImages(context)) }
-                .getOrElse { GalleryLoadState.Error(it.message ?: "无法读取本地图片") }
+    val galleryState by produceState<VideoGalleryLoadState>(
+        initialValue = VideoGalleryLoadState.Loading,
+        key1 = context,
+        key2 = mediaRevision,
+    ) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { VideoGalleryLoadState.Ready(loadRecentVideos(context)) }
+                .getOrElse { VideoGalleryLoadState.Error(it.message ?: "无法读取本地视频") }
         }
     }
-    val selected = remember { mutableStateListOf<String>() }
+    var selected by remember { mutableStateOf<Uri?>(null) }
     val scheme = MaterialTheme.colorScheme
 
     Column(
@@ -115,44 +113,45 @@ fun LocalImagePickerScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onDismiss, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize)) {
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.touchTargetAwareSize(
+                    androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize,
+                ),
+            ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
             }
             Spacer(Modifier.width(4.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("选择图片", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text("选择视频", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "已选 ${selected.size} 张",
+                    if (selected == null) "选择一个视频" else "已选择视频",
                     color = scheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             Button(
-                onClick = {
-                    onConfirm(selected.map(Uri::parse))
-                },
-                enabled = selected.isNotEmpty(),
+                onClick = { selected?.let(onConfirm) },
+                enabled = selected != null,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = scheme.primaryContainer,
                     contentColor = scheme.onPrimaryContainer,
                 ),
-            ) {
-                Text("添加")
-            }
+            ) { Text("发送") }
         }
 
         Spacer(Modifier.height(6.dp))
         when (val state = galleryState) {
-            GalleryLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            VideoGalleryLoadState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
             }
-            is GalleryLoadState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            is VideoGalleryLoadState.Error -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(state.message, color = scheme.error, style = MaterialTheme.typography.bodySmall)
             }
-            is GalleryLoadState.Ready -> {
-                if (state.images.isEmpty()) {
+            is VideoGalleryLoadState.Ready -> {
+                if (state.videos.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("没有可用图片", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        Text("没有可用视频", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
                 } else {
                     LazyVerticalGrid(
@@ -162,27 +161,19 @@ fun LocalImagePickerScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(state.images, key = { image -> image.id }) { image ->
-                            val uriString = image.uri.toString()
-                            val isAdded = uriString in existingUris
-                            val isSelected = uriString in selected
+                        items(state.videos, key = { video -> video.id }) { video ->
+                            val isSelected = video.uri == selected
                             Card(
-                                onClick = {
-                                    if (isSelected) selected.remove(uriString)
-                                    else if (!isAdded) selected.add(uriString)
-                                },
-                                enabled = !isAdded,
+                                onClick = { selected = video.uri },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(116.dp),
-                                colors = CardDefaults.cardColors(
-                                    containerColor = scheme.surfaceContainer,
-                                ),
+                                colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainer),
                                 contentPadding = PaddingValues(0.dp),
                             ) {
                                 Box(Modifier.fillMaxSize()) {
-                                    SystemMediaThumbnail(image)
-                                    if (isSelected || isAdded) {
+                                    SystemVideoThumbnail(video)
+                                    if (isSelected) {
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
@@ -197,21 +188,12 @@ fun LocalImagePickerScreen(
                                                 .background(scheme.primary),
                                             contentAlignment = Alignment.Center,
                                         ) {
-                                            if (isAdded) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Check,
-                                                    contentDescription = "已添加",
-                                                    tint = scheme.onPrimary,
-                                                    modifier = Modifier.size(14.dp),
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = "${selected.indexOf(uriString) + 1}",
-                                                    color = scheme.onPrimary,
-                                                    style = MaterialTheme.typography.bodyLarge,
-                                                    fontWeight = FontWeight.Bold,
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = "已选择",
+                                                tint = scheme.onPrimary,
+                                                modifier = Modifier.size(14.dp),
+                                            )
                                         }
                                     }
                                 }
@@ -224,29 +206,29 @@ fun LocalImagePickerScreen(
     }
 }
 
-private fun loadRecentImages(context: Context): List<LocalGalleryImage> {
-    val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+private fun loadRecentVideos(context: Context): List<LocalGalleryVideo> {
+    val collection = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
     val projection = arrayOf(
-        MediaStore.Images.Media._ID,
-        MediaStore.Images.Media.DATE_MODIFIED,
-        MediaStore.Images.Media.SIZE,
+        MediaStore.Video.Media._ID,
+        MediaStore.Video.Media.DATE_MODIFIED,
+        MediaStore.Video.Media.SIZE,
     )
-    val images = ArrayList<LocalGalleryImage>()
+    val videos = ArrayList<LocalGalleryVideo>()
     context.contentResolver.query(
         collection,
         projection,
         null,
         null,
-        "${MediaStore.Images.Media.DATE_ADDED} DESC",
+        "${MediaStore.Video.Media.DATE_ADDED} DESC",
     )?.use { cursor ->
-        val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-        val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
-        val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)
-        while (cursor.moveToNext() && images.size < 240) {
+        val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+        val modifiedIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_MODIFIED)
+        val sizeIndex = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.SIZE)
+        while (cursor.moveToNext() && videos.size < 240) {
             val id = cursor.getLong(idIndex)
             val sizeBytes = cursor.getLong(sizeIndex)
             if (sizeBytes <= 0L) continue
-            images += LocalGalleryImage(
+            videos += LocalGalleryVideo(
                 id = id,
                 uri = ContentUris.withAppendedId(collection, id),
                 dateModified = cursor.getLong(modifiedIndex),
@@ -254,14 +236,16 @@ private fun loadRecentImages(context: Context): List<LocalGalleryImage> {
             )
         }
     }
-    return images
+    return videos
 }
 
 @Composable
-private fun SystemMediaThumbnail(image: LocalGalleryImage) {
+private fun SystemVideoThumbnail(video: LocalGalleryVideo) {
     val context = LocalContext.current
-    val bitmap by produceState<Bitmap?>(null, image.uri, image.dateModified, image.sizeBytes) {
-        value = withContext(Dispatchers.IO) { loadSystemThumbnail(context, image) }
+    val bitmap by produceState<Bitmap?>(null, video.uri, video.dateModified, video.sizeBytes) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            loadVideoThumbnail(context, video)
+        }
     }
     if (bitmap != null) {
         Image(
@@ -277,20 +261,20 @@ private fun SystemMediaThumbnail(image: LocalGalleryImage) {
     }
 }
 
-private fun loadSystemThumbnail(context: Context, image: LocalGalleryImage): Bitmap? {
+private fun loadVideoThumbnail(context: Context, video: LocalGalleryVideo): Bitmap? {
     val resolver = context.contentResolver
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        return runCatching { resolver.loadThumbnail(image.uri, Size(320, 320), null) }.getOrNull()
+        return runCatching { resolver.loadThumbnail(video.uri, Size(320, 320), null) }.getOrNull()
     }
     return runCatching {
-        MediaStore.Images.Thumbnails.getThumbnail(
+        MediaStore.Video.Thumbnails.getThumbnail(
             resolver,
-            image.id,
-            MediaStore.Images.Thumbnails.MINI_KIND,
+            video.id,
+            MediaStore.Video.Thumbnails.MINI_KIND,
             null,
         )
     }.getOrNull() ?: runCatching {
-        resolver.openFileDescriptor(image.uri, "r")?.use { descriptor ->
+        resolver.openFileDescriptor(video.uri, "r")?.use { descriptor ->
             BitmapFactory.decodeFileDescriptor(descriptor.fileDescriptor)
         }
     }.getOrNull()

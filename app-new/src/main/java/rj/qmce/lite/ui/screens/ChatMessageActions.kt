@@ -11,8 +11,11 @@ import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -20,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.AlertDialog
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -31,6 +36,7 @@ data class MessageAction(
     val label: String,
     val enabled: Boolean = true,
     val destructive: Boolean = false,
+    val icon: ImageVector? = null,
 )
 
 data class MessageActionContext(
@@ -55,11 +61,11 @@ object MessageActionResolver {
 
         if (copyable.isNotBlank()) add(MessageAction("copy", "复制"))
 
-        // +1：最后一条消息且与前一条文本相同
+        // 重复发送：最后一条消息且与前一条文本相同
         if (context.isLastMessage && copyable.isNotBlank()) {
             val prevText = context.previousMessage?.contents?.copyableText()
             if (prevText == copyable) {
-                add(MessageAction("repeat", "+1"))
+                add(MessageAction("repeat", "重复", icon = Icons.Default.Repeat))
             }
         }
 
@@ -133,7 +139,7 @@ fun MessageActionsDialog(
         content = {
             actions.forEach { action ->
                 item {
-                    Button(
+                    CompactButton(
                         onClick = { onAction(action) },
                         enabled = action.enabled,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp),
@@ -144,9 +150,11 @@ fun MessageActionsDialog(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
-                    ) {
-                        Text(action.label, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
+                        icon = action.icon?.let { actionIcon ->
+                            { Icon(actionIcon, contentDescription = null) }
+                        },
+                        label = { Text(action.label) },
+                    )
                 }
             }
         },

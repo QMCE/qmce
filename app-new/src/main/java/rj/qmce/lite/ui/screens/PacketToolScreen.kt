@@ -1,7 +1,6 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -26,9 +27,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.RadioButton
 import androidx.wear.compose.material3.Text
 import rj.qmce.lite.data.packet.PacketMode
 import rj.qmce.lite.data.packet.PacketPayloadFormat
@@ -61,17 +65,13 @@ fun PacketToolScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "‹ 返回",
-                    color = scheme.primary,
-                    fontSize = 11.sp,
-                    modifier = Modifier.clickable(onClick = onBack).padding(vertical = 5.dp),
-                )
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                }
                 Text(
                     text = "发包工具",
                     color = scheme.onBackground,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
                 )
@@ -90,7 +90,7 @@ fun PacketToolScreen(
                     text = state.target?.let { "发送到：${it.peerName.ifBlank { it.peerUid }}" }
                         ?: "Ark 请从聊天页进入",
                     color = if (state.target == null) scheme.error else scheme.outline,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
@@ -163,7 +163,7 @@ fun PacketToolScreen(
             Button(
                 onClick = vm::send,
                 enabled = !state.sending,
-                modifier = Modifier.fillMaxWidth().height(40.dp),
+                modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = scheme.primaryContainer,
                     contentColor = scheme.onPrimaryContainer,
@@ -171,7 +171,7 @@ fun PacketToolScreen(
                     disabledContentColor = scheme.outline,
                 ),
             ) {
-                Text(if (state.sending) "发送中…" else "发送", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Text(if (state.sending) "发送中…" else "发送")
             }
         }
         if (state.status.isNotBlank()) {
@@ -179,7 +179,7 @@ fun PacketToolScreen(
                 Text(
                     text = state.status,
                     color = if (state.status.contains("失败") || state.status.contains("不可用")) scheme.error else scheme.outline,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 )
@@ -220,16 +220,12 @@ private fun PacketChoice(
     modifier: Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(34.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (selected) scheme.primaryContainer else scheme.surfaceContainerHigh,
-            contentColor = if (selected) scheme.onPrimaryContainer else scheme.onSurface,
-        ),
-    ) {
-        Text(text, fontSize = 10.sp, maxLines = 1)
-    }
+    RadioButton(
+        selected = selected,
+        onSelect = onClick,
+        modifier = modifier,
+        label = { Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1) },
+    )
 }
 
 @Composable
@@ -246,14 +242,14 @@ private fun PacketInput(
         Text(
             text = label,
             color = scheme.primary,
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(start = 5.dp, bottom = 2.dp),
         )
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
             singleLine = singleLine,
-            textStyle = TextStyle(color = scheme.onSurface, fontSize = 11.sp),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
             cursorBrush = SolidColor(scheme.primary),
             modifier = Modifier
                 .fillMaxWidth()
@@ -261,7 +257,7 @@ private fun PacketInput(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             decorationBox = { innerTextField ->
                 if (value.isBlank()) {
-                    Text(hint, color = scheme.outline, fontSize = 10.sp)
+                    Text(hint, color = scheme.outline, style = MaterialTheme.typography.bodySmall)
                 }
                 innerTextField()
             },

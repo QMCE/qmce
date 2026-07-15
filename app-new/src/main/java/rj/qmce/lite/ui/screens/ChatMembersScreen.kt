@@ -1,27 +1,24 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -40,6 +37,7 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -79,21 +77,20 @@ fun ChatMembersScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Button(
+                IconButton(
                     onClick = onBack,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
                 ) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                 }
                 Text(
                     text = "群成员${members.takeIf { it.isNotEmpty() }?.let { " (${it.size})" } ?: ""}",
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                 )
                 IconButton(
                     onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
                 ) { Icon(Icons.Default.Refresh, contentDescription = "刷新群成员") }
             }
         }
@@ -106,13 +103,10 @@ fun ChatMembersScreen(
                     .padding(horizontal = 10.dp, vertical = 4.dp)
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
                     .padding(horizontal = 14.dp, vertical = 9.dp),
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontSize = 11.sp,
-                ),
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                 decorationBox = { inner ->
-                    if (query.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                    if (query.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     inner()
                 },
             )
@@ -122,12 +116,12 @@ fun ChatMembersScreen(
         } else if (error != null && members.isEmpty()) {
             item(key = "members-error") {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(error ?: "获取群成员失败", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
-                    Button(onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) }) { Text("重试", fontSize = 11.sp) }
+                    Text(error ?: "获取群成员失败", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    Button(onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) }) { Text("重试") }
                 }
             }
         } else if (visibleMembers.isEmpty()) {
-            item(key = "members-empty") { Text("没有匹配成员", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline) }
+            item(key = "members-empty") { Text("没有匹配成员", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
         } else {
             items(visibleMembers, key = { memberKey(it) }) { member ->
                 GroupMemberRow(member)
@@ -162,14 +156,14 @@ private fun GroupMemberRow(member: GroupMemberRepository.Member) {
                 modifier = Modifier.size(ButtonDefaults.LargeIconSize).clip(CircleShape).background(scheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(member.displayName.firstOrNull()?.toString() ?: "?", fontSize = 12.sp, color = scheme.primary)
+                Text(member.displayName.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.bodyLarge, color = scheme.primary)
                 if (model != null) {
                     AsyncImage(model, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
                 }
             }
-        },
+        }, /* // don't need this
         secondaryLabel = {
             Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid, maxLines = 1)
-        },
+        }, */
     ) { Text(member.displayName, maxLines = 1) }
 }

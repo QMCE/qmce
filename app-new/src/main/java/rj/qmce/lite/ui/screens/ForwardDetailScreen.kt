@@ -2,7 +2,6 @@ package rj.qmce.lite.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,10 +25,14 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 @Composable
 internal fun ForwardDetailScreen(
@@ -70,7 +73,7 @@ internal fun ForwardDetailScreen(
                     Text(
                         text = state.message,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                     Button(
@@ -81,7 +84,7 @@ internal fun ForwardDetailScreen(
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         ),
                     ) {
-                        Text("关闭", fontSize = 11.sp)
+                        Text("关闭")
                     }
                 }
             }
@@ -126,22 +129,15 @@ private fun ForwardDetailHeader(title: String, onDismiss: () -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = "‹",
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .clickable(onClick = onDismiss)
-                .padding(horizontal = 5.dp),
-            color = Color.White,
-            fontSize = 25.sp,
-            fontWeight = FontWeight.Medium,
-        )
+        IconButton(
+            onClick = onDismiss,
+            modifier = Modifier.align(Alignment.CenterStart),
+        ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
         Text(
             text = title,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 29.dp),
             color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

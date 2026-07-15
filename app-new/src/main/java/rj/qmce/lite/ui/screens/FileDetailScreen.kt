@@ -56,13 +56,12 @@ internal fun FileDetailScreen(
         modifier = Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("文件详情", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+        Text("文件详情", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(14.dp))
         Text(
             text = content.name,
             color = Color.White,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -84,47 +83,45 @@ internal fun FileDetailScreen(
             ) {
                 Button(
                     onClick = { onOpenLocalFile(localFile) },
-                    modifier = Modifier.weight(1f).height(38.dp),
+                    modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
                     ),
                 ) {
-                    Text("打开", fontSize = 11.sp)
+                    Text("打开")
                 }
                 Button(
                     onClick = { shareLocalMedia(context, localFile) },
-                    modifier = Modifier.weight(1f).height(38.dp),
+                    modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ),
                 ) {
-                    Text("分享", fontSize = 11.sp)
+                    Text("分享")
                 }
             }
         } else {
             Button(
                 onClick = onDownloadFile,
                 enabled = content.invalidState == null || content.invalidState == 0,
-                modifier = Modifier.fillMaxWidth().height(38.dp),
+                modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
-            ) { Text("下载文件", fontSize = 11.sp) }
+            ) { Text("下载文件") }
         }
         Spacer(Modifier.height(8.dp))
-        Button(
+        androidx.wear.compose.material3.CompactButton(
             onClick = onDismiss,
-            modifier = Modifier.fillMaxWidth().height(34.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
-        ) {
-            Text("返回聊天", fontSize = 11.sp)
-        }
+            label = { Text("返回聊天") },
+        )
     }
 }
 
@@ -134,8 +131,8 @@ private fun FileDetailLine(label: String, value: String) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, modifier = Modifier.width(48.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
-        Text(value, modifier = Modifier.weight(1f), color = Color.White, fontSize = 10.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(label, modifier = Modifier.width(48.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        Text(value, modifier = Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 

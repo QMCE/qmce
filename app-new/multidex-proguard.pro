@@ -16,8 +16,11 @@
 
 # ── 应用代码 ──
 #-keep class rj.qmce.lite.** { *; }
+-keep class * extends com.tencent.mobileqq.pb.MessageMicro { *; }
 -keep class rj.qmce.lite.QmceApplication { *; }
 -keep class androidx.core.app.CoreComponentFactory { *; }
+-keep class com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
+-keep class * extends com.tencent.mobileqq.qfix.ApplicationDelegate { *; }
 -keep class android.** { *; }
 
 # ── Flag, called by QLog ──

@@ -16,12 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,8 +29,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.OutlinedButton
+import androidx.wear.compose.material3.Text
 import rj.qmce.lite.CrashCatcher
 import rj.qmce.lite.CrashReport
+import rj.qmce.lite.ui.theme.QmceTheme
 
 class CrashActivity : ComponentActivity() {
 
@@ -59,14 +58,12 @@ class CrashActivity : ComponentActivity() {
     @Composable
     private fun CrashScreen(report: CrashReport) {
         var showDetails by rememberSaveable { mutableStateOf(false) }
-        val colors = darkColorScheme(
-            background = Color(0xFF101014),
-            surface = Color(0xFF1B1B21),
-            primary = Color(0xFFD0BCFF),
-            onPrimary = Color(0xFF381E72),
-        )
-        MaterialTheme(colorScheme = colors) {
-            Surface(modifier = Modifier.fillMaxSize(), color = colors.background) {
+        QmceTheme {
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+            ) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -77,7 +74,7 @@ class CrashActivity : ComponentActivity() {
                 ) {
                     Text(
                         text = "应用发生错误",
-                        style = MaterialTheme.typography.headlineSmall,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center,
                     )
@@ -85,25 +82,25 @@ class CrashActivity : ComponentActivity() {
                     Text(
                         text = "请将下面的日志 ID 提供给开发者",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 12.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(22.dp))
                     Text(
                         text = "关联日志 ID",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 11.sp,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
                         text = report.id,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             .padding(horizontal = 12.dp, vertical = 13.dp),
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(16.dp))
@@ -127,7 +124,7 @@ class CrashActivity : ComponentActivity() {
                             text = "${report.process}  ·  ${report.thread}",
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -135,19 +132,19 @@ class CrashActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth(),
                             color = MaterialTheme.colorScheme.error,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
                             text = report.stacktrace,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MaterialTheme.colorScheme.surface)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                                 .padding(12.dp),
                             color = MaterialTheme.colorScheme.onSurface,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            lineHeight = 14.sp,
+                            style = MaterialTheme.typography.bodySmall,
+                            
                         )
                     }
                 }

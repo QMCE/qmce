@@ -22,7 +22,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import android.util.Log
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.wear.compose.material3.curvedText
@@ -67,10 +66,7 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            QmceTheme {
-                WearApp()
-                LocalDensity
-            }
+            WearApp()
         }
     }
 }
@@ -148,35 +144,51 @@ private fun WearApp() {
     }
 
     if (!ready) {
-        SplashScreen()
+        QmceTheme(
+            autoScale = settings.autoScale,
+            manualScale = settings.manualScale,
+        ) {
+            SplashScreen()
+        }
         return
     }
 
-    AppScaffold(
-        timeText = {
-            if (settings.showTimeText) {
-                val showStatus = settings.showOnlineStatus && isLoggedIn && onlineKnown
-                TimeText(
-                    maxSweepAngle = if (showStatus) 140f else TimeTextDefaults.MaxSweepAngle,
-                    content = { time ->
-                        timeTextCurvedText(time)
-                        if (showStatus) {
-                            timeTextSeparator()
-                            curvedText(
-                                text = onlineDesc ?: "离线",
-                                color = if (OnlineStatus.isOnline())
-                                    Color(0xFF3CCB5A)
-                                else
-                                    Color(0xFFB0B0B0),
-                            )
-                        }
-                    },
-                )
-            }
-        },
+    val appNavController = if (isLoggedIn) {
+        rememberSwipeDismissableNavController()
+    } else {
+        null
+    }
+
+    QmceTheme(
+        navController = appNavController,
+        autoScale = settings.autoScale,
+        manualScale = settings.manualScale,
     ) {
+        AppScaffold(
+            timeText = {
+                if (settings.showTimeText) {
+                    val showStatus = settings.showOnlineStatus && isLoggedIn && onlineKnown
+                    TimeText(
+                        maxSweepAngle = if (showStatus) 140f else TimeTextDefaults.MaxSweepAngle,
+                        content = { time ->
+                            timeTextCurvedText(time)
+                            if (showStatus) {
+                                timeTextSeparator()
+                                curvedText(
+                                    text = onlineDesc ?: "离线",
+                                    color = if (OnlineStatus.isOnline())
+                                        Color(0xFF3CCB5A)
+                                    else
+                                        Color(0xFFB0B0B0),
+                                )
+                            }
+                        },
+                    )
+                }
+            }
+        ) {
         if (isLoggedIn) {
-            val navController = rememberSwipeDismissableNavController()
+            val navController = checkNotNull(appNavController)
             val chatDetailVm: ChatDetailViewModel = viewModel()
             val chatSettingsVm: ChatSettingsViewModel = viewModel()
             val chatListVm: ChatListViewModel = viewModel()
@@ -352,6 +364,7 @@ private fun WearApp() {
                 Log.d("QMCE", "ui: login persisted uin=$uin, scheduled fresh start=$restarted")
             })
         }
+    }
     }
 }
 

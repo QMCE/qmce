@@ -38,8 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.tencent.av.opengl.ui.GLRootView
@@ -134,7 +134,7 @@ private fun CallIdentity(state: CallUiState) {
             Text(
                 text = peer?.name?.take(1)?.uppercase().orEmpty().ifBlank { "Q" },
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontSize = 28.sp,
+                style = MaterialTheme.typography.displayMedium,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -142,8 +142,8 @@ private fun CallIdentity(state: CallUiState) {
         Text(
             text = peer?.name ?: "QQ 通话",
             color = MaterialTheme.colorScheme.onSurface,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
@@ -152,7 +152,7 @@ private fun CallIdentity(state: CallUiState) {
         Text(
             text = callStatus(state),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp,
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
         )
     }
@@ -236,17 +236,16 @@ private fun ControlButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    Button(
+    CompactButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(38.dp),
+        modifier = modifier,
         colors = ButtonDefaults.buttonColors(
             containerColor = containerColor,
             contentColor = contentColor,
         ),
-    ) {
-        Text(text, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-    }
+        label = { Text(text) },
+    )
 }
 
 @Composable

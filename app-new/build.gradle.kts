@@ -53,20 +53,22 @@ android {
     }
 
     buildTypes {
+        val enableCodeShrinks = true
         debug {
-            isMinifyEnabled = false
             isDebuggable = true
             signingConfig = signingConfigs.getByName("dev")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         release {
-            val enableCodeShrinks = true
             if (enableCodeShrinks)
             {
                 isMinifyEnabled = true
+                //noinspection NotShrinkingResources
                 isShrinkResources = false
             } else {
                 isMinifyEnabled = false
+                //noinspection NotShrinkingResources
+                isShrinkResources = false
             }
             signingConfig = signingConfigs.getByName("dev")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -88,8 +90,7 @@ kotlin {
             "-opt-in=androidx.wear.compose.foundation.ExperimentalWearFoundationApi",
             "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
             "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi",
-            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi",
-            "-Xannotation-default-target=param-property"
+            "-opt-in=kotlinx.coroutines.ExperimentalCoroutinesApi"
         )
     }
 }

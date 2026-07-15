@@ -1,7 +1,6 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,7 +19,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
 import mqq.app.AppRuntime
@@ -45,15 +50,14 @@ fun ContactPickerScreen(
             modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "‹",
-                modifier = Modifier.align(Alignment.CenterStart).clickable(onClick = onBack).padding(horizontal = 5.dp),
-                color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Medium,
-            )
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.align(Alignment.CenterStart),
+            ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
             Text(
                 text = title,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 29.dp),
-                color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold,
+                color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -62,7 +66,7 @@ fun ContactPickerScreen(
             Text(
                 text = statusText,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                color = MaterialTheme.colorScheme.outline, fontSize = 9.sp,
+                color = MaterialTheme.colorScheme.outline, style = MaterialTheme.typography.bodySmall,
             )
         }
 
@@ -73,13 +77,16 @@ fun ContactPickerScreen(
         ) {
             items(allBuddies, key = { it.uid }) { buddy ->
                 val name = buddy.remark.takeIf { it.isNotBlank() } ?: buddy.nick
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSelect(buddy.uid, buddy.uin, name) }
-                        .padding(vertical = 6.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+                Button(
+                    onClick = { onSelect(buddy.uid, buddy.uin, name) },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    icon = {
                     val localAvatar = buddy.avatarPath
                         .takeIf { it.isNotBlank() }
                         ?.let { File(it) }
@@ -98,17 +105,12 @@ fun ContactPickerScreen(
                         ) {
                             Text(
                                 text = name.take(1),
-                                color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                                color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = name,
-                        color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                    },
+                ) { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }
     }

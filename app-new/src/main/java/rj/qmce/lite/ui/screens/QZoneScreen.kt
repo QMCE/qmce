@@ -8,11 +8,14 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,7 +23,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,16 +94,16 @@ fun QZoneScreen(vm: QZoneViewModel) {
                 contentColor = scheme.onPrimary,
             ),
         ) {
-            Text("发表动态", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Text("发表动态")
         }
         if (statusText.isNotEmpty()) {
-            Text(statusText, fontSize = 10.sp, color = scheme.outline, modifier = Modifier.padding(4.dp))
+            Text(statusText, style = MaterialTheme.typography.bodySmall, color = scheme.outline, modifier = Modifier.padding(4.dp))
         }
         if (operationStatus.isNotEmpty()) {
-            Text(operationStatus, fontSize = 10.sp, color = scheme.primary, modifier = Modifier.padding(2.dp))
+            Text(operationStatus, style = MaterialTheme.typography.bodySmall, color = scheme.primary, modifier = Modifier.padding(2.dp))
         }
         pickerNotice?.let { notice ->
-            Text(notice, fontSize = 10.sp, color = scheme.error, modifier = Modifier.padding(2.dp))
+            Text(notice, style = MaterialTheme.typography.bodySmall, color = scheme.error, modifier = Modifier.padding(2.dp))
         }
 
         if (loading && feeds.isEmpty()) {
@@ -110,7 +112,7 @@ fun QZoneScreen(vm: QZoneViewModel) {
         }
 
         if (feeds.isEmpty()) {
-            Text("暂无动态", fontSize = 11.sp, color = scheme.outline, modifier = Modifier.padding(16.dp))
+            Text("暂无动态", style = MaterialTheme.typography.bodySmall, color = scheme.outline, modifier = Modifier.padding(16.dp))
             return
         }
 
@@ -161,7 +163,7 @@ fun QZoneScreen(vm: QZoneViewModel) {
                             strokeWidth = 2.dp,
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text("加载中…", fontSize = 10.sp, color = scheme.outline)
+                        Text("加载中…", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
                     }
                 }
             }
@@ -169,7 +171,7 @@ fun QZoneScreen(vm: QZoneViewModel) {
                 item {
                     Text(
                         "— 已经到底了 —",
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = scheme.outline,
                         modifier = Modifier.padding(vertical = 8.dp),
                     )
@@ -258,7 +260,7 @@ private fun QZoneTextInputDialog(
                     containerColor = scheme.primary,
                     contentColor = scheme.onPrimary,
                 ),
-            ) { Text(confirmLabel, fontSize = 11.sp) }
+            ) { Text(confirmLabel) }
         },
         dismissButton = {
             Button(
@@ -267,7 +269,7 @@ private fun QZoneTextInputDialog(
                     containerColor = scheme.surfaceContainerHigh,
                     contentColor = scheme.onSurface,
                 ),
-            ) { Text("取消", fontSize = 11.sp) }
+            ) { Text("取消") }
         },
         content = {
             if (comments.isEmpty()) {
@@ -275,7 +277,7 @@ private fun QZoneTextInputDialog(
                     Text(
                         "暂无评论",
                         color = scheme.outline,
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                     )
                 }
@@ -289,17 +291,28 @@ private fun QZoneTextInputDialog(
                                 .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
-                            Text(comment.author, color = scheme.primary, fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+                            Text(comment.author, color = scheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             if (comment.text.isNotBlank()) {
-                                Text(comment.text, color = scheme.onSurface, fontSize = 11.sp)
+                                Text(comment.text, color = scheme.onSurface, style = MaterialTheme.typography.bodyLarge)
                             }
                             comment.replies.takeLast(4).forEach { reply ->
-                                Text(
-                                    "↳ ${reply.author}: ${reply.text}",
-                                    color = scheme.onSurfaceVariant,
-                                    fontSize = 9.sp,
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.padding(top = 2.dp),
-                                )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Reply,
+                                        contentDescription = "回复",
+                                        tint = scheme.onSurfaceVariant,
+                                        modifier = Modifier.size(12.dp),
+                                    )
+                                    Spacer(Modifier.width(3.dp))
+                                    Text(
+                                        "${reply.author}: ${reply.text}",
+                                        color = scheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
                             }
                         }
                     }
@@ -318,14 +331,13 @@ private fun QZoneTextInputDialog(
                         .clip(RoundedCornerShape(12.dp))
                         .background(scheme.surfaceContainerHigh)
                         .padding(horizontal = 10.dp, vertical = 8.dp),
-                    textStyle = TextStyle(
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = scheme.onSurface,
-                        fontSize = 12.sp,
                     ),
                     decorationBox = { innerTextField ->
                         Box {
                             if (value.isBlank()) {
-                                Text(hint, color = scheme.outline, fontSize = 12.sp)
+                                Text(hint, color = scheme.outline, style = MaterialTheme.typography.bodySmall)
                             }
                             innerTextField()
                         }
@@ -344,7 +356,7 @@ private fun QZoneTextInputDialog(
                     ) {
                         Text(
                             if (mediaCount == 0) "添加图片" else "已选 $mediaCount 张图片 · 继续添加",
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodyLarge,
                         )
                     }
                 }
@@ -422,14 +434,14 @@ private fun FeedCard(
                 }
                 Spacer(Modifier.width(8.dp))
                 Column {
-                    Text(feed.nick, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text(timeText, fontSize = 9.sp, color = scheme.outline)
+                    Text(feed.nick, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(timeText, style = MaterialTheme.typography.bodySmall, color = scheme.outline)
                 }
             }
 
             if (feed.content.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
-                Text(feed.content, fontSize = 11.sp, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                Text(feed.content, style = MaterialTheme.typography.bodyLarge, maxLines = 6, overflow = TextOverflow.Ellipsis)
             }
 
             feed.forward?.let { forward ->
@@ -445,16 +457,19 @@ private fun FeedCard(
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     feed.picUrls.take(3).forEach { url ->
-                        Box(
+                        Card(
+                            onClick = { onOpenMedia(feed.picUrls) },
                             modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(scheme.surfaceContainerHigh),
+                                .size(48.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = scheme.surfaceContainerHigh,
+                            ),
+                            contentPadding = PaddingValues(0.dp),
                         ) {
                             AsyncImage(
                                 model = url,
                                 contentDescription = null,
-                                modifier = Modifier.fillMaxSize().clickable { onOpenMedia(feed.picUrls) },
+                                modifier = Modifier.fillMaxSize(),
                                 contentScale = ContentScale.Crop,
                             )
                         }
@@ -467,7 +482,7 @@ private fun FeedCard(
                                 .background(scheme.surfaceContainerHigh),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("+${feed.picUrls.size - 3}", fontSize = 10.sp, color = scheme.outline)
+                            Text("+${feed.picUrls.size - 3}", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
                         }
                     }
                 }
@@ -475,45 +490,48 @@ private fun FeedCard(
 
             feed.videoUrl?.let { url ->
                 Spacer(Modifier.height(5.dp))
-                Button(
+                CompactButton(
                     onClick = { onOpenVideo(url) },
-                    modifier = Modifier.fillMaxWidth().height(32.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = scheme.primaryContainer,
                         contentColor = scheme.onPrimaryContainer,
                     ),
-                ) {
-                    Text("播放视频", fontSize = 10.sp)
-                }
+                    label = { Text("播放视频") },
+                )
             }
 
             // 底部：赞/评论数
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(
+                CompactButton(
                     onClick = onToggleLike,
-                    modifier = Modifier.height(30.dp),
+                    icon = {
+                        Icon(
+                            imageVector = if (feed.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = if (feed.isLiked) "取消点赞" else "点赞",
+                        )
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = if (feed.isLiked) scheme.errorContainer else scheme.surfaceContainerHigh,
                         contentColor = if (feed.isLiked) scheme.onErrorContainer else scheme.onSurface,
                     ),
-                ) {
-                    Text(
-                        text = if (feed.isLiked) "♥ ${feed.likeCount}" else "♡ ${feed.likeCount}",
-                        fontSize = 10.sp,
-                    )
-                }
+                    label = {
+                        Text(
+                        text = feed.likeCount.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        )
+                    },
+                )
                 Spacer(Modifier.width(12.dp))
-                Button(
+                CompactButton(
                     onClick = onComment,
-                    modifier = Modifier.height(30.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = scheme.surfaceContainerHigh,
                         contentColor = scheme.onSurface,
                     ),
-                ) {
-                    Text("评论 ${feed.commentCount}", fontSize = 10.sp)
-                }
+                    label = { Text("评论 ${feed.commentCount}") },
+                )
             }
         }
     }
@@ -542,7 +560,7 @@ private fun ForwardFeedContent(
     ) {
         Text(
             text = "@$author",
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = scheme.primary,
             maxLines = 1,
@@ -550,7 +568,7 @@ private fun ForwardFeedContent(
         )
         Text(
             text = body,
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.bodySmall,
             color = scheme.onSurfaceVariant,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,

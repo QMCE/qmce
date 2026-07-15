@@ -95,8 +95,8 @@ fun ChatInfoScreen(
                     Spacer(Modifier.size(8.dp))
                     Text(
                         text = displayName,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
@@ -104,14 +104,14 @@ fun ChatInfoScreen(
                     Text(
                         text = if (isGroup) "群号：${peerUin.takeIf { it > 0L } ?: "未知"}"
                         else "QQ：${peerUin.takeIf { it > 0L } ?: "未知"}",
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                     )
                     if (isGroup && members.isNotEmpty()) {
                         Text(
                             text = "${members.size} 名成员",
-                            fontSize = 10.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = scheme.outline,
                             modifier = Modifier.padding(top = 2.dp),
                         )
@@ -207,7 +207,7 @@ private fun ChatInfoAvatar(
     ) {
         Text(
             text = peerName.firstOrNull()?.toString() ?: "?",
-            fontSize = 22.sp,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = scheme.primary,
         )
