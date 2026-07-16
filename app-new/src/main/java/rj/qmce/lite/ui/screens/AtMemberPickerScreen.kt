@@ -65,15 +65,6 @@ fun AtMemberPickerScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "at-member-header") {
-                Text(
-                    "@成员",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             item(key = "at-member-search") {
                 BasicTextField(
                     value = query,

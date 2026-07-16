@@ -35,6 +35,7 @@ import java.io.File
 import java.io.StringReader
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
@@ -284,6 +285,9 @@ class ChatDetailViewModel : ViewModel() {
     private val forwardDetailBackStack = ArrayDeque<ForwardDetailState.Ready>()
     private val chatRepository = ChatRepository()
     private var contact: Contact? = null
+    @Volatile private var chatRuntime: AppRuntime? = null
+    private val pendingMessageServiceActions = mutableListOf<Pair<Long, () -> Unit>>()
+    private val messageServiceConnectionInFlight = AtomicBoolean(false)
     private var selfUin: Long = 0L
     private var peerId: String = "" // QQ号，用于 RecentMessageStore key
 
@@ -303,6 +307,9 @@ class ChatDetailViewModel : ViewModel() {
         forwardDetailBackStack.clear()
         OfficialPttPlayer.stopAndRelease()
         chatRepository.close()
+        synchronized(pendingMessageServiceActions) {
+            pendingMessageServiceActions.clear()
+        }
         msgList.clear()
         _messages.value = emptyList()
         _groupMembers.value = emptyList()
@@ -316,6 +323,7 @@ class ChatDetailViewModel : ViewModel() {
         selfUin = myUin.toLongOrNull() ?: 0L
         peerId = peerUin  // 保存 QQ 号
         contact = Contact(chatType, peerUid, "")
+        chatRuntime = runtime
         loadMessages(runtime, session)
     }
 
@@ -348,28 +356,33 @@ class ChatDetailViewModel : ViewModel() {
         }
         val c = contact ?: return
         _statusText.value = "加载中..."
+        if (!startMessageListener(session, c)) {
+            Log.w(TAG, "chatDetail: message listener registration failed")
+        }
         val requested = chatRepository.loadLatest(c, LOAD_COUNT) { errorCode, errMsg, list, needContinue ->
                 if (!isCurrentSession(session)) return@loadLatest
                 Log.d(TAG, "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue")
-                if (errorCode == 0 && list != null) {
+                if (errorCode == 0) {
                     msgList.clear()
-                    mergeMessages(list, c)
+                    mergeMessages(list.orEmpty(), c)
                     emitMessages()
+                    _hasOlderMessages.value = needContinue
                     _statusText.value = ""
                 } else {
-                    _statusText.value = "加载失败: $errMsg"
+                    _statusText.value = "消息记录加载失败: ${errMsg ?: errorCode}"
                 }
             }
         if (!requested) {
-            _statusText.value = "加载失败: MsgService 不可用"
-            return
+            _statusText.value = "消息记录加载请求失败"
         }
+    }
 
+    private fun startMessageListener(session: Long, chatContact: Contact): Boolean =
         chatRepository.startListening(object : ChatRepository.Listener {
             override fun onReceived(messages: ArrayList<MsgRecord>) {
                 if (!isCurrentSession(session)) return
                 val previousSize = msgList.size
-                mergeMessages(messages, c)
+                mergeMessages(messages, chatContact)
                 if (msgList.size != previousSize) {
                     emitMessages()
                     Log.d(TAG, "chatDetail: onRecvMsg +${msgList.size - previousSize}")
@@ -379,7 +392,7 @@ class ChatDetailViewModel : ViewModel() {
             override fun onAddedSendMessage(message: MsgRecord) {
                 if (!isCurrentSession(session)) return
                 val previousSize = msgList.size
-                mergeMessages(listOf(message), c)
+                mergeMessages(listOf(message), chatContact)
                 if (msgList.size != previousSize) {
                     emitMessages()
                     Log.d(TAG, "chatDetail: onAddSendMsg msgId=${message.msgId}, time=${message.msgTime}")
@@ -393,12 +406,59 @@ class ChatDetailViewModel : ViewModel() {
                 if (RichMediaRepository.consumeDownloadCompletion(notify)) emitMessages()
             }
         })
+
+    private fun runWhenMessageServiceReady(action: () -> Unit) {
+        if (chatRepository.isConnected()) {
+            action()
+            return
+        }
+        val session = chatSession.get()
+        synchronized(pendingMessageServiceActions) {
+            pendingMessageServiceActions += session to action
+        }
+        _statusText.value = "正在等待消息服务..."
+        if (!messageServiceConnectionInFlight.compareAndSet(false, true)) return
+
+        val runtime = chatRuntime
+        Thread {
+            val connection = chatRepository.connect(runtime)
+            val pendingActions = synchronized(pendingMessageServiceActions) {
+                pendingMessageServiceActions.toList().also { pendingMessageServiceActions.clear() }.also {
+                    messageServiceConnectionInFlight.set(false)
+                }
+            }
+            when (connection) {
+                is ChatRepository.Connection.Ready -> {
+                    pendingActions.forEach { (actionSession, pendingAction) ->
+                        if (isCurrentSession(actionSession)) {
+                            _statusText.value = ""
+                            pendingAction()
+                        }
+                    }
+                }
+                ChatRepository.Connection.KernelUnavailable -> {
+                    if (isCurrentSession(session)) _statusText.value = "KernelService 不可用"
+                }
+                is ChatRepository.Connection.MsgServiceUnavailable -> {
+                    if (isCurrentSession(session)) {
+                        _statusText.value = if (connection.timedOut) {
+                            "消息服务初始化超时"
+                        } else {
+                            "MsgService 不可用"
+                        }
+                    }
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
     }
 
     fun sendImage(context: Context, uri: Uri) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+            runWhenMessageServiceReady { sendImage(context, uri) }
             return
         }
 
@@ -505,7 +565,7 @@ class ChatDetailViewModel : ViewModel() {
             return
         }
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+            runWhenMessageServiceReady { sendVideo(context, uri) }
             return
         }
         _statusText.value = "正在准备视频…"
@@ -652,7 +712,7 @@ class ChatDetailViewModel : ViewModel() {
             return
         }
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用，无法发送语音"
+            runWhenMessageServiceReady { sendVoice(recordedFile, durationMillis, formatType) }
             return
         }
         if (!recordedFile.isFile || recordedFile.length() <= 0L) {
@@ -790,7 +850,7 @@ class ChatDetailViewModel : ViewModel() {
     fun sendTextWithImage(context: Context, uri: Uri, text: String) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+            runWhenMessageServiceReady { sendTextWithImage(context, uri, text) }
             return
         }
 
@@ -874,7 +934,7 @@ class ChatDetailViewModel : ViewModel() {
     ) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+            runWhenMessageServiceReady { sendMixed(context, mixedText, uriMap, atMap) }
             return
         }
 
@@ -1025,7 +1085,7 @@ class ChatDetailViewModel : ViewModel() {
     fun sendText(text: String) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+            runWhenMessageServiceReady { sendText(text) }
             return
         }
 

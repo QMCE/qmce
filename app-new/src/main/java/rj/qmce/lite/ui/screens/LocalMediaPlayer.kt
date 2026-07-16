@@ -26,7 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
@@ -115,12 +114,12 @@ private fun VideoPlayerScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Color.Black).padding(10.dp),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
         Box(
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp).background(Color(0xFF121212)),
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
             AndroidView(
@@ -149,7 +148,7 @@ private fun VideoPlayerScreen(
             ) { Text(if (playing) "暂停" else "播放") }
             Text(
                 "${formatMediaDuration(currentMs / 1000)} / ${formatMediaDuration(durationMs / 1000)}",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodySmall,
             )
             Button(

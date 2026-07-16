@@ -31,23 +31,6 @@ fun AboutScreen(onBack: () -> Unit) {
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "about-title") {
-                Text(
-                    "QMCE Lite X",
-                    style = MaterialTheme.typography.titleSmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                )
-            }
             item(key = "about-version") {
                 Text(
                     "独立轻量 QQ 客户端\n版本 ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）\n包名 ${BuildConfig.APPLICATION_ID}",

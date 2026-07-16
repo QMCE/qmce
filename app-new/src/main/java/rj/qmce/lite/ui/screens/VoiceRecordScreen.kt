@@ -30,7 +30,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,7 +45,11 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import com.tencent.mobileqq.ptt.IQQRecorder
 import com.tencent.mobileqq.ptt.IQQRecorderUtils
@@ -221,15 +224,15 @@ fun VoiceRecordScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("语音消息", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text("语音消息", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(12.dp))
         Text(
             text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(elapsedMillis) else stateLabel,
-            color = if (recordState is VoiceRecordState.Error) MaterialTheme.colorScheme.error else Color.White,
+            color = if (recordState is VoiceRecordState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
@@ -278,7 +281,7 @@ fun VoiceRecordScreen(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         contentColor = MaterialTheme.colorScheme.onSurface,
                     ),
-                    label = { Text("取消录音") },
+                    icon = { Icon(Icons.Default.Close, contentDescription = "取消录音") },
                 )
             }
             VoiceRecordState.Finalizing -> CircularProgressIndicator(modifier = Modifier.size(42.dp), strokeWidth = 3.dp)
@@ -295,7 +298,7 @@ fun VoiceRecordScreen(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
-                    label = { Text("重录") },
+                    icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
                     )
                     CompactButton(
                         onClick = {
@@ -306,7 +309,7 @@ fun VoiceRecordScreen(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
-                    label = { Text("发送") },
+                    icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送") },
                     )
                 }
             }
@@ -321,7 +324,7 @@ fun VoiceRecordScreen(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
             ),
-            label = { Text("返回") },
+            icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") },
         )
     }
 }

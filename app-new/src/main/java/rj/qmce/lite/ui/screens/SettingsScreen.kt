@@ -1,5 +1,6 @@
 package rj.qmce.lite.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,23 +12,20 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Cached
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -35,14 +33,14 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
-import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Slider
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import mqq.app.AppRuntime
-import rj.qmce.lite.BuildConfig
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
@@ -51,118 +49,121 @@ import rj.qmce.lite.viewmodel.SettingsViewModel
 
 @Composable
 fun SettingsScreen(
-    runtime: AppRuntime?,
-    chatListVm: ChatListViewModel,
-    contactsVm: ContactsViewModel,
-    qZoneVm: QZoneViewModel,
-    myVm: MyViewModel,
-    settingsVm: SettingsViewModel,
-    onOpenPacketTool: () -> Unit = {},
-    onOpenClearCache: () -> Unit = {},
+    onOpenAppearance: () -> Unit,
+    onOpenInteraction: () -> Unit,
+    onOpenSyncData: () -> Unit,
+    onOpenStorage: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
-    val settings by settingsVm.settings.collectAsState()
-    val operationStatus by myVm.operationStatus.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-
     ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "title") {
-                Text(
-                    text = "设置",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(vertical = 8.dp),
-                )
-            }
-            item(key = "display-label") {
-                SettingsSectionLabel(
-                    text = "显示",
+            item(key = "settings-appearance") {
+                SettingsActionRow(
+                    icon = Icons.Default.Settings,
+                    title = "显示与外观",
+                    subtitle = "时间、状态、缩放与显示尺寸",
+                    onClick = onOpenAppearance,
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
                 )
             }
-            item(key = "show-time") {
-                SwitchButton(
+            item(key = "settings-interaction") {
+                SettingsActionRow(
+                    icon = Icons.Default.Refresh,
+                    title = "交互与导航",
+                    subtitle = "分页提示和全屏交互",
+                    onClick = onOpenInteraction,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "settings-sync") {
+                SettingsActionRow(
+                    icon = Icons.Default.Sync,
+                    title = "同步与数据",
+                    subtitle = "消息、联系人、空间与发包工具",
+                    onClick = onOpenSyncData,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "settings-storage") {
+                SettingsActionRow(
+                    icon = Icons.Default.DeleteSweep,
+                    title = "存储与缓存",
+                    subtitle = "聊天媒体缓存管理",
+                    onClick = onOpenStorage,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "settings-about") {
+                SettingsActionRow(
+                    icon = Icons.Default.Info,
+                    title = "关于",
+                    subtitle = "版本、构建和应用信息",
+                    onClick = onOpenAbout,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AppearanceSettingsScreen(
+    settingsVm: SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val settings by settingsVm.settings.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "appearance-time") {
+                SettingsSwitchRow(
                     checked = settings.showTimeText,
                     onCheckedChange = settingsVm::setShowTimeText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    title = "顶部时间",
+                    subtitle = "在屏幕顶部显示当前时间",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
-                    label = { Text("顶部时间") },
-                    secondaryLabel = { Text("在屏幕顶部显示当前时间") },
                 )
             }
-            item(key = "show-page-indicator") {
-                SwitchButton(
-                    checked = settings.showPageIndicator,
-                    onCheckedChange = settingsVm::setShowPageIndicator,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    label = { Text("分页指示器") },
-                    secondaryLabel = { Text("显示会话、联系人、空间和我的页面位置") },
-                )
-            }
-            item(key = "show-online-status") {
-                SwitchButton(
+            item(key = "appearance-online") {
+                SettingsSwitchRow(
                     checked = settings.showOnlineStatus,
                     onCheckedChange = settingsVm::setShowOnlineStatus,
                     enabled = settings.showTimeText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    title = "顶部在线状态",
+                    subtitle = if (settings.showTimeText) "与时间一起显示在线状态" else "需先开启顶部时间",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
-                    label = { Text("顶部在线状态") },
-                    secondaryLabel = { Text("需开启时间显示") },
                 )
             }
-            item(key = "fullscreen-dialogs") {
-                SwitchButton(
-                    checked = settings.fullscreenDialogs,
-                    onCheckedChange = settingsVm::setFullscreenDialogs,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    label = { Text("对话框全屏") },
-                    secondaryLabel = { Text("对话框默认铺满手表屏幕") },
-                )
-            }
-            item(key = "auto-scale") {
-                SwitchButton(
+            item(key = "appearance-auto-scale") {
+                SettingsSwitchRow(
                     checked = settings.autoScale,
                     onCheckedChange = settingsVm::setAutoScale,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    title = "自动缩放",
+                    subtitle = "使用手表的原生尺寸和密度",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
-                    label = { Text("自动缩放") },
-                    secondaryLabel = { Text("使用系统原生尺寸和密度") },
                 )
             }
-            item(key = "manual-scale") {
+            item(key = "appearance-manual-scale") {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -173,20 +174,22 @@ fun SettingsScreen(
                                 applyContentTransformation()
                             }
                         }
-                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("手动缩放")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("手动缩放", style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = String.format(java.util.Locale.US, "%.2fx", settings.manualScale),
+                            String.format(java.util.Locale.US, "%.2fx", settings.manualScale),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
+                    Text(
+                        if (settings.autoScale) "关闭自动缩放后可调整" else "调整界面缩放倍率",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Slider(
                         value = settings.manualScale,
                         onValueChange = settingsVm::setManualScale,
@@ -197,14 +200,70 @@ fun SettingsScreen(
                     )
                 }
             }
-            item(key = "data-label") {
-                SettingsSectionLabel(
-                    text = "同步与数据",
+        }
+    }
+}
+
+@Composable
+fun InteractionSettingsScreen(
+    settingsVm: SettingsViewModel,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val settings by settingsVm.settings.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "interaction-page-indicator") {
+                SettingsSwitchRow(
+                    checked = settings.showPageIndicator,
+                    onCheckedChange = settingsVm::setShowPageIndicator,
+                    title = "分页指示器",
+                    subtitle = "显示会话、联系人、空间和我的位置",
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
                 )
             }
-            item(key = "packet-tool") {
+            item(key = "interaction-fullscreen-dialogs") {
+                SettingsSwitchRow(
+                    checked = settings.fullscreenDialogs,
+                    onCheckedChange = settingsVm::setFullscreenDialogs,
+                    title = "全屏任务页面",
+                    subtitle = "确认和输入任务使用完整圆屏舞台",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SyncDataSettingsScreen(
+    runtime: AppRuntime?,
+    chatListVm: ChatListViewModel,
+    contactsVm: ContactsViewModel,
+    qZoneVm: QZoneViewModel,
+    myVm: MyViewModel,
+    onOpenPacketTool: () -> Unit,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val operationStatus by myVm.operationStatus.collectAsState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "sync-packet-tool") {
                 SettingsActionRow(
                     icon = Icons.AutoMirrored.Filled.Send,
                     title = "发包工具",
@@ -224,7 +283,7 @@ fun SettingsScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                 )
             }
-            item(key = "refresh-contacts") {
+            item(key = "sync-contacts") {
                 SettingsActionRow(
                     icon = Icons.Default.Refresh,
                     title = "刷新联系人",
@@ -234,7 +293,7 @@ fun SettingsScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                 )
             }
-            item(key = "refresh-qzone") {
+            item(key = "sync-qzone") {
                 SettingsActionRow(
                     icon = Icons.Default.Cached,
                     title = "刷新空间动态",
@@ -244,59 +303,13 @@ fun SettingsScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                 )
             }
-            item(key = "clear-cache") {
-                SettingsActionRow(
-                    icon = Icons.Default.DeleteSweep,
-                    title = "清理聊天缓存",
-                    subtitle = "清除内核的聊天媒体缓存",
-                    destructive = true,
-                    onClick = onOpenClearCache,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-            }
-            item(key = "app-label") {
-                SettingsSectionLabel(
-                    text = "应用",
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-            }
-            item(key = "app-info") {
-                Text(
-                    text = "QMCE Lite X ${BuildConfig.VERSION_NAME}（${BuildConfig.VERSION_CODE}）\n${BuildConfig.APPLICATION_ID}",
-                    color = MaterialTheme.colorScheme.outline,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
             if (operationStatus.isNotBlank()) {
-                item(key = "operation-status") {
+                item(key = "sync-status") {
                     Text(
-                        text = operationStatus,
-                        color = MaterialTheme.colorScheme.outline,
+                        operationStatus,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                 }
             }
@@ -305,25 +318,59 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSectionLabel(
-    text: String,
+fun StorageSettingsScreen(
+    onOpenClearCache: () -> Unit,
+    onBack: () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "storage-description") {
+                Text(
+                    "清理后不会删除帐号、联系人或已发送消息，只会删除内核缓存的聊天媒体文件。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            }
+            item(key = "storage-clear-cache") {
+                SettingsActionRow(
+                    icon = Icons.Default.DeleteSweep,
+                    title = "清理聊天缓存",
+                    subtitle = "清除内核的聊天媒体缓存",
+                    onClick = onOpenClearCache,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    title: String,
+    subtitle: String,
     modifier: Modifier,
     transformation: SurfaceTransformation,
+    enabled: Boolean = true,
 ) {
-    Text(
-        text = text,
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Medium,
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                with(transformation) {
-                    applyContainerTransformation()
-                    applyContentTransformation()
-                }
-            }
-            .padding(horizontal = 16.dp, vertical = 5.dp),
+    SwitchButton(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        transformation = transformation,
+        label = { Text(title) },
+        secondaryLabel = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
     )
 }
 
@@ -332,25 +379,17 @@ private fun SettingsActionRow(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    destructive: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier,
     transformation: SurfaceTransformation,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val containerColor = if (destructive) scheme.errorContainer else scheme.surfaceContainerHigh
-    val contentColor = if (destructive) scheme.onErrorContainer else scheme.onSurface
     Button(
         onClick = onClick,
         modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
         transformation = transformation,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = containerColor,
-            contentColor = contentColor,
-            secondaryContentColor = contentColor.copy(alpha = 0.78f),
-        ),
+        colors = ButtonDefaults.filledTonalButtonColors(),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
         icon = { Icon(icon, contentDescription = null) },
         secondaryLabel = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-    ) { Text(title, color = contentColor, fontWeight = FontWeight.Medium, maxLines = 1) }
+    ) { Text(title, fontWeight = FontWeight.Medium, maxLines = 1) }
 }

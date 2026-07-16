@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.OutlinedButton
@@ -47,8 +48,8 @@ class CrashActivity : ComponentActivity() {
         }.onFailure {
             setContentView(android.widget.TextView(this).apply {
                 text = "崩溃日志 ID：${report.id}\n\n${report.error}\n\n${report.stacktrace}"
-                setTextColor(android.graphics.Color.WHITE)
-                setBackgroundColor(android.graphics.Color.rgb(20, 20, 28))
+                setTextColor(ContextCompat.getColor(this@CrashActivity, rj.qmce.lite.R.color.qmce_fallback_text))
+                setBackgroundColor(ContextCompat.getColor(this@CrashActivity, rj.qmce.lite.R.color.qmce_fallback_background))
                 setPadding(32, 32, 32, 32)
                 textSize = 14f
             })

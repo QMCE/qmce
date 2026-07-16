@@ -23,7 +23,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
-import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -96,7 +95,6 @@ fun ChatInputScreen(
     onSend: (String) -> Unit,
     onSendEdited: (String) -> Unit,
     onSendMixed: (String, Map<String, Uri>, Map<String, AtMention>) -> Unit,
-    onSendFile: (Uri) -> Unit,
     onSendVideo: (Uri) -> Unit,
     onOpenVoiceRecorder: () -> Unit,
     onBack: () -> Unit
@@ -108,6 +106,7 @@ fun ChatInputScreen(
         mutableStateOf(TextFieldValue(initialText, TextRange(initialText.length)))
     }
     val imageSlots = remember { mutableStateListOf<ImageSlot>() }
+    var imagePickerSelection by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val atSlots = remember { mutableStateListOf<AtMention>() }
     val groupMembers by vm.groupMembers.collectAsState()
     val scheme = MaterialTheme.colorScheme
@@ -170,12 +169,6 @@ fun ChatInputScreen(
         } else {
             pickerNotice = "未获得图片访问权限"
         }
-    }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        uri?.let(onSendFile)
     }
 
     val videoPermissionLauncher = rememberLauncherForActivityResult(
@@ -249,14 +242,19 @@ fun ChatInputScreen(
         }
     }
 
+    fun completeImagePickerSelection(uris: List<Uri> = imagePickerSelection) {
+        if (uris.isNotEmpty()) addImageUris(uris)
+        imagePickerSelection = emptyList()
+        showImagePicker = false
+    }
+
     if (showImagePicker) {
         LocalImagePickerScreen(
             existingUris = imageSlots.mapTo(linkedSetOf()) { it.uri.toString() },
-            onDismiss = { showImagePicker = false },
-            onConfirm = { uris ->
-                addImageUris(uris)
-                showImagePicker = false
-            },
+            selectedUris = imagePickerSelection.map(Uri::toString),
+            onSelectionChange = { uris -> imagePickerSelection = uris },
+            onDismiss = ::completeImagePickerSelection,
+            onConfirm = ::completeImagePickerSelection,
         )
         return
     }
@@ -286,7 +284,6 @@ fun ChatInputScreen(
                     galleryPermissionLauncher.launch(galleryReadPermissions())
                 }
             },
-            onSelectFile = { filePickerLauncher.launch(arrayOf("*/*")) },
             onSelectVideo = {
                 if (hasVideoGalleryAccess(context)) {
                     showVideoPicker = true
@@ -422,14 +419,14 @@ fun ChatInputScreen(
                                 }
                             }
                             .padding(horizontal = 14.dp, vertical = 2.dp)
-                            .background(Color(0xFF4F378A), RoundedCornerShape(8.dp)),
+                            .background(scheme.primaryContainer, RoundedCornerShape(8.dp)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         TextButton(onClick = {
                             vm.cancelEdit()
                             onBack()
                         }) {
-                            Text("取消", color = Color(0xFFD1CBD7))
+                            Text("取消", color = scheme.onPrimaryContainer)
                         }
                     }
                 }
@@ -485,8 +482,12 @@ fun ChatInputScreen(
                         }
                         .padding(horizontal = 10.dp)
                         .defaultMinSize(minHeight = 100.dp),
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-                    visualTransformation = imgMarkerTransformation(imageSlots.size, atSlots),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                    visualTransformation = imgMarkerTransformation(
+                        imageCount = imageSlots.size,
+                        atMentions = atSlots,
+                        highlightColor = scheme.primary,
+                    ),
                     placeholder = {
                         Text("输入消息", style = MaterialTheme.typography.bodySmall)
                     },
@@ -516,11 +517,7 @@ fun ChatInputScreen(
                         .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 10.dp),
                     transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = scheme.surfaceContainerHigh,
-                        contentColor = scheme.onSurface,
-                        secondaryContentColor = scheme.onSurfaceVariant,
-                    ),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = {
                         Icon(
@@ -540,7 +537,6 @@ private fun ChatInputToolsScreen(
     isGroupChat: Boolean,
     onBack: () -> Unit,
     onSelectImage: () -> Unit,
-    onSelectFile: () -> Unit,
     onSelectVideo: () -> Unit,
     onCapturePhoto: () -> Unit,
     onCaptureVideo: () -> Unit,
@@ -558,16 +554,6 @@ private fun ChatInputToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "tools-title") {
-                Text(
-                    "更多功能",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             item(key = "image") {
                 ChatInputToolButton(
                     icon = Icons.Default.Image,
@@ -620,16 +606,6 @@ private fun ChatInputToolsScreen(
                     )
                 }
             }
-            item(key = "file") {
-                ChatInputToolButton(
-                    icon = Icons.Default.AttachFile,
-                    label = "文件",
-                    description = "从设备中选择文件",
-                    onClick = onSelectFile,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-            }
             item(key = "voice") {
                 ChatInputToolButton(
                     icon = Icons.Default.Mic,
@@ -672,11 +648,7 @@ private fun ChatInputToolButton(
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
         transformation = transformation,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = scheme.surfaceContainerHigh,
-            contentColor = scheme.onSurface,
-            secondaryContentColor = scheme.onSurfaceVariant,
-        ),
+        colors = ButtonDefaults.filledTonalButtonColors(),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
         icon = {
             Icon(
@@ -789,6 +761,7 @@ private fun hasVideoGalleryAccess(context: android.content.Context): Boolean = w
 private fun imgMarkerTransformation(
     imageCount: Int,
     atMentions: List<AtMention>,
+    highlightColor: Color,
 ): VisualTransformation {
     return VisualTransformation { original ->
         val text = original.text
@@ -801,7 +774,7 @@ private fun imgMarkerTransformation(
         for (i in text.indices) {
             if (text[i] == IMG_MARKER) {
                 val label = if (imageCount > 1) "[图片${slotIdx + 1}]" else "[图片]"
-                display.withStyle(SpanStyle(color = Color(0xFF80CBC4), fontWeight = FontWeight.Bold)) {
+                display.withStyle(SpanStyle(color = highlightColor, fontWeight = FontWeight.Bold)) {
                     append(label)
                 }
                 // label 的每个字符都映射到原文的同一个位置 i
@@ -809,7 +782,7 @@ private fun imgMarkerTransformation(
                 slotIdx++
             } else if (text[i] == AT_MARKER) {
                 val label = "@${atMentions.getOrNull(atIdx)?.nick ?: "成员"}"
-                display.withStyle(SpanStyle(color = Color(0xFF80CBC4), fontWeight = FontWeight.Bold)) {
+                display.withStyle(SpanStyle(color = highlightColor, fontWeight = FontWeight.Bold)) {
                     append(label)
                 }
                 repeat(label.length) { origOffsets.add(i) }

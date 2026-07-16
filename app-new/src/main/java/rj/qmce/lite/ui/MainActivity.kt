@@ -2,15 +2,15 @@
 
 package rj.qmce.lite.ui
 
-import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
-import androidx.fragment.app.FragmentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -19,61 +19,71 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
-import android.util.Log
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.wear.compose.material3.curvedText
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.TimeText
 import androidx.wear.compose.material3.TimeTextDefaults
+import androidx.wear.compose.material3.curvedText
 import androidx.wear.compose.material3.timeTextCurvedText
 import androidx.wear.compose.material3.timeTextSeparator
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
+import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.R
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.OnlineStatus
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.AboutScreen
+import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
-import rj.qmce.lite.ui.screens.ChatInfoScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
+import rj.qmce.lite.ui.screens.InteractionSettingsScreen
+import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
 import rj.qmce.lite.ui.screens.LogoutConfirmationScreen
 import rj.qmce.lite.ui.screens.MainScreen
-import rj.qmce.lite.ui.screens.MyClearChatCacheScreen
 import rj.qmce.lite.ui.screens.PacketToolScreen
-import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.QZoneCommentScreen
 import rj.qmce.lite.ui.screens.QZoneComposerScreen
+import rj.qmce.lite.ui.screens.QZoneFeedDetailScreen
 import rj.qmce.lite.ui.screens.SettingsClearChatCacheScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
+import rj.qmce.lite.ui.screens.StorageSettingsScreen
+import rj.qmce.lite.ui.screens.SyncDataSettingsScreen
 import rj.qmce.lite.ui.screens.VoiceRecordScreen
 import rj.qmce.lite.ui.theme.QmceTheme
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
-import rj.qmce.lite.viewmodel.QZoneViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
 import rj.qmce.lite.viewmodel.PacketToolViewModel
+import rj.qmce.lite.viewmodel.QZoneViewModel
 import rj.qmce.lite.viewmodel.SettingsViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.material3.AppScaffold
-import androidx.wear.compose.material3.TimeText
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -95,8 +105,10 @@ private fun WearApp() {
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
     var qZoneDraft by remember { mutableStateOf("") }
     var qZoneUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    var qZonePickerUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var qZoneCommentTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
     var qZoneCommentDraft by remember { mutableStateOf("") }
+    var qZoneDetailTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
     settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
 
@@ -133,7 +145,7 @@ private fun WearApp() {
         } else {
             onlineDesc = null
             onlineKnown = false
-            Log.e("QMCE","Why it can be here?")
+            Log.e("QMCE","Not logged in")
             onDispose {}
         }
     }
@@ -181,6 +193,7 @@ private fun WearApp() {
         autoScale = settings.autoScale,
         manualScale = settings.manualScale,
     ) {
+        val themeColors = androidx.wear.compose.material3.MaterialTheme.colorScheme
         AppScaffold(
             timeText = {
                 if (settings.showTimeText) {
@@ -194,9 +207,9 @@ private fun WearApp() {
                                 curvedText(
                                     text = onlineDesc ?: "离线",
                                     color = if (OnlineStatus.isOnline())
-                                        Color(0xFF3CCB5A)
+                                        themeColors.tertiary
                                     else
-                                        Color(0xFFB0B0B0),
+                                        themeColors.onSurfaceVariant,
                                 )
                             }
                         },
@@ -238,22 +251,15 @@ private fun WearApp() {
                         onOpenSettings = {
                             navController.navigate("settings") { launchSingleTop = true }
                         },
-                        onOpenMyClearCache = {
-                            navController.navigate("myClearChatCache") { launchSingleTop = true }
-                        },
                         onOpenLogoutConfirmation = {
                             navController.navigate("logoutConfirmation") { launchSingleTop = true }
-                        },
-                        onOpenAbout = {
-                            navController.navigate("about") { launchSingleTop = true }
                         },
                         onOpenQZoneComposer = {
                             navController.navigate("qzoneComposer") { launchSingleTop = true }
                         },
-                        onOpenQZoneComment = { feed ->
-                            qZoneCommentTarget = feed
-                            qZoneCommentDraft = ""
-                            navController.navigate("qzoneComment") { launchSingleTop = true }
+                        onOpenQZoneDetail = { feed ->
+                            qZoneDetailTarget = feed
+                            navController.navigate("qzoneFeedDetail") { launchSingleTop = true }
                         },
                         onLogout = {
                             (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
@@ -295,6 +301,7 @@ private fun WearApp() {
                             myUin = loggedUin,
                             onBack = { navController.popBackStack() },
                             onOpenInput = { navController.navigate("chatInput") { launchSingleTop = true } },
+                            onOpenVoiceRecorder = { navController.navigate("voiceRecord") { launchSingleTop = true } },
                             onOpenContactPicker = { navController.navigate("contactPicker") { launchSingleTop = true } },
                             onOpenPacketTool = { navController.navigate("packetToolChat") { launchSingleTop = true } },
                             onOpenMembers = { navController.navigate("chatMembers") { launchSingleTop = true } },
@@ -329,7 +336,6 @@ private fun WearApp() {
                         onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
                         peerUin = chatDetailVm.currentPeerUin,
                         onSendMixed = { mixedText, uriMap, atMap -> chatDetailVm.sendMixed(context, mixedText, uriMap, atMap) },
-                        onSendFile = { uri -> chatDetailVm.sendFile(context, uri) },
                         onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
                         onOpenVoiceRecorder = { navController.navigate("voiceRecord") { launchSingleTop = true } },
                         onBack = { navController.popBackStack() }
@@ -379,24 +385,79 @@ private fun WearApp() {
                 }
                 composable("settings") {
                     SettingsScreen(
+                        onOpenAppearance = {
+                            navController.navigate("appearanceSettings") { launchSingleTop = true }
+                        },
+                        onOpenInteraction = {
+                            navController.navigate("interactionSettings") { launchSingleTop = true }
+                        },
+                        onOpenSyncData = {
+                            navController.navigate("syncDataSettings") { launchSingleTop = true }
+                        },
+                        onOpenStorage = {
+                            navController.navigate("storageSettings") { launchSingleTop = true }
+                        },
+                        onOpenAbout = {
+                            navController.navigate("about") { launchSingleTop = true }
+                        },
+                    )
+                }
+                composable("appearanceSettings") {
+                    AppearanceSettingsScreen(
+                        settingsVm = settingsVm,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("interactionSettings") {
+                    InteractionSettingsScreen(
+                        settingsVm = settingsVm,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("syncDataSettings") {
+                    SyncDataSettingsScreen(
                         runtime = runtime,
                         chatListVm = chatListVm,
                         contactsVm = contactsVm,
                         qZoneVm = qZoneVm,
                         myVm = myVm,
-                        settingsVm = settingsVm,
                         onOpenPacketTool = {
                             navController.navigate("packetToolSettings") { launchSingleTop = true }
                         },
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable("storageSettings") {
+                    StorageSettingsScreen(
                         onOpenClearCache = {
                             navController.navigate("settingsClearChatCache") { launchSingleTop = true }
                         },
+                        onBack = { navController.popBackStack() },
                     )
                 }
+                composable("qzoneFeedDetail") {
+                    qZoneDetailTarget?.let { initialFeed ->
+                        QZoneFeedDetailScreen(
+                            feedId = initialFeed.feedId,
+                            initialFeed = initialFeed,
+                            vm = qZoneVm,
+                            onOpenComment = { feed ->
+                                qZoneCommentTarget = feed
+                                qZoneCommentDraft = ""
+                                navController.navigate("qzoneComment") { launchSingleTop = true }
+                            },
+                            onBack = {
+                                qZoneDetailTarget = null
+                                navController.popBackStack()
+                            },
+                        )
+                    }
+                }
                 composable("qzoneComposer") {
+                    val qZoneComposerUris = (qZoneUris + qZonePickerUris).distinctBy(Uri::toString)
                     QZoneComposerScreen(
                         draft = qZoneDraft,
-                        selectedUris = qZoneUris,
+                        selectedUris = qZoneComposerUris,
                         onDraftChange = { qZoneDraft = it },
                         onPickMedia = {
                             if (hasQZoneGalleryAccess(context)) {
@@ -406,9 +467,10 @@ private fun WearApp() {
                             }
                         },
                         onPublish = {
-                            qZoneVm.publishImages(context, qZoneDraft, qZoneUris)
+                            qZoneVm.publishImages(context, qZoneDraft, qZoneComposerUris)
                             qZoneDraft = ""
                             qZoneUris = emptyList()
+                            qZonePickerUris = emptyList()
                             navController.popBackStack()
                         },
                         onBack = { navController.popBackStack() },
@@ -417,9 +479,12 @@ private fun WearApp() {
                 composable("qzoneImagePicker") {
                     LocalImagePickerScreen(
                         existingUris = qZoneUris.mapTo(linkedSetOf()) { it.toString() },
+                        selectedUris = qZonePickerUris.map(Uri::toString),
+                        onSelectionChange = { uris -> qZonePickerUris = uris },
                         onDismiss = { navController.popBackStack() },
                         onConfirm = { uris ->
                             qZoneUris = (qZoneUris + uris).distinctBy(Uri::toString)
+                            qZonePickerUris = emptyList()
                             navController.popBackStack()
                         },
                     )
@@ -443,15 +508,6 @@ private fun WearApp() {
                             },
                         )
                     }
-                }
-                composable("myClearChatCache") {
-                    MyClearChatCacheScreen(
-                        onConfirm = {
-                            myVm.clearChatCache()
-                            navController.popBackStack()
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
                 }
                 composable("settingsClearChatCache") {
                     SettingsClearChatCacheScreen(
@@ -505,12 +561,20 @@ private fun SplashScreen() {
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = painterResource(R.drawable.qqpro_ic_fg),
-                contentDescription = "QQ",
-                modifier = Modifier.size(72.dp),
-                contentScale = ContentScale.Fit,
-            )
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(colorResource(R.color.ic_launcher_qq_background)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_qq_splash),
+                    contentDescription = "QQ",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            }
             Spacer(Modifier.height(16.dp))
             androidx.wear.compose.material3.CircularProgressIndicator(
                 modifier = Modifier.size(24.dp),

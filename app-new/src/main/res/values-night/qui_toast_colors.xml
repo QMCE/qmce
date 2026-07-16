@@ -1,0 +1,9 @@
+<resources>
+    <color name="qui_common_text_primary">#FFE6E1E9</color>
+    <color name="qui_toast_background">#F21D1B20</color>
+    <color name="qui_feedback_error">#FFFFB4AB</color>
+    <color name="qui_feedback_info">#FF9ECAFF</color>
+    <color name="qui_feedback_success">#FF83F7B5</color>
+    <color name="qmce_fallback_background">#FF141218</color>
+    <color name="qmce_fallback_text">#FFE6E1E9</color>
+</resources>

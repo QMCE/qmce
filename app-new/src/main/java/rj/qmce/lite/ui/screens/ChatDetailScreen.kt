@@ -7,19 +7,26 @@ import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,15 +39,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,17 +87,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
-import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
+import androidx.wear.compose.material3.LocalContentColor
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
@@ -95,14 +108,13 @@ import rj.qmce.lite.data.call.CallStartResult
 import rj.qmce.lite.data.call.QmceCallController
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
+import rj.qmce.lite.ui.components.CurvedCard
+import rj.qmce.lite.ui.components.curvedCompactButton
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private val IncomingBubble = Color(0xFF1D1B20)
-private val OutgoingBubble = Color(0xFF4F378A)
 
 private sealed interface ChatTimelineItem {
     val key: String
@@ -125,6 +137,13 @@ private data class HistoryAnchor(
     val resultVersion: Long,
 )
 
+private data class TimelineScrollState(
+    val isScrolling: Boolean,
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemOffset: Int,
+    val canScrollBackward: Boolean,
+)
+
 private data class FileDetailTarget(
     val message: ChatDetailViewModel.UiMsg,
     val content: ChatDetailViewModel.MessageContent.File,
@@ -145,6 +164,7 @@ fun ChatDetailScreen(
     myUin: String = "",
     onBack: () -> Unit,
     onOpenInput: () -> Unit = {},
+    onOpenVoiceRecorder: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
     onOpenPacketTool: () -> Unit = {},
     onOpenMembers: () -> Unit = {},
@@ -169,6 +189,7 @@ fun ChatDetailScreen(
     val currentTimelineItems by rememberUpdatedState(timelineItems)
     val currentOlderPageVersion by rememberUpdatedState(olderPageVersion)
     val listState = rememberLazyListState()
+    var composerActionsVisible by remember(peerUid, chatType) { mutableStateOf(true) }
     var initialPositioned by remember(peerUid, chatType) { mutableStateOf(false) }
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var isHistoryRequestPending by remember(peerUid, chatType) { mutableStateOf(false) }
@@ -296,16 +317,38 @@ fun ChatDetailScreen(
     }
 
     LaunchedEffect(peerUid, chatType, initialPositioned) {
-        var wasAwayFromTop = false
-        snapshotFlow { listState.isScrollInProgress to listState.canScrollBackward }
-            .collect { (isScrolling, canScrollBackward) ->
+        var previousState: TimelineScrollState? = null
+        var reachedTopFromUpwardScroll = false
+        snapshotFlow {
+            TimelineScrollState(
+                isScrolling = listState.isScrollInProgress,
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemOffset = listState.firstVisibleItemScrollOffset,
+                canScrollBackward = listState.canScrollBackward,
+            )
+        }.collect { state ->
+                val movedTowardTop = previousState?.let { previous ->
+                    state.firstVisibleItemIndex < previous.firstVisibleItemIndex ||
+                        (
+                            state.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
+                                state.firstVisibleItemOffset < previous.firstVisibleItemOffset
+                            )
+                } == true
+                if (state.canScrollBackward) {
+                    reachedTopFromUpwardScroll = false
+                } else if (
+                    state.isScrolling &&
+                        (movedTowardTop || previousState?.canScrollBackward == true)
+                ) {
+                    reachedTopFromUpwardScroll = true
+                }
                 if (
                     initialPositioned &&
-                    !isScrolling &&
-                    !canScrollBackward &&
+                    !state.isScrolling &&
+                    !state.canScrollBackward &&
                     !currentIsLoadingOlder &&
                     !currentHistoryRequestPending &&
-                    wasAwayFromTop
+                    reachedTopFromUpwardScroll
                 ) {
                     val anchor = listState.layoutInfo.visibleItemsInfo
                         .firstOrNull { item ->
@@ -320,13 +363,22 @@ fun ChatDetailScreen(
                         }
                     isHistoryRequestPending = vm.loadOlderMessages()
                     pendingHistoryAnchor = anchor?.takeIf { isHistoryRequestPending }
-                    wasAwayFromTop = false
+                    reachedTopFromUpwardScroll = false
                 }
-                if (isScrolling && pendingHistoryAnchor != null) {
+                if (state.isScrolling && pendingHistoryAnchor != null) {
                     pendingHistoryAnchor = null
                 }
-                if (canScrollBackward) wasAwayFromTop = true
+                previousState = state
             }
+    }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            composerActionsVisible = false
+        } else {
+            delay(2_000)
+            if (!listState.isScrollInProgress) composerActionsVisible = true
+        }
     }
 
     LaunchedEffect(peerUid, chatType, olderPageVersion) {
@@ -362,7 +414,7 @@ fun ChatDetailScreen(
     val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
         pageCount = { if (showCallPage) 3 else 2 },
     )
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
             ChatHeader(
                 onSearch = { showMessageSearch = true },
@@ -512,16 +564,20 @@ fun ChatDetailScreen(
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
-        } else if (!multiSelectMode && pagerState.currentPage == 0) {
-        CompactButton(
-            onClick = onOpenInput,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
-            label = { Text("发送消息") },
-        )
+        } else if (pagerState.currentPage == 0) {
+            AnimatedVisibility(
+                visible = composerActionsVisible,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
+                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                    slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+                exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                    slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+            ) {
+                ChatComposerActions(
+                    onOpenInput = onOpenInput,
+                    onOpenVoiceRecorder = onOpenVoiceRecorder,
+                )
+            }
         }
         if (forwardDetailState !is ChatDetailViewModel.ForwardDetailState.Idle) {
             ForwardDetailScreen(
@@ -657,7 +713,7 @@ private fun CallPage(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("发起通话", color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text("发起通话", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         // Text(peerName, color = Color(0xFFD1CBD7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(12.dp))
@@ -697,6 +753,31 @@ private fun CallPage(
 }
 
 @Composable
+private fun ChatComposerActions(
+    onOpenInput: () -> Unit,
+    onOpenVoiceRecorder: () -> Unit,
+) {
+    CurvedCard(
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        curvedRow {
+            curvedCompactButton(
+                onClick = {},
+                icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
+            )
+            curvedCompactButton(
+                onClick = onOpenInput,
+                icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
+            )
+            curvedCompactButton(
+                onClick = onOpenVoiceRecorder,
+                icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
+            )
+        }
+    }
+}
+
+@Composable
 internal fun MessageBubble(
     message: ChatDetailViewModel.UiMsg,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
@@ -717,7 +798,16 @@ internal fun MessageBubble(
         SystemTipLine(systemTip.text)
         return
     }
-    val containerColor = if (message.isSelf) OutgoingBubble else IncomingBubble
+    val containerColor = if (message.isSelf) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceContainer
+    }
+    val messageContentColor = if (message.isSelf) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
     val alignment = if (message.isSelf) Arrangement.End else Arrangement.Start
     val bubbleShape = RoundedCornerShape(10.dp)
     val isSingleMedia = message.contents.singleOrNull().let {
@@ -734,7 +824,7 @@ internal fun MessageBubble(
             if (!message.isSelf && message.senderNick.isNotBlank()) {
                 Text(
                     text = message.senderNick,
-                    color = Color(0xFFCCCCCC),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
                     maxLines = 1,
@@ -742,9 +832,11 @@ internal fun MessageBubble(
             }
             MessageCard(
                 modifier = Modifier
-                    .widthIn(max = 172.dp)
-                    .heightIn(min = 1.dp),
+                    .width(IntrinsicSize.Max)
+                    .height(IntrinsicSize.Max)
+                    .widthIn(max = 172.dp),
                 containerColor = containerColor,
+                contentColor = messageContentColor,
                 shape = bubbleShape,
                 contentPadding = if (isSingleMedia) PaddingValues(0.dp) else PaddingValues(horizontal = 11.dp, vertical = 7.dp),
                 onClick = { onTap?.invoke() },
@@ -773,7 +865,7 @@ internal fun MessageBubble(
             }
             Text(
                 text = formatMsgTime(message.time),
-                color = Color(0xFFCCCCCC),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp, end = 4.dp),
             )
@@ -963,7 +1055,7 @@ private fun GiphyMessageContent(
 
 @Composable
 private fun MessageFallback(label: String) {
-    Text(label, color = Color.White, style = MaterialTheme.typography.bodyLarge)
+    Text(label, color = LocalContentColor.current, style = MaterialTheme.typography.bodyLarge)
 }
 
 @Composable
@@ -989,11 +1081,11 @@ private fun MarkdownMessageContent(value: String, onLongClick: () -> Unit) {
             if (code) {
                 Text(
                     text = text,
-                    color = Color(0xFFE4DCEB),
+                    color = LocalContentColor.current,
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0x44231F2B), RoundedCornerShape(5.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(5.dp))
                         .padding(horizontal = 7.dp, vertical = 4.dp),
                 )
             } else if (text.isNotBlank()) {
@@ -1009,28 +1101,28 @@ private fun CallRecordMessageContent(content: ChatDetailViewModel.MessageContent
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(horizontal = 9.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Call,
             contentDescription = if (isVideo) "视频通话" else "语音通话",
-            tint = Color(0xFFD9C4FF),
+            tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(20.dp),
         )
         Spacer(Modifier.width(7.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = content.text,
-                color = Color.White,
+                color = LocalContentColor.current,
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = if (content.hasRead) "通话记录" else "未读通话记录",
-                color = Color(0xFFD1CBD7),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -1040,7 +1132,8 @@ private fun CallRecordMessageContent(content: ChatDetailViewModel.MessageContent
 @Composable
 private fun RichMessageText(value: String, onLongClick: () -> Unit) {
     val context = LocalContext.current
-    val annotated = remember(value) { value.toLinkedAnnotatedString() }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val annotated = remember(value, linkColor) { value.toLinkedAnnotatedString(linkColor) }
     var layoutResult by remember(value) { mutableStateOf<TextLayoutResult?>(null) }
     Text(
         text = annotated,
@@ -1060,7 +1153,7 @@ private fun RichMessageText(value: String, onLongClick: () -> Unit) {
                 },
             )
         },
-        color = Color.White,
+        color = LocalContentColor.current,
         style = MaterialTheme.typography.bodyLarge,
         onTextLayout = { layoutResult = it },
     )
@@ -1076,21 +1169,21 @@ private fun ReplyMessageContent(
         enabled = !content.expired,
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-            containerColor = Color(0x33231F2B),
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
     ) {
         Text(
             text = content.senderName,
-            color = Color(0xFFD9C4FF),
+            color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
         )
         Text(
             text = if (content.expired) "原消息已失效" else content.summary,
-            color = Color(0xFFD1CBD7),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1114,23 +1207,23 @@ private fun FileMessageContent(
         onClick = onOpenFile,
         modifier = Modifier.fillMaxWidth(),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-            containerColor = Color(0x33231F2B),
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFFD9C4FF), modifier = Modifier.size(23.dp))
+        Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp))
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(content.name, color = Color.White, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(content.name, color = LocalContentColor.current, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(
                 text = buildList {
                     add(Formatter.formatShortFileSize(context, content.sizeBytes))
                     content.progress?.let { add("$it%") }
                 }.joinToString(" · "),
-                color = Color(0xFFD1CBD7),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
             )
@@ -1139,7 +1232,7 @@ private fun FileMessageContent(
                     localFile != null -> "已缓存"
                     else -> "点击查看"
                 },
-                color = Color(0xFFD1CBD7),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
             )
@@ -1167,7 +1260,7 @@ private fun VoiceMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(horizontal = 8.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1189,24 +1282,24 @@ private fun VoiceMessageContent(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = formatDuration(durationSeconds),
-                    color = Color.White,
+                    color = LocalContentColor.current,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                 )
                 content.transcript?.let { transcript ->
-                    Text(transcript, color = Color(0xFFD1CBD7), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(transcript, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
             Icon(
                 Icons.AutoMirrored.Filled.VolumeUp,
                 contentDescription = "语音",
-                tint = Color(0xFFD9C4FF),
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(19.dp),
             )
         }
         Text(
             text = status,
-            color = if (phase == PttPlaybackPhase.Failed) MaterialTheme.colorScheme.error else Color(0xFFD1CBD7),
+            color = if (phase == PttPlaybackPhase.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(top = 5.dp),
         )
@@ -1232,7 +1325,7 @@ private fun VideoMessageContent(
         enabled = localFile != null,
         modifier = Modifier.fillMaxWidth().height(132.dp),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-            containerColor = Color(0x33231F2B),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
         shape = RoundedCornerShape(9.dp),
         contentPadding = PaddingValues(0.dp),
@@ -1252,7 +1345,7 @@ private fun VideoMessageContent(
         Icon(
             Icons.Default.PlayArrow,
             contentDescription = "视频",
-            tint = Color.White,
+            tint = LocalContentColor.current,
             modifier = Modifier.size(34.dp),
         )
         Text(
@@ -1261,14 +1354,14 @@ private fun VideoMessageContent(
                 content.progress?.let { add("$it%") }
             }.joinToString(" · "),
             modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
-            color = Color.White,
+            color = LocalContentColor.current,
             style = MaterialTheme.typography.bodySmall,
         )
         if (localFile == null) {
             Text(
                 text = "视频未缓存",
                 modifier = Modifier.align(Alignment.TopStart).padding(7.dp),
-                color = Color(0xFFE2DCE8),
+                color = LocalContentColor.current,
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -1286,17 +1379,17 @@ private fun StructuredCardContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(9.dp),
     ) {
         tag?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = Color(0xFFD9C4FF), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Spacer(Modifier.height(2.dp))
         }
-        Text(title, color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(title, color = LocalContentColor.current, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
         description.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(3.dp))
-            Text(it, color = Color(0xFFD1CBD7), style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
         }
         previewUrl?.let { url ->
             Spacer(Modifier.height(7.dp))
@@ -1322,15 +1415,15 @@ private fun ForwardMessageContent(
         onClick = { onOpenForward(content) },
         modifier = Modifier.fillMaxWidth(),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-            containerColor = Color(0x33231F2B),
-            contentColor = Color.White,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(9.dp),
     ) {
-        Text(content.title, color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+        Text(content.title, color = LocalContentColor.current, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
         content.preview.forEach { line ->
-            Text(line, color = Color(0xFFD1CBD7), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -1338,12 +1431,12 @@ private fun ForwardMessageContent(
 private const val URL_ANNOTATION_TAG = "url"
 private val httpUrlRegex = Regex("https?://[^\\s<>\\\"]+")
 
-private fun String.toLinkedAnnotatedString(): AnnotatedString = buildAnnotatedString {
+private fun String.toLinkedAnnotatedString(linkColor: Color): AnnotatedString = buildAnnotatedString {
     var cursor = 0
     httpUrlRegex.findAll(this@toLinkedAnnotatedString).forEach { match ->
         append(this@toLinkedAnnotatedString.substring(cursor, match.range.first))
         pushStringAnnotation(URL_ANNOTATION_TAG, match.value)
-        withStyle(SpanStyle(color = Color(0xFFD9C4FF), textDecoration = TextDecoration.Underline)) {
+        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
             append(match.value)
         }
         pop()
@@ -1357,16 +1450,16 @@ private fun LocationMessageContent(content: ChatDetailViewModel.MessageContent.L
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFFD9C4FF), modifier = Modifier.size(22.dp))
+        Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(content.title, color = Color.White, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(content.title, color = LocalContentColor.current, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             content.detail.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = Color(0xFFD1CBD7), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
@@ -1377,7 +1470,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFD96545), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
             .padding(9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1391,7 +1484,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
                 Spacer(Modifier.width(8.dp))
             } ?: Text(
                 text = "¥",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onErrorContainer,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(horizontal = 3.dp),
@@ -1399,7 +1492,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = content.title,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
@@ -1407,7 +1500,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
                 )
                 Text(
                     text = content.description,
-                    color = Color(0xFFFFEDE8),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -1417,7 +1510,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
         content.notice?.let { notice ->
             Text(
                 text = notice,
-                color = Color(0xFFFCE5DE),
+                color = MaterialTheme.colorScheme.onErrorContainer,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1432,24 +1525,24 @@ private fun CalendarMessageContent(content: ChatDetailViewModel.MessageContent.C
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = "日程",
-            color = Color(0xFFD9C4FF),
+            color = MaterialTheme.colorScheme.primary,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier
-                .background(Color(0xFF4F378A), RoundedCornerShape(5.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(5.dp))
                 .padding(horizontal = 6.dp, vertical = 4.dp),
         )
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = content.title,
-                color = Color.White,
+                color = LocalContentColor.current,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -1457,7 +1550,7 @@ private fun CalendarMessageContent(content: ChatDetailViewModel.MessageContent.C
             content.description.takeIf { it.isNotBlank() }?.let { description ->
                 Text(
                     text = description,
-                    color = Color(0xFFD1CBD7),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -1489,11 +1582,11 @@ private fun InlineKeyboardMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0x33231F2B), RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text("机器人操作", color = Color(0xFFD9C4FF), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text("机器人操作", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         content.rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 row.forEach { button ->
@@ -1506,8 +1599,8 @@ private fun InlineKeyboardMessageContent(
                         enabled = !isPending,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3A3442),
-                            contentColor = Color(0xFFDCD5E2),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
@@ -1528,7 +1621,7 @@ private fun MultiSelectBottomBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .background(Color(0xFF1D1B20))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(horizontal = 8.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
@@ -1538,7 +1631,7 @@ private fun MultiSelectBottomBar(
         }
         Text(
             text = "已选 $selectedCount 条",
-            color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
         )
         IconButton(onClick = onCopy, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)) {
             Icon(Icons.Default.ContentCopy, contentDescription = "复制")
@@ -1554,7 +1647,7 @@ private fun SystemTipLine(text: String) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp),
-        color = Color(0xFFBDB7C3),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
         textAlign = TextAlign.Center,
     )
@@ -1564,6 +1657,7 @@ private fun SystemTipLine(text: String) {
 private fun MessageCard(
     modifier: Modifier = Modifier,
     containerColor: Color,
+    contentColor: Color,
     shape: RoundedCornerShape,
     contentPadding: PaddingValues,
     onClick: () -> Unit,
@@ -1578,9 +1672,10 @@ private fun MessageCard(
         shape = shape,
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = containerColor,
-            contentColor = Color.White,
+            contentColor = contentColor,
         ),
         contentPadding = contentPadding,
+        minHeight = 0.dp,
         content = content,
     )
 }
@@ -1591,18 +1686,18 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
     if (onClick == null) {
         Card(
             modifier = modifier,
-            colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFF332E3C)),
+            colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(0.dp),
-        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = Color(0xFFCCCCCC), style = MaterialTheme.typography.bodySmall) } }
+        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
     } else {
         Card(
             onClick = onClick,
             modifier = modifier,
-            colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = Color(0xFF332E3C)),
+            colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(0.dp),
-        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = Color(0xFFCCCCCC), style = MaterialTheme.typography.bodySmall) } }
+        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
     }
 }
 
@@ -1629,9 +1724,9 @@ private fun ChatDateDivider(date: String) {
         modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(Modifier.weight(1f).height(1.dp).background(IncomingBubble))
-        Text(date, color = Color(0xFFCCCCCC), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 8.dp))
-        Spacer(Modifier.weight(1f).height(1.dp).background(IncomingBubble))
+        Spacer(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Text(date, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 8.dp))
+        Spacer(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
     }
 }
 

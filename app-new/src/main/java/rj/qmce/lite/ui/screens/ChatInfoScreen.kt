@@ -137,11 +137,7 @@ fun ChatInfoScreen(
                             .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                         transformation = SurfaceTransformation(transformationSpec),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = scheme.primaryContainer,
-                            contentColor = scheme.onPrimaryContainer,
-                            secondaryContentColor = scheme.onPrimaryContainer,
-                        ),
+                        colors = ButtonDefaults.filledVariantButtonColors(),
                         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                         icon = {
                             Icon(
@@ -160,11 +156,7 @@ fun ChatInfoScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 2.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = scheme.surfaceContainerHigh,
-                        contentColor = scheme.onSurface,
-                        secondaryContentColor = scheme.onSurfaceVariant,
-                    ),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = {
                         Icon(

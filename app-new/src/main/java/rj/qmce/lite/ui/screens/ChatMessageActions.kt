@@ -151,15 +151,6 @@ fun MessageActionsScreen(
             modifier = Modifier.fillMaxSize().background(scheme.background),
             contentPadding = contentPadding,
         ) {
-            item(key = "message-actions-header") {
-                Text(
-                    "消息操作",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             actions.forEachIndexed { index, action ->
                 item(key = "message-action:$index:${action.id}") {
                     Button(

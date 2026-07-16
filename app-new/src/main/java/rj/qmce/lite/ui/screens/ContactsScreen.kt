@@ -177,11 +177,7 @@ fun ContactsScreen(
                                         .fillMaxWidth()
                                         .transformedHeight(this, transformationSpec)
                                         .padding(horizontal = 8.dp, vertical = 2.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = scheme.surfaceContainerHigh,
-                                        contentColor = scheme.onSurface,
-                                        secondaryContentColor = scheme.onSurfaceVariant,
-                                    ),
+                                    colors = ButtonDefaults.filledTonalButtonColors(),
                                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                                     transformation = SurfaceTransformation(transformationSpec),
                                     icon = {
@@ -276,30 +272,6 @@ private fun ContactSearchScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "search-header") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                    Text(
-                        text = "搜索联系人",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
             item(key = "search-input") {
                 BasicTextField(
                     value = query,
@@ -359,11 +331,7 @@ private fun ContactSearchScreen(
                             .fillMaxWidth()
                             .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = scheme.surfaceContainerHigh,
-                            contentColor = scheme.onSurface,
-                            secondaryContentColor = scheme.onSurfaceVariant,
-                        ),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
                         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                         transformation = SurfaceTransformation(transformationSpec),
                         icon = {

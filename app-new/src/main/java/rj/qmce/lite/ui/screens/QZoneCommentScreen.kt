@@ -63,15 +63,6 @@ fun QZoneCommentScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "qzone-comment-header") {
-                Text(
-                    "评论 ${feed.nick}",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             if (feed.comments.isEmpty()) {
                 item(key = "qzone-comment-none") {
                     QZoneCommentHint("暂无评论", transformationSpec)

@@ -62,36 +62,6 @@ fun ChatSettingsScreen(
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "settings-title") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回聊天")
-                    }
-                    Text(
-                        text = if (isGroup) "群聊设置" else "好友设置",
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.size(40.dp))
-                }
-            }
             item(key = "settings-top") {
                 Button(
                     onClick = vm::togglePinned,
@@ -101,10 +71,11 @@ fun ChatSettingsScreen(
                         .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                     transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.pinned) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (state.pinned) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    ),
+                    colors = if (state.pinned) {
+                        ButtonDefaults.filledVariantButtonColors()
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors()
+                    },
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = { Icon(Icons.Default.PushPin, contentDescription = null) },
                     secondaryLabel = { Text("保持会话显示在顶部") },
@@ -119,10 +90,11 @@ fun ChatSettingsScreen(
                         .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                     transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (state.muted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = if (state.muted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    ),
+                    colors = if (state.muted) {
+                        ButtonDefaults.filledVariantButtonColors()
+                    } else {
+                        ButtonDefaults.filledTonalButtonColors()
+                    },
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = { Icon(Icons.Default.NotificationsOff, contentDescription = null) },
                     secondaryLabel = { Text("控制这个会话的通知推送") },

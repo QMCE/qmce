@@ -23,7 +23,7 @@
             android:ellipsize="end"
             android:gravity="center_vertical"
             android:maxLines="2"
-            android:textColor="#FF202124"
+            android:textColor="@color/qui_common_text_primary"
             android:textSize="14sp" />
     </LinearLayout>
 </LinearLayout>

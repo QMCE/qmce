@@ -51,15 +51,6 @@ fun ChatMessageSearchScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "message-search-header") {
-                Text(
-                    "搜索消息",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             item(key = "message-search-input") {
                 BasicTextField(
                     value = query,

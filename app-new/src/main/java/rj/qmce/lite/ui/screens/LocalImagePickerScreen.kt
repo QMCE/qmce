@@ -86,6 +86,8 @@ private sealed interface GalleryLoadState {
 @Composable
 fun LocalImagePickerScreen(
     existingUris: Set<String>,
+    selectedUris: List<String>,
+    onSelectionChange: (List<Uri>) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (List<Uri>) -> Unit,
 ) {
@@ -107,7 +109,6 @@ fun LocalImagePickerScreen(
                 .getOrElse { GalleryLoadState.Error(it.message ?: "无法读取本地图片") }
         }
     }
-    val selected = remember { mutableStateListOf<String>() }
     val scheme = MaterialTheme.colorScheme
     val scaffoldState = rememberLazyListState()
 
@@ -117,10 +118,10 @@ fun LocalImagePickerScreen(
         scrollIndicator = null,
         edgeButton = {
             EdgeButton(
-                onClick = { onConfirm(selected.map(Uri::parse)) },
-                enabled = selected.isNotEmpty(),
+                onClick = { onConfirm(selectedUris.map(Uri::parse)) },
+                enabled = selectedUris.isNotEmpty(),
                 buttonSize = EdgeButtonSize.Small,
-            ) { Text("添加 ${selected.size}") }
+            ) { Text("添加 ${selectedUris.size}") }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->
@@ -147,11 +148,17 @@ fun LocalImagePickerScreen(
                         items(state.images, key = { image -> image.id }) { image ->
                             val uriString = image.uri.toString()
                             val isAdded = uriString in existingUris
-                            val isSelected = uriString in selected
+                            val isSelected = uriString in selectedUris
                             Card(
                                 onClick = {
-                                    if (isSelected) selected.remove(uriString)
-                                    else if (!isAdded) selected.add(uriString)
+                                    if (!isAdded) {
+                                        val updated = if (isSelected) {
+                                            selectedUris.filterNot { it == uriString }
+                                        } else {
+                                            selectedUris + uriString
+                                        }
+                                        onSelectionChange(updated.map(Uri::parse))
+                                    }
                                 },
                                 enabled = !isAdded,
                                 modifier = Modifier
@@ -188,7 +195,7 @@ fun LocalImagePickerScreen(
                                                 )
                                             } else {
                                                 Text(
-                                                    text = "${selected.indexOf(uriString) + 1}",
+                                                    text = "${selectedUris.indexOf(uriString) + 1}",
                                                     color = scheme.onPrimary,
                                                     style = MaterialTheme.typography.bodyLarge,
                                                     fontWeight = FontWeight.Bold,

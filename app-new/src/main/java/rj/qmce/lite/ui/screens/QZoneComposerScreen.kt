@@ -2,19 +2,17 @@ package rj.qmce.lite.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -24,13 +22,14 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import androidx.compose.material3.TextField as MaterialTextField
+import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
 @Composable
 fun QZoneComposerScreen(
@@ -54,7 +53,7 @@ fun QZoneComposerScreen(
                 onClick = onPublish,
                 enabled = canPublish,
                 buttonSize = EdgeButtonSize.Small,
-            ) { Text("发表") }
+            ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->
@@ -63,21 +62,10 @@ fun QZoneComposerScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "qzone-composer-header") {
-                Text(
-                    "发表动态",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                )
-            }
             item(key = "qzone-composer-input") {
-                BasicTextField(
+                MaterialTextField(
                     value = draft,
                     onValueChange = onDraftChange,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
-                    cursorBrush = SolidColor(scheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
@@ -87,15 +75,26 @@ fun QZoneComposerScreen(
                                 applyContentTransformation()
                             }
                         }
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .background(scheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                    decorationBox = { innerTextField ->
-                        if (draft.isBlank()) {
-                            Text("写点什么…", color = scheme.outline, style = MaterialTheme.typography.bodySmall)
-                        }
-                        innerTextField()
-                    },
+                        .padding(horizontal = 10.dp)
+                        .defaultMinSize(minHeight = 112.dp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                    placeholder = { Text("写点什么…", style = MaterialTheme.typography.bodySmall) },
+                    minLines = 3,
+                    maxLines = 6,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = MaterialTextFieldDefaults.colors(
+                        focusedContainerColor = scheme.surfaceContainerHigh,
+                        unfocusedContainerColor = scheme.surfaceContainerHigh,
+                        disabledContainerColor = scheme.surfaceContainerHigh,
+                        focusedTextColor = scheme.onSurface,
+                        unfocusedTextColor = scheme.onSurface,
+                        cursorColor = scheme.primary,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedPlaceholderColor = scheme.onSurfaceVariant,
+                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
+                    ),
                 )
             }
             item(key = "qzone-composer-media") {
@@ -105,11 +104,16 @@ fun QZoneComposerScreen(
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 10.dp, vertical = 3.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = scheme.surfaceContainerHigh,
-                        contentColor = scheme.onSurface,
-                    ),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
                     transformation = SurfaceTransformation(transformationSpec),
+                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                    icon = {
+                        Icon(
+                            Icons.Default.AddPhotoAlternate,
+                            contentDescription = "选择图片",
+                            modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                        )
+                    },
                 ) {
                     Text(if (selectedUris.isEmpty()) "添加图片" else "已选 ${selectedUris.size} 张图片 · 继续添加")
                 }

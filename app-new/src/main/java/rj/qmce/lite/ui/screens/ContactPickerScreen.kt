@@ -12,7 +12,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,19 +60,6 @@ fun ContactPickerScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            item(key = "contact-picker-title") {
-                Text(
-                    text = title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
             if (statusText.isNotEmpty()) {
                 item(key = "contact-picker-status") {
                     Text(
@@ -95,11 +81,7 @@ fun ContactPickerScreen(
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
                         .padding(vertical = 2.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        secondaryContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     transformation = SurfaceTransformation(transformationSpec),
                     icon = {
@@ -116,12 +98,12 @@ fun ContactPickerScreen(
                         )
                     } else {
                         Box(
-                            modifier = Modifier.size(30.dp).clip(CircleShape).background(Color(0xFF3A3442)),
+                            modifier = Modifier.size(30.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
                                 text = name.take(1),
-                                color = Color.White, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
                             )
                         }
                     }

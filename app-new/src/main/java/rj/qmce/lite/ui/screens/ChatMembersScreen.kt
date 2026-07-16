@@ -80,35 +80,15 @@ fun ChatMembersScreen(
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
-            item(key = "members-title") {
-                Row(
+            item(key = "members-refresh") {
+                androidx.wear.compose.material3.CompactButton(
+                    onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
                     modifier = Modifier
-                        .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        }
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(vertical = 2.dp),
+                    transformation = SurfaceTransformation(transformationSpec),
                 ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                    Text(
-                        text = "群成员${members.takeIf { it.isNotEmpty() }?.let { " (${it.size})" } ?: ""}",
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-                    )
-                    IconButton(
-                        onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
-                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
-                    ) { Icon(Icons.Default.Refresh, contentDescription = "刷新群成员") }
+                    Icon(Icons.Default.Refresh, contentDescription = "刷新群成员")
                 }
             }
             item(key = "members-search") {
@@ -200,10 +180,7 @@ private fun GroupMemberRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp),
         transformation = transformation,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = scheme.surfaceContainerHigh,
-            contentColor = scheme.onSurface,
-        ),
+        colors = ButtonDefaults.filledTonalButtonColors(),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
         icon = {
             androidx.compose.foundation.layout.Box(

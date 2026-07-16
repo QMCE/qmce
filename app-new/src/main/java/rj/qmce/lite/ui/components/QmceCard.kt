@@ -14,7 +14,14 @@
  * limitations under the License.
  */
 
-package androidx.wear.compose.material3
+package rj.qmce.lite.ui.components
+
+import androidx.wear.compose.material3.*
+import androidx.wear.compose.material3.tokens.*
+import androidx.wear.compose.material3.LocalContentColor
+import androidx.wear.compose.material3.LocalTextStyle
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -859,6 +866,10 @@ public fun AppCardContent(
 
 /** Contains the default values used by [Card] */
 public object CardDefaults {
+    private var defaultCardColorsCached: CardColors? = null
+    private var defaultOutlinedCardColorsCached: CardColors? = null
+    private var defaultCardWithContainerPainterColorsCached: CardColors? = null
+
     /**
      * Creates a [CardColors] that represents the default container and content colors used in a
      * [Card], [AppCard] or [TitleCard].
@@ -1089,7 +1100,7 @@ public object CardDefaults {
 
     private val ColorScheme.defaultCardColors: CardColors
         get() {
-            return defaultCardColorsCached
+            return CardDefaults.defaultCardColorsCached
                 ?: CardColors(
                         containerColor = fromToken(CardTokens.ContainerColor),
                         contentColor = fromToken(CardTokens.ContentColor),
@@ -1098,12 +1109,12 @@ public object CardDefaults {
                         titleColor = fromToken(CardTokens.TitleColor),
                         subtitleColor = fromToken(CardTokens.SubtitleColor),
                     )
-                    .also { defaultCardColorsCached = it }
+                    .also { CardDefaults.defaultCardColorsCached = it }
         }
 
     private val ColorScheme.defaultOutlinedCardColors: CardColors
         get() {
-            return defaultOutlinedCardColorsCached
+            return CardDefaults.defaultOutlinedCardColorsCached
                 ?: CardColors(
                         containerColor = Color.Transparent,
                         contentColor = fromToken(OutlinedCardTokens.ContentColor),
@@ -1112,12 +1123,12 @@ public object CardDefaults {
                         titleColor = fromToken(OutlinedCardTokens.TitleColor),
                         subtitleColor = fromToken(OutlinedCardTokens.SubtitleColor),
                     )
-                    .also { defaultOutlinedCardColorsCached = it }
+                    .also { CardDefaults.defaultOutlinedCardColorsCached = it }
         }
 
     private val ColorScheme.defaultCardWithContainerPainterColors: CardColors
         get() {
-            return defaultCardWithContainerPainterColorsCached
+            return CardDefaults.defaultCardWithContainerPainterColorsCached
                 ?: CardColors(
                         containerColor = Color.Unspecified,
                         contentColor = fromToken(ImageCardTokens.ContentColor),
@@ -1126,7 +1137,7 @@ public object CardDefaults {
                         titleColor = fromToken(ImageCardTokens.TitleColor),
                         subtitleColor = fromToken(ImageCardTokens.SubtitleColor),
                     )
-                    .also { defaultCardWithContainerPainterColorsCached = it }
+                    .also { CardDefaults.defaultCardWithContainerPainterColorsCached = it }
         }
 }
 

@@ -23,8 +23,8 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 13
-        versionName = "0.4.0"
+        versionCode = 14
+        versionName = "0.4.1"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
