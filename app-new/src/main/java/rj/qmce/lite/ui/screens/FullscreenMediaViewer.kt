@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,20 +22,25 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
 
 @Composable
 fun FullscreenMediaViewer(
     media: ViewerMedia,
     onDismiss: () -> Unit,
+    onSave: (() -> Unit)? = null,
+    saveLabel: String = "保存",
 ) {
     BackHandler(onBack = onDismiss)
     var scale by remember(media.key) { mutableFloatStateOf(1f) }
     var offsetX by remember(media.key) { mutableFloatStateOf(0f) }
     var offsetY by remember(media.key) { mutableFloatStateOf(0f) }
     var loaded by remember(media.key) { mutableStateOf(false) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+    val transformState = rememberTransformableState { _, zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 4f)
         if (scale == 1f) {
             offsetX = 0f
@@ -86,6 +92,15 @@ fun FullscreenMediaViewer(
         )
         if (!loaded) {
             CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+        }
+        if (onSave != null) {
+            Button(
+                onClick = onSave,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 20.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(),
+            ) { Text(saveLabel) }
         }
     }
 }

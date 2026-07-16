@@ -71,6 +71,7 @@ import rj.qmce.lite.ui.screens.PacketToolScreen
 import rj.qmce.lite.ui.screens.QZoneCommentScreen
 import rj.qmce.lite.ui.screens.QZoneComposerScreen
 import rj.qmce.lite.ui.screens.QZoneFeedDetailScreen
+import rj.qmce.lite.ui.screens.ProfileScreen
 import rj.qmce.lite.ui.screens.SettingsClearChatCacheScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
 import rj.qmce.lite.ui.screens.StorageSettingsScreen
@@ -105,6 +106,7 @@ private fun WearApp() {
     var ready by remember { mutableStateOf(false) }
     var runtime by remember { mutableStateOf<mqq.app.AppRuntime?>(null) }
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
+    var selectedProfileBuddy by remember { mutableStateOf<ContactsViewModel.UiBuddy?>(null) }
     var qZoneDraft by remember { mutableStateOf("") }
     var qZoneUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var qZonePickerUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -292,8 +294,37 @@ private fun WearApp() {
                                 }
                                 selectedContact = fakeContact
                                 navController.navigate("chat") { launchSingleTop = true }
-                            }
+                            },
+                            onOpenContactProfile = { buddy ->
+                                selectedProfileBuddy = buddy
+                                navController.navigate("contactProfile") { launchSingleTop = true }
+                            },
                         )
+                    }
+                    composable("contactProfile") {
+                        selectedProfileBuddy?.let { buddy ->
+                            ProfileScreen(
+                                buddy = buddy,
+                                onOpenChat = {
+                                    val fakeContact = RecentContactInfo().apply {
+                                        peerUid = buddy.uid
+                                        peerUin = buddy.uin
+                                        peerName = buddy.remark.ifBlank { buddy.nick }
+                                        chatType = 1
+                                        id = buddy.uin.toString()
+                                        avatarPath = buddy.avatarPath
+                                        avatarUrl = buddy.avatarUrls.firstOrNull().orEmpty()
+                                    }
+                                    selectedProfileBuddy = null
+                                    selectedContact = fakeContact
+                                    navController.navigate("chat") { launchSingleTop = true }
+                                },
+                                onBack = {
+                                    selectedProfileBuddy = null
+                                    navController.popBackStack()
+                                },
+                            )
+                        }
                     }
                     composable("chat") {
                         val contact = selectedContact

@@ -2,6 +2,7 @@ package rj.qmce.lite.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,6 +56,7 @@ import java.util.Locale
 fun ContactsScreen(
     vm: ContactsViewModel,
     onOpenChat: (String, String, String) -> Unit, // uid, uin, name
+    onOpenProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) {
     val categories by vm.categories.collectAsState()
     val statusText by vm.statusText.collectAsState()
@@ -85,6 +87,7 @@ fun ContactsScreen(
                 query = ""
                 onOpenChat(buddy.uid, buddy.uin.toString(), buddy.nick)
             },
+            onOpenProfile = onOpenProfile,
             onBack = {
                 showSearch = false
                 query = ""
@@ -181,7 +184,8 @@ fun ContactsScreen(
                                         Box(
                                             modifier = Modifier
                                                 .size(ButtonDefaults.LargeIconSize)
-                                                .background(scheme.surfaceContainer, CircleShape),
+                                                .background(scheme.surfaceContainer, CircleShape)
+                                                .clickable { onOpenProfile(buddy) },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             ContactAvatar(
@@ -234,6 +238,7 @@ private fun ContactSearchScreen(
     query: String,
     onQueryChange: (String) -> Unit,
     onOpenChat: (ContactsViewModel.UiBuddy) -> Unit,
+    onOpenProfile: (ContactsViewModel.UiBuddy) -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
@@ -335,7 +340,8 @@ private fun ContactSearchScreen(
                             Box(
                                 modifier = Modifier
                                     .size(ButtonDefaults.LargeIconSize)
-                                    .background(scheme.surfaceContainer, CircleShape),
+                                    .background(scheme.surfaceContainer, CircleShape)
+                                    .clickable { onOpenProfile(buddy) },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 ContactAvatar(

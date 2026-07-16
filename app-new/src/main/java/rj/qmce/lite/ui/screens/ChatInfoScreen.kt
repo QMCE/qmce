@@ -1,6 +1,7 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,12 +19,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +45,10 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 
@@ -57,6 +65,39 @@ fun ChatInfoScreen(
     onOpenMessageSearch: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val saveScope = rememberCoroutineScope()
+    val mediaStoreSaver = remember { MediaStoreSaver() }
+    var avatarTarget by remember(peerUid, peerUin, chatType) {
+        mutableStateOf<AvatarPreviewTarget?>(null)
+    }
+    var saveLabel by remember { mutableStateOf("保存") }
+
+    avatarTarget?.let { target ->
+        FullscreenMediaViewer(
+            media = target.media,
+            onDismiss = {
+                avatarTarget = null
+                saveLabel = "保存"
+            },
+            onSave = {
+                if (saveLabel == "正在保存…") return@FullscreenMediaViewer
+                saveScope.launch {
+                    saveLabel = "正在保存…"
+                    val result = withContext(Dispatchers.IO) {
+                        mediaStoreSaver.saveImage(context, target.source)
+                    }
+                    saveLabel = result.fold(
+                        onSuccess = { "已保存" },
+                        onFailure = { "保存失败" },
+                    )
+                }
+            },
+            saveLabel = saveLabel,
+        )
+        return
+    }
+
     val scheme = MaterialTheme.colorScheme
     val members by vm.groupMembers.collectAsState()
     val isGroup = chatType == 2
@@ -97,6 +138,16 @@ fun ChatInfoScreen(
                             peerName = displayName,
                             avatarPath = avatarPath,
                             avatarUrl = avatarUrl,
+                            onClick = { model, source ->
+                                avatarTarget = AvatarPreviewTarget(
+                                    media = ViewerMedia(
+                                        key = "avatar:$chatType:$peerUin:$peerUid",
+                                        model = model,
+                                        description = "$displayName 的头像",
+                                    ),
+                                    source = source,
+                                )
+                            },
                         )
                         Spacer(Modifier.size(8.dp))
                         Text(
@@ -196,6 +247,7 @@ private fun ChatInfoAvatar(
     peerName: String,
     avatarPath: String,
     avatarUrl: String,
+    onClick: (model: Any, source: String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val fallbackUrls = remember(chatType, peerUin, avatarUrl) {
@@ -218,12 +270,20 @@ private fun ChatInfoAvatar(
         ?.let(::File)
         ?.takeIf(File::isFile)
     val model: Any? = local ?: fallbackUrls.getOrNull(remoteIndex)
+    val source = local?.absolutePath ?: fallbackUrls.getOrNull(remoteIndex)
 
     Box(
         modifier = Modifier
             .size(64.dp)
             .clip(CircleShape)
-            .background(scheme.surfaceContainerHigh, CircleShape),
+            .background(scheme.surfaceContainerHigh, CircleShape)
+            .then(
+                if (model != null && source != null) {
+                    Modifier.clickable { onClick(model, source) }
+                } else {
+                    Modifier
+                },
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(

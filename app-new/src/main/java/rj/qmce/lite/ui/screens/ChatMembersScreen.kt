@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
@@ -39,7 +41,11 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -49,6 +55,38 @@ fun ChatMembersScreen(
     vm: ChatDetailViewModel,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val saveScope = rememberCoroutineScope()
+    val mediaStoreSaver = remember { MediaStoreSaver() }
+    var avatarTarget by remember { mutableStateOf<AvatarPreviewTarget?>(null) }
+    var saveLabel by remember { mutableStateOf("保存") }
+
+    avatarTarget?.let { target ->
+        FullscreenMediaViewer(
+            media = target.media,
+            onDismiss = {
+                avatarTarget = null
+                saveLabel = "保存"
+            },
+            onSave = {
+                if (saveLabel != "正在保存…") {
+                    saveScope.launch {
+                        saveLabel = "正在保存…"
+                        val result = withContext(Dispatchers.IO) {
+                            mediaStoreSaver.saveImage(context, target.source)
+                        }
+                        saveLabel = result.fold(
+                            onSuccess = { "已保存" },
+                            onFailure = { "保存失败" },
+                        )
+                    }
+                }
+            },
+            saveLabel = saveLabel,
+        )
+        return
+    }
+
     val members by vm.groupMembers.collectAsState()
     val loading by vm.groupMembersLoading.collectAsState()
     val error by vm.groupMembersError.collectAsState()
@@ -163,6 +201,16 @@ fun ChatMembersScreen(
                         member = member,
                         modifier = Modifier.transformedHeight(this, transformationSpec),
                         transformation = SurfaceTransformation(transformationSpec),
+                        onAvatarClick = { model, source ->
+                            avatarTarget = AvatarPreviewTarget(
+                                media = ViewerMedia(
+                                    key = "member-avatar:${member.uid}:${member.uin}",
+                                    model = model,
+                                    description = "${member.displayName}的头像",
+                                ),
+                                source = source,
+                            )
+                        },
                     )
                 }
             }
@@ -178,6 +226,7 @@ private fun GroupMemberRow(
     member: GroupMemberRepository.Member,
     modifier: Modifier,
     transformation: SurfaceTransformation,
+    onAvatarClick: (model: Any, source: String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val local = member.avatarPath.removePrefix("file://")
@@ -187,8 +236,13 @@ private fun GroupMemberRow(
     val model: Any? = local ?: member.uin.takeIf { it > 0L }?.let {
         "https://q1.qlogo.cn/g?b=qq&nk=$it&s=100"
     }
+    val source = local?.absolutePath ?: member.uin.takeIf { it > 0L }?.let {
+        "https://q1.qlogo.cn/g?b=qq&nk=$it&s=100"
+    }
     Button(
-        onClick = {},
+        onClick = {
+            if (model != null && source != null) onAvatarClick(model, source)
+        },
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp),

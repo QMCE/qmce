@@ -46,6 +46,7 @@ fun MainScreen(
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
     onOpenChatFromContacts: (String, String, String) -> Unit, // uid, uin, name
+    onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
 
@@ -76,6 +77,7 @@ fun MainScreen(
                 1 -> ContactsScreen(
                     vm = contactsVm,
                     onOpenChat = onOpenChatFromContacts,
+                    onOpenProfile = onOpenContactProfile,
                 )
 
                 2 -> QZoneScreen(

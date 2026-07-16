@@ -1,5 +1,7 @@
 # ── qq-sdk: 全量保留（内核反射、MSF、QRoute 动态加载） ──
 -keep class com.tencent.** { *; }
+-keep class com.tencent.qqnt.kernel.nativeinterface.** { *; }
+-keep class d.c.k.o.a.a.r8 { *; }
 -keep class mqq.** { *; }
 -keep class oicq.** { *; }
 
@@ -47,6 +49,12 @@
 # R8 处理 Navigation 2.9 的 NavOptions 字段重命名时会生成重复 field-id，
 # Android ART 因此拒绝加载整个 APK。保持该类原始字段布局。
 -keep class androidx.navigation.NavOptions { *; }
+
+# 当前 R8 优化阶段会生成重复的 dex type_id，导致 classes3.dex 无法被 ART 校验。
+# 保留 shrink/obfuscate，仅关闭有问题的优化阶段。
+-dontoptimize
+
+
 
 # ── multidex ──
 -keep class com.bytedance.** { *; }
