@@ -1,7 +1,8 @@
+@file:Suppress("MISSING_DEPENDENCY_SUPERCLASS_WARNING", "MISSING_DEPENDENCY_SUPERCLASS")
+
 package rj.qmce.lite.ui.screens
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Handler
 import android.os.Looper
@@ -10,16 +11,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,23 +37,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Stop
 import com.tencent.mobileqq.ptt.IQQRecorder
 import com.tencent.mobileqq.ptt.IQQRecorderUtils
 import com.tencent.mobileqq.qroute.QRoute
@@ -139,7 +135,9 @@ fun VoiceRecordScreen(
                     mainHandler.post {
                         if (recordState is VoiceRecordState.Recording || recordState is VoiceRecordState.Finalizing) {
                             recorder = null
-                            recordState = VoiceRecordState.Error(error?.takeIf(String::isNotBlank) ?: "录音失败")
+                            recordState = VoiceRecordState.Error(
+                                error?.takeIf(String::isNotBlank) ?: "录音失败"
+                            )
                         }
                     }
                 }
@@ -207,7 +205,11 @@ fun VoiceRecordScreen(
     }
 
     fun requestOrStartRecording() {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             beginRecording()
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -223,21 +225,28 @@ fun VoiceRecordScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("语音消息", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(12.dp))
         Text(
-            text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(elapsedMillis) else stateLabel,
+            text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(
+                elapsedMillis
+            ) else stateLabel,
             color = if (recordState is VoiceRecordState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
         )
         if (recordState is VoiceRecordState.Recording) {
-            Text("再次点击结束录音", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Text(
+                "再次点击结束录音",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
         if (recordState is VoiceRecordState.Ready) {
             val state = recordState as VoiceRecordState.Ready
@@ -248,7 +257,6 @@ fun VoiceRecordScreen(
             )
         }
         Spacer(Modifier.height(18.dp))
-
         when (recordState) {
             VoiceRecordState.Idle, is VoiceRecordState.Error -> {
                 FilledIconButton(
@@ -262,6 +270,7 @@ fun VoiceRecordScreen(
                     Icon(Icons.Default.Mic, contentDescription = "开始录音")
                 }
             }
+
             VoiceRecordState.Recording -> {
                 FilledIconButton(
                     onClick = { stopRecording(discard = false) },
@@ -283,7 +292,12 @@ fun VoiceRecordScreen(
                     icon = { Icon(Icons.Default.Close, contentDescription = "取消录音") },
                 )
             }
-            VoiceRecordState.Finalizing -> CircularProgressIndicator(modifier = Modifier.size(42.dp), strokeWidth = 3.dp)
+
+            VoiceRecordState.Finalizing -> CircularProgressIndicator(
+                modifier = Modifier.size(42.dp),
+                strokeWidth = 3.dp
+            )
+
             is VoiceRecordState.Ready -> {
                 val state = recordState as VoiceRecordState.Ready
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -297,7 +311,7 @@ fun VoiceRecordScreen(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
-                    icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
+                        icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
                     )
                     CompactButton(
                         onClick = {
@@ -308,7 +322,12 @@ fun VoiceRecordScreen(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
                         ),
-                    icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送") },
+                        icon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Send,
+                                contentDescription = "发送"
+                            )
+                        },
                     )
                 }
             }
