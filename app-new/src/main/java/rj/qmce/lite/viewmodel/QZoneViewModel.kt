@@ -6,16 +6,16 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
-import rj.qmce.lite.data.qzone.QZoneFeedRepository
-import rj.qmce.lite.data.qzone.QZoneWriteRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
+import rj.qmce.lite.data.qzone.QZoneFeedRepository
+import rj.qmce.lite.data.qzone.QZoneWriteRepository
 import java.util.UUID
 
 class QZoneViewModel : ViewModel() {
@@ -95,7 +95,9 @@ class QZoneViewModel : ViewModel() {
 
     fun hasMoreData(): Boolean = !noMoreData
 
-    fun resetNoMoreData() { noMoreData = false }
+    fun resetNoMoreData() {
+        noMoreData = false
+    }
 
     fun publishText(text: String) {
         val content = text.trim()
@@ -188,7 +190,10 @@ class QZoneViewModel : ViewModel() {
         like.isLiked = newLiked
         like.likeNum = (oldCount + if (newLiked) 1 else -1).coerceAtLeast(0)
         _feeds.value = _feeds.value.map { item ->
-            if (item.feedId == feedId) item.copy(isLiked = newLiked, likeCount = like.likeNum) else item
+            if (item.feedId == feedId) item.copy(
+                isLiked = newLiked,
+                likeCount = like.likeNum
+            ) else item
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = if (newLiked) "正在点赞…" else "正在取消点赞…"
@@ -198,7 +203,10 @@ class QZoneViewModel : ViewModel() {
                 like.isLiked = oldLiked
                 like.likeNum = oldCount
                 _feeds.value = _feeds.value.map { item ->
-                    if (item.feedId == feedId) item.copy(isLiked = oldLiked, likeCount = oldCount) else item
+                    if (item.feedId == feedId) item.copy(
+                        isLiked = oldLiked,
+                        likeCount = oldCount
+                    ) else item
                 }
                 Log.e(TAG, "toggleLike failed", error)
                 _operationStatus.value = "点赞失败：${error.message ?: "未知错误"}"
@@ -311,8 +319,10 @@ class QZoneViewModel : ViewModel() {
                 val content = summary.ifEmpty { title }
                 val original = runCatching { data.originalInfo }.getOrNull()
                 val forward = if (original != null || data.isForwardFeedData) {
-                    val originalSummary = runCatching { original?.cellSummaryV2?.summary }.getOrNull().orEmpty()
-                    val originalTitle = runCatching { original?.cellTitleInfo?.title }.getOrNull().orEmpty()
+                    val originalSummary =
+                        runCatching { original?.cellSummaryV2?.summary }.getOrNull().orEmpty()
+                    val originalTitle =
+                        runCatching { original?.cellTitleInfo?.title }.getOrNull().orEmpty()
                     ForwardInfo(
                         author = runCatching { original?.user?.nickName }.getOrNull().orEmpty(),
                         content = originalSummary.ifEmpty { originalTitle },
@@ -332,8 +342,14 @@ class QZoneViewModel : ViewModel() {
                 val videoUrl = mediaSource.cellVideoInfo?.videoUrl?.url?.takeIf { it.isNotBlank() }
                 // debug: dump all fields for ALL feeds
                 if (list.indexOf(data) < list.size) {
-                    Log.d(TAG, "feed[${list.indexOf(data)}] feedType=${data.feedType} owner_uin=${data.owner_uin}")
-                    Log.d(TAG, "  nick=$nick, content='$content', summary='$summary', title='$title'")
+                    Log.d(
+                        TAG,
+                        "feed[${list.indexOf(data)}] feedType=${data.feedType} owner_uin=${data.owner_uin}"
+                    )
+                    Log.d(
+                        TAG,
+                        "  nick=$nick, content='$content', summary='$summary', title='$title'"
+                    )
                     Log.d(TAG, "  pics=${pics.size}")
                     if (data.feedType != 4097 || content.isNotBlank()) {
                         Log.d(TAG, "  DEEP PROBE: ${probeStrings(data)}")
@@ -361,7 +377,8 @@ class QZoneViewModel : ViewModel() {
                             text = comment.comment.orEmpty(),
                             replies = comment.replies.orEmpty().map { reply ->
                                 FeedReply(
-                                    author = reply.user?.nickName?.takeIf { it.isNotBlank() } ?: "QQ用户",
+                                    author = reply.user?.nickName?.takeIf { it.isNotBlank() }
+                                        ?: "QQ用户",
                                     text = reply.content.orEmpty(),
                                 )
                             },
@@ -373,7 +390,8 @@ class QZoneViewModel : ViewModel() {
                 null
             }
         }
-        val distinctItems = items.distinctBy { it.feedId.ifBlank { "${it.uin}:${it.time}:${it.content}" } }
+        val distinctItems =
+            items.distinctBy { it.feedId.ifBlank { "${it.uin}:${it.time}:${it.content}" } }
         if (distinctItems.isNotEmpty()) {
             lastSubmittedFingerprint = currentFingerprint
             _feeds.value = distinctItems
@@ -396,31 +414,32 @@ class QZoneViewModel : ViewModel() {
         feedLoadGeneration == generation
     }
 
-    private fun feedFingerprint(list: List<BusinessFeedData>): String = list.joinToString("|") { data ->
-        val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
-        val time = runCatching { data.cellFeedCommInfo?.time }.getOrNull() ?: 0L
-        val summary = runCatching { data.getCellSummaryV2()?.summary }.getOrNull().orEmpty()
-        val title = runCatching { data.cellTitleInfo?.title }.getOrNull().orEmpty()
-        val nick = runCatching { data.cellUserInfo?.user?.nickName }.getOrNull().orEmpty()
-        val likes = runCatching { data.cellLikeInfo?.likeNum }.getOrNull() ?: 0
-        val comments = runCatching {
-            data.cellCommentInfo?.c.orEmpty().joinToString(",") { comment ->
-                "${comment.commentid}:${comment.user?.uin}:${comment.comment}:${comment.replies?.size ?: 0}"
-            }
-        }.getOrNull().orEmpty()
-        val pictures = runCatching {
-            data.cellPictureInfo?.pics.orEmpty().joinToString(",") {
-                it.currentUrl?.url ?: it.bigUrl?.url ?: it.originUrl?.url.orEmpty()
-            }
-        }.getOrNull().orEmpty()
-        val video = runCatching { data.cellVideoInfo?.videoUrl?.url }.getOrNull().orEmpty()
-        val original = runCatching {
-            data.originalInfo?.let { originalData ->
-                "${originalData.cellUserInfo?.user?.nickName}:${originalData.getCellSummaryV2()?.summary}:${originalData.cellTitleInfo?.title}"
-            }
-        }.getOrNull().orEmpty()
-        "$id:$time:$nick:$summary:$title:$likes:$comments:$pictures:$video:$original"
-    }
+    private fun feedFingerprint(list: List<BusinessFeedData>): String =
+        list.joinToString("|") { data ->
+            val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
+            val time = runCatching { data.cellFeedCommInfo?.time }.getOrNull() ?: 0L
+            val summary = runCatching { data.getCellSummaryV2()?.summary }.getOrNull().orEmpty()
+            val title = runCatching { data.cellTitleInfo?.title }.getOrNull().orEmpty()
+            val nick = runCatching { data.cellUserInfo?.user?.nickName }.getOrNull().orEmpty()
+            val likes = runCatching { data.cellLikeInfo?.likeNum }.getOrNull() ?: 0
+            val comments = runCatching {
+                data.cellCommentInfo?.c.orEmpty().joinToString(",") { comment ->
+                    "${comment.commentid}:${comment.user?.uin}:${comment.comment}:${comment.replies?.size ?: 0}"
+                }
+            }.getOrNull().orEmpty()
+            val pictures = runCatching {
+                data.cellPictureInfo?.pics.orEmpty().joinToString(",") {
+                    it.currentUrl?.url ?: it.bigUrl?.url ?: it.originUrl?.url.orEmpty()
+                }
+            }.getOrNull().orEmpty()
+            val video = runCatching { data.cellVideoInfo?.videoUrl?.url }.getOrNull().orEmpty()
+            val original = runCatching {
+                data.originalInfo?.let { originalData ->
+                    "${originalData.cellUserInfo?.user?.nickName}:${originalData.getCellSummaryV2()?.summary}:${originalData.cellTitleInfo?.title}"
+                }
+            }.getOrNull().orEmpty()
+            "$id:$time:$nick:$summary:$title:$likes:$comments:$pictures:$video:$original"
+        }
 
     private fun probeStrings(obj: Any?, depth: Int = 0): String {
         if (obj == null || depth > 2) return ""
@@ -431,7 +450,14 @@ class QZoneViewModel : ViewModel() {
                 field.isAccessible = true
                 val v = runCatching { field.get(obj) }.getOrNull() ?: continue
                 when (v) {
-                    is String -> if (v.isNotBlank() && v.length > 2) results.add("${field.name}='${v.take(100)}'")
+                    is String -> if (v.isNotBlank() && v.length > 2) results.add(
+                        "${field.name}='${
+                            v.take(
+                                100
+                            )
+                        }'"
+                    )
+
                     is Number -> if (v.toLong() != 0L) results.add("${field.name}=$v")
                     is Collection<*> -> {
                         if (v.isNotEmpty()) {
@@ -444,6 +470,7 @@ class QZoneViewModel : ViewModel() {
                             }
                         }
                     }
+
                     else -> {
                         if (depth < 2) {
                             val sub = probeStrings(v, depth + 1)
@@ -452,7 +479,8 @@ class QZoneViewModel : ViewModel() {
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         return results.joinToString("; ")
     }
 

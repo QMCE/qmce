@@ -35,7 +35,9 @@ class PacketToolViewModel(
     val state: StateFlow<PacketToolState> = _state.asStateFlow()
 
     fun setMode(mode: PacketMode) = update { copy(mode = mode, status = "") }
-    fun setPayloadFormat(format: PacketPayloadFormat) = update { copy(payloadFormat = format, status = "") }
+    fun setPayloadFormat(format: PacketPayloadFormat) =
+        update { copy(payloadFormat = format, status = "") }
+
     fun setCommand(value: String) = update { copy(command = value) }
     fun setCommandId(value: String) = update { copy(commandId = value) }
     fun setServiceType(value: String) = update { copy(serviceType = value) }
@@ -63,7 +65,13 @@ class PacketToolViewModel(
                         status = "${result.kind} 已提交（${result.byteCount} 字节）",
                     )
                 }
-                is PacketResult.Rejected -> update { copy(sending = false, status = result.message) }
+
+                is PacketResult.Rejected -> update {
+                    copy(
+                        sending = false,
+                        status = result.message
+                    )
+                }
             }
         }
     }
@@ -72,11 +80,14 @@ class PacketToolViewModel(
         return runCatching {
             when (snapshot.mode) {
                 PacketMode.Pb -> {
-                    val payload = PacketEncoder.decodePayload(snapshot.payload, snapshot.payloadFormat)
+                    val payload =
+                        PacketEncoder.decodePayload(snapshot.payload, snapshot.payloadFormat)
                     sender.sendPb(snapshot.command, payload)
                 }
+
                 PacketMode.Oidb -> {
-                    val payload = PacketEncoder.decodePayload(snapshot.payload, snapshot.payloadFormat)
+                    val payload =
+                        PacketEncoder.decodePayload(snapshot.payload, snapshot.payloadFormat)
                     sender.sendOidb(
                         command = snapshot.command,
                         commandId = parseNumber(snapshot.commandId, "OIDB command id"),
@@ -85,6 +96,7 @@ class PacketToolViewModel(
                         body = payload,
                     )
                 }
+
                 PacketMode.Ark -> {
                     val target = snapshot.target
                         ?: return PacketResult.Rejected("Ark 请从聊天页进入发包工具")
@@ -93,7 +105,9 @@ class PacketToolViewModel(
                             status = if (code == 0) {
                                 "Ark 发送成功"
                             } else {
-                                "Ark 发送失败（$code）${message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""}"
+                                "Ark 发送失败（$code）${
+                                    message?.takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+                                }"
                             },
                         )
                     }

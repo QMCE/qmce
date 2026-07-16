@@ -1,5 +1,3 @@
-@file:Suppress("MISSING_DEPENDENCY_SUPERCLASS_WARNING", "MISSING_DEPENDENCY_SUPERCLASS")
-
 package rj.qmce.lite.ui.screens
 
 import android.Manifest

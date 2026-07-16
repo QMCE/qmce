@@ -9,10 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,26 +18,21 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -60,7 +53,10 @@ data class MessageActionContext(
 )
 
 object MessageActionResolver {
-    fun resolve(message: ChatDetailViewModel.UiMsg, context: MessageActionContext = MessageActionContext()): List<MessageAction> = buildList {
+    fun resolve(
+        message: ChatDetailViewModel.UiMsg,
+        context: MessageActionContext = MessageActionContext()
+    ): List<MessageAction> = buildList {
         val contents = message.contents
 
         // 撤回：自己发的已送达消息
@@ -88,14 +84,14 @@ object MessageActionResolver {
 
         // 转发：有文本/图片/表情
         val hasForwardableContent = copyable.isNotBlank() ||
-            contents.any { it is ChatDetailViewModel.MessageContent.Image || it is ChatDetailViewModel.MessageContent.MarketFace }
+                contents.any { it is ChatDetailViewModel.MessageContent.Image || it is ChatDetailViewModel.MessageContent.MarketFace }
         if (hasForwardableContent) {
             add(MessageAction("forward", "转发"))
         }
 
         val hasMedia = contents.any {
             it is ChatDetailViewModel.MessageContent.Image ||
-                it is ChatDetailViewModel.MessageContent.MarketFace
+                    it is ChatDetailViewModel.MessageContent.MarketFace
         }
         if (hasMedia) add(MessageAction("view_media", "查看图片"))
 
@@ -121,15 +117,23 @@ private fun List<ChatDetailViewModel.MessageContent>.copyableText(): String =
         .joinToString("") { it.value }
         .ifBlank {
             filterIsInstance<ChatDetailViewModel.MessageContent.Card>()
-                .joinToString("\n") { listOf(it.title, it.description).filter(String::isNotBlank).joinToString("\n") }
+                .joinToString("\n") {
+                    listOf(it.title, it.description).filter(String::isNotBlank).joinToString("\n")
+                }
         }
         .ifBlank {
             buildList {
                 filterIsInstance<ChatDetailViewModel.MessageContent.Wallet>().forEach {
-                    add(listOf(it.title, it.description, it.notice).filterNotNull().filter(String::isNotBlank).joinToString("\n"))
+                    add(
+                        listOf(it.title, it.description, it.notice).filterNotNull()
+                            .filter(String::isNotBlank).joinToString("\n")
+                    )
                 }
                 filterIsInstance<ChatDetailViewModel.MessageContent.Calendar>().forEach {
-                    add(listOf(it.title, it.description).filter(String::isNotBlank).joinToString("\n"))
+                    add(
+                        listOf(it.title, it.description).filter(String::isNotBlank)
+                            .joinToString("\n")
+                    )
                 }
             }.filter(String::isNotBlank).joinToString("\n")
         }
@@ -154,7 +158,9 @@ fun MessageActionsScreen(
     ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().background(scheme.background),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(scheme.background),
             contentPadding = contentPadding,
         ) {
             actions.forEachIndexed { index, action ->
@@ -221,7 +227,9 @@ fun MessageTextReaderScreen(
     ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
             contentPadding = contentPadding,
         ) {
             item(key = "reader-text") {
@@ -238,10 +246,18 @@ fun MessageTextReaderScreen(
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    Button(onClick = { copyMessageText(context, text) }, modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { copyMessageText(context, text) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         Text("复制全部")
                     }
-                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    ) {
                         Text("返回")
                     }
                 }
@@ -254,7 +270,12 @@ fun openHttpLink(context: Context, url: String): Boolean {
     val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
     if (uri.scheme !in setOf("http", "https")) return false
     return runCatching {
-        context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(
+            Intent(
+                Intent.ACTION_VIEW,
+                uri
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
         true
     }.getOrDefault(false)
 }
@@ -264,7 +285,11 @@ fun shareLocalMedia(context: Context, file: File) {
     Thread {
         runCatching {
             val sharedFile = copyForExternalAccess(context, file)
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", sharedFile)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                sharedFile
+            )
             postOnMain {
                 context.startActivity(
                     Intent.createChooser(
@@ -287,7 +312,11 @@ fun openLocalFile(context: Context, file: File) {
     Thread {
         runCatching {
             val sharedFile = copyForExternalAccess(context, file)
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", sharedFile)
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                sharedFile
+            )
             postOnMain {
                 context.startActivity(
                     Intent(Intent.ACTION_VIEW)
@@ -316,18 +345,24 @@ private fun copyForExternalAccess(context: Context, source: File): File {
 private fun contentTypeFor(file: File): String =
     URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
 
-fun ChatDetailViewModel.UiMsg.firstLocalMediaFile(): File? = contents.firstNotNullOfOrNull { content ->
-    when (content) {
-        is ChatDetailViewModel.MessageContent.Image -> {
-            (content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
-                .asSequence()
+fun ChatDetailViewModel.UiMsg.firstLocalMediaFile(): File? =
+    contents.firstNotNullOfOrNull { content ->
+        when (content) {
+            is ChatDetailViewModel.MessageContent.Image -> {
+                (content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
+                    .asSequence()
+                    .map { File(it.removePrefix("file://")) }
+                    .firstOrNull(File::isFile)
+            }
+
+            is ChatDetailViewModel.MessageContent.MarketFace -> sequenceOf(
+                content.dynamicPath,
+                content.staticPath
+            )
+                .filterNotNull()
                 .map { File(it.removePrefix("file://")) }
                 .firstOrNull(File::isFile)
+
+            else -> null
         }
-        is ChatDetailViewModel.MessageContent.MarketFace -> sequenceOf(content.dynamicPath, content.staticPath)
-            .filterNotNull()
-            .map { File(it.removePrefix("file://")) }
-            .firstOrNull(File::isFile)
-        else -> null
     }
-}

@@ -2,7 +2,6 @@ package rj.qmce.lite.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -10,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,26 +19,22 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
-import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.touchTargetAwareSize
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
@@ -62,7 +56,13 @@ fun ChatMembersScreen(
     val normalizedQuery = query.trim().lowercase(Locale.ROOT)
     val visibleMembers = remember(members, normalizedQuery) {
         if (normalizedQuery.isBlank()) members else members.filter { member ->
-            listOf(member.displayName, member.nick, member.cardName, member.uid, member.uin.toString())
+            listOf(
+                member.displayName,
+                member.nick,
+                member.cardName,
+                member.uid,
+                member.uin.toString()
+            )
                 .any { it.contains(normalizedQuery, ignoreCase = true) }
         }
     }
@@ -103,7 +103,11 @@ fun ChatMembersScreen(
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { inner ->
-                        if (query.isBlank()) Text("搜索昵称、群名片、QQ号或 UID", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        if (query.isBlank()) Text(
+                            "搜索昵称、群名片、QQ号或 UID",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
                         inner()
                     },
                 )
@@ -131,8 +135,17 @@ fun ChatMembersScreen(
                             },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text(error ?: "获取群成员失败", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) }) { Text("重试") }
+                        Text(
+                            error ?: "获取群成员失败",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Button(onClick = {
+                            vm.loadGroupMembers(
+                                groupCode,
+                                forceRefresh = true
+                            )
+                        }) { Text("重试") }
                     }
                 }
             } else if (visibleMembers.isEmpty()) {
@@ -184,17 +197,32 @@ private fun GroupMemberRow(
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
         icon = {
             androidx.compose.foundation.layout.Box(
-                modifier = Modifier.size(ButtonDefaults.LargeIconSize).clip(CircleShape).background(scheme.surfaceContainer),
+                modifier = Modifier
+                    .size(ButtonDefaults.LargeIconSize)
+                    .clip(CircleShape)
+                    .background(scheme.surfaceContainer),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(member.displayName.firstOrNull()?.toString() ?: "?", style = MaterialTheme.typography.bodyLarge, color = scheme.primary)
+                Text(
+                    member.displayName.firstOrNull()?.toString() ?: "?",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = scheme.primary
+                )
                 if (model != null) {
-                    AsyncImage(model, null, Modifier.fillMaxSize().clip(CircleShape), contentScale = ContentScale.Crop)
+                    AsyncImage(
+                        model,
+                        null,
+                        Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape),
+                        contentScale = ContentScale.Crop
+                    )
                 }
             }
-        }, /* // don't need this
-        secondaryLabel = {
-            Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid, maxLines = 1)
-        }, */
+        },
+        /* // don't need this
+               secondaryLabel = {
+                   Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid, maxLines = 1)
+               }, */
     ) { Text(member.displayName, maxLines = 1) }
 }

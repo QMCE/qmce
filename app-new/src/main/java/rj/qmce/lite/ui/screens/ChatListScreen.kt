@@ -60,7 +60,13 @@ fun ChatListScreen(
     val transformationSpec = rememberTransformationSpec()
     val pullRefreshState = rememberPullToRefreshState()
 
-    Log.d("QMCE", "ChatListScreen: recompose, revision=${contactsSnapshot.revision}, contacts.size=${contacts.size}, top1=${contacts.firstOrNull()?.let { "${it.id}:${it.msgTime}:${it.abstractContent?.firstOrNull()?.content}" }}")
+    Log.d(
+        "QMCE",
+        "ChatListScreen: recompose, revision=${contactsSnapshot.revision}, contacts.size=${contacts.size}, top1=${
+            contacts.firstOrNull()
+                ?.let { "${it.id}:${it.msgTime}:${it.abstractContent?.firstOrNull()?.content}" }
+        }"
+    )
 
     DisposableEffect(runtime) {
         val receiver = object : BroadcastReceiver() {

@@ -1,16 +1,21 @@
 package rj.qmce.lite.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
-import androidx.wear.compose.material3.*
+import androidx.wear.compose.material3.HorizontalPageIndicator
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import rj.qmce.lite.ui.settingsVm
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -66,15 +71,18 @@ fun MainScreen(
                     onOpenChat = onOpenChat,
                     vm = chatListVm,
                 )
+
                 1 -> ContactsScreen(
                     vm = contactsVm,
                     onOpenChat = onOpenChatFromContacts,
                 )
+
                 2 -> QZoneScreen(
                     vm = qZoneVm,
                     onOpenComposer = onOpenQZoneComposer,
                     onOpenDetail = onOpenQZoneDetail,
                 )
+
                 3 -> MyScreen(
                     uin = uin,
                     onOpenSettings = onOpenSettings,
@@ -92,8 +100,7 @@ private fun TopPageIndicator(
     pointsUp: Boolean,
 ) {
     val settings by settingsVm.settings.collectAsState()
-    if (!settings.showTimeText)
-    {
+    if (!settings.showTimeText) {
         HorizontalPageIndicator(
             pagerState = pagerState,
             modifier = Modifier

@@ -2,13 +2,15 @@ package rj.qmce.lite.viewmodel
 
 import android.content.Context
 import android.graphics.BitmapFactory
-import android.os.Handler
-import android.os.Looper
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import com.tencent.mobileqq.qroute.QRoute
+import com.tencent.qqnt.aio.api.IAIOFileTransfer
 import com.tencent.qqnt.kernel.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
@@ -19,24 +21,22 @@ import com.tencent.qqnt.kernel.nativeinterface.QQNTWrapperUtil
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernel.nativeinterface.TextElement
 import com.tencent.qqnt.kernel.nativeinterface.VideoElement
-import com.tencent.qqnt.aio.api.IAIOFileTransfer
 import com.tencent.qqnt.msg.api.IMsgUtilApi
-import com.tencent.mobileqq.qroute.QRoute
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.AtMention
-import rj.qmce.lite.data.chat.OfficialPttPlayer
 import rj.qmce.lite.data.chat.ChatRepository
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.data.chat.OfficialPttPlayer
 import rj.qmce.lite.data.chat.PttMediaRef
 import rj.qmce.lite.data.chat.RichMediaKey
-import rj.qmce.lite.data.chat.RichMediaRequestState
 import rj.qmce.lite.data.chat.RichMediaRepository
+import rj.qmce.lite.data.chat.RichMediaRequestState
 import rj.qmce.lite.data.chat.RichMessageMetadataParser
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import mqq.app.AppRuntime
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
@@ -64,11 +64,13 @@ class ChatDetailViewModel : ViewModel() {
             val isLoading: Boolean,
             val loadError: String?,
         ) : MessageContent
+
         data class Face(
             val text: String,
             val packId: String?,
             val stickerId: String?,
         ) : MessageContent
+
         data class MarketFace(
             val name: String,
             val staticPath: String?,
@@ -76,18 +78,21 @@ class ChatDetailViewModel : ViewModel() {
             val width: Int,
             val height: Int,
         ) : MessageContent
+
         data class Giphy(
             val id: String,
             val mediaUrl: String?,
             val width: Int,
             val height: Int,
         ) : MessageContent
+
         data class Voice(
             val media: PttMediaRef,
             val progress: Int?,
             val transferStatus: Int?,
             val transcript: String?,
         ) : MessageContent
+
         data class Video(
             val filePath: String?,
             val thumbnailPaths: List<String>,
@@ -97,6 +102,7 @@ class ChatDetailViewModel : ViewModel() {
             val progress: Int?,
             val transferStatus: Int?,
         ) : MessageContent
+
         data class File(
             val elementId: Long,
             val name: String,
@@ -120,6 +126,7 @@ class ChatDetailViewModel : ViewModel() {
             val isDownloading: Boolean,
             val downloadError: String?,
         ) : MessageContent
+
         data class Reply(
             val senderName: String,
             val summary: String,
@@ -127,6 +134,7 @@ class ChatDetailViewModel : ViewModel() {
             val targetSequence: Long?,
             val expired: Boolean,
         ) : MessageContent
+
         data class Card(
             val title: String,
             val description: String,
@@ -134,11 +142,13 @@ class ChatDetailViewModel : ViewModel() {
             val previewUrl: String?,
             val actionUrl: String? = null,
         ) : MessageContent
+
         data class StructCard(
             val title: String,
             val description: String,
             val groupCode: String?,
         ) : MessageContent
+
         data class Forward(
             val title: String,
             val preview: List<String>,
@@ -146,22 +156,26 @@ class ChatDetailViewModel : ViewModel() {
             val rootMessageId: Long,
             val rawMessageId: Long,
         ) : MessageContent
+
         data class SystemTip(val text: String) : MessageContent
         data class Location(
             val title: String,
             val detail: String,
         ) : MessageContent
+
         data class Wallet(
             val title: String,
             val description: String,
             val notice: String?,
             val iconUrl: String?,
         ) : MessageContent
+
         data class Calendar(
             val title: String,
             val description: String,
             val expired: Boolean,
         ) : MessageContent
+
         data class InlineKeyboard(
             val botAppid: Long,
             val rows: List<List<InlineKeyboardButton>>,
@@ -176,17 +190,20 @@ class ChatDetailViewModel : ViewModel() {
             val type: Int,
             val unsupportTips: String?,
         )
+
         data class Markdown(val value: String) : MessageContent
         data class LinkPreview(
             val url: String,
             val state: LinkPreviewState,
         ) : MessageContent
+
         data class CallRecord(
             val text: String,
             val type: Int,
             val time: Long,
             val hasRead: Boolean,
         ) : MessageContent
+
         data class Unsupported(
             val elementType: Int,
             val detail: String? = null,
@@ -217,6 +234,7 @@ class ChatDetailViewModel : ViewModel() {
             val title: String,
             val messages: List<UiMsg>,
         ) : ForwardDetailState
+
         data class Error(
             val title: String,
             val message: String,
@@ -229,10 +247,12 @@ class ChatDetailViewModel : ViewModel() {
             val messageId: Long,
             val sequence: Long?,
         ) : ReplySourceState
+
         data class Loaded(
             val messageId: Long,
             val sequence: Long?,
         ) : ReplySourceState
+
         data class Error(
             val messageId: Long,
             val sequence: Long?,
@@ -280,8 +300,10 @@ class ChatDetailViewModel : ViewModel() {
         val label: String,
     )
 
-    private val _inlineKeyboardActions = MutableStateFlow<Map<String, InlineKeyboardActionState>>(emptyMap())
-    val inlineKeyboardActions: StateFlow<Map<String, InlineKeyboardActionState>> = _inlineKeyboardActions
+    private val _inlineKeyboardActions =
+        MutableStateFlow<Map<String, InlineKeyboardActionState>>(emptyMap())
+    val inlineKeyboardActions: StateFlow<Map<String, InlineKeyboardActionState>> =
+        _inlineKeyboardActions
 
     private val msgList = CopyOnWriteArrayList<MsgRecord>()
     private val messageLock = Any()
@@ -298,7 +320,8 @@ class ChatDetailViewModel : ViewModel() {
     private val forwardDetailBackStack = ArrayDeque<ForwardDetailState.Ready>()
     private val chatRepository = ChatRepository()
     private var contact: Contact? = null
-    @Volatile private var chatRuntime: AppRuntime? = null
+    @Volatile
+    private var chatRuntime: AppRuntime? = null
     private val pendingMessageServiceActions = mutableListOf<Pair<Long, () -> Unit>>()
     private val messageServiceConnectionInFlight = AtomicBoolean(false)
     private var selfUin: Long = 0L
@@ -315,7 +338,14 @@ class ChatDetailViewModel : ViewModel() {
         LinkPreviewRepository.setInvalidationListener { emitMessages() }
     }
 
-    fun openChat(runtime: AppRuntime?, peerUid: String, peerUin: String, chatType: Int, name: String, myUin: String = "") {
+    fun openChat(
+        runtime: AppRuntime?,
+        peerUid: String,
+        peerUin: String,
+        chatType: Int,
+        name: String,
+        myUin: String = ""
+    ) {
         val session = chatSession.incrementAndGet()
         forwardDetailRequest.incrementAndGet()
         replySourceRequest.incrementAndGet()
@@ -351,11 +381,14 @@ class ChatDetailViewModel : ViewModel() {
                 is ChatRepository.Connection.Ready -> {
                     loadMessagesFromService(session)
                 }
+
                 ChatRepository.Connection.KernelUnavailable -> {
                     _statusText.value = "KernelService 不可用"
                 }
+
                 is ChatRepository.Connection.MsgServiceUnavailable -> {
-                    _statusText.value = if (connection.timedOut) "消息服务初始化超时" else "MsgService 不可用"
+                    _statusText.value =
+                        if (connection.timedOut) "消息服务初始化超时" else "MsgService 不可用"
                 }
             }
         }.apply {
@@ -375,9 +408,13 @@ class ChatDetailViewModel : ViewModel() {
         if (!startMessageListener(session, c)) {
             Log.w(TAG, "chatDetail: message listener registration failed")
         }
-        val requested = chatRepository.loadLatest(c, LOAD_COUNT) { errorCode, errMsg, list, needContinue ->
+        val requested =
+            chatRepository.loadLatest(c, LOAD_COUNT) { errorCode, errMsg, list, needContinue ->
                 if (!isCurrentSession(session)) return@loadLatest
-                Log.d(TAG, "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue")
+                Log.d(
+                    TAG,
+                    "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue"
+                )
                 if (errorCode == 0) {
                     msgList.clear()
                     mergeMessages(list.orEmpty(), c)
@@ -411,7 +448,10 @@ class ChatDetailViewModel : ViewModel() {
                 mergeMessages(listOf(message), chatContact)
                 if (msgList.size != previousSize) {
                     emitMessages()
-                    Log.d(TAG, "chatDetail: onAddSendMsg msgId=${message.msgId}, time=${message.msgTime}")
+                    Log.d(
+                        TAG,
+                        "chatDetail: onAddSendMsg msgId=${message.msgId}, time=${message.msgTime}"
+                    )
                 }
             }
 
@@ -439,9 +479,10 @@ class ChatDetailViewModel : ViewModel() {
         Thread {
             val connection = chatRepository.connect(runtime)
             val pendingActions = synchronized(pendingMessageServiceActions) {
-                pendingMessageServiceActions.toList().also { pendingMessageServiceActions.clear() }.also {
-                    messageServiceConnectionInFlight.set(false)
-                }
+                pendingMessageServiceActions.toList().also { pendingMessageServiceActions.clear() }
+                    .also {
+                        messageServiceConnectionInFlight.set(false)
+                    }
             }
             when (connection) {
                 is ChatRepository.Connection.Ready -> {
@@ -452,9 +493,11 @@ class ChatDetailViewModel : ViewModel() {
                         }
                     }
                 }
+
                 ChatRepository.Connection.KernelUnavailable -> {
                     if (isCurrentSession(session)) _statusText.value = "KernelService 不可用"
                 }
+
                 is ChatRepository.Connection.MsgServiceUnavailable -> {
                     if (isCurrentSession(session)) {
                         _statusText.value = if (connection.timedOut) {
@@ -550,28 +593,28 @@ class ChatDetailViewModel : ViewModel() {
         }
         val elements = arrayListOf(element)
         val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-                Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
-                if (code == 0) {
-                    val now = System.currentTimeMillis() / 1000
-                    val rec = MsgRecord().apply {
-                        peerUid = c.peerUid
-                        chatType = c.chatType
-                        msgTime = now
-                        senderUin = selfUin
-                        sendNickName = ""
-                        sendStatus = 2
-                    }
-                    runCatching {
-                        val f = MsgRecord::class.java.getDeclaredField("elements")
-                        f.isAccessible = true
-                        f.set(rec, arrayListOf(element))
-                    }
-                    RecentMessageStore.put(peerId, rec)
-                    Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
-                } else {
-                    _statusText.value = "发送图片失败: $errMsg"
+            Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
+            if (code == 0) {
+                val now = System.currentTimeMillis() / 1000
+                val rec = MsgRecord().apply {
+                    peerUid = c.peerUid
+                    chatType = c.chatType
+                    msgTime = now
+                    senderUin = selfUin
+                    sendNickName = ""
+                    sendStatus = 2
                 }
+                runCatching {
+                    val f = MsgRecord::class.java.getDeclaredField("elements")
+                    f.isAccessible = true
+                    f.set(rec, arrayListOf(element))
+                }
+                RecentMessageStore.put(peerId, rec)
+                Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
+            } else {
+                _statusText.value = "发送图片失败: $errMsg"
             }
+        }
         if (!sent) _statusText.value = "消息服务不可用"
     }
 
@@ -587,7 +630,8 @@ class ChatDetailViewModel : ViewModel() {
         _statusText.value = "正在准备视频…"
         Thread {
             runCatching {
-                val videoFile = File(context.cacheDir, "send_video_${System.currentTimeMillis()}.mp4")
+                val videoFile =
+                    File(context.cacheDir, "send_video_${System.currentTimeMillis()}.mp4")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     videoFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: error("读取视频失败")
@@ -607,17 +651,25 @@ class ChatDetailViewModel : ViewModel() {
 
                 val thumbPath = chatRepository.getMobileQQSendPath(
                     RichMediaFilePathInfo(5, 1, videoMd5, fileName, 2, 720, null, "", true),
-                ) ?: File(context.cacheDir, "send_video_thumb_${System.currentTimeMillis()}.jpg").absolutePath
+                ) ?: File(
+                    context.cacheDir,
+                    "send_video_thumb_${System.currentTimeMillis()}.jpg"
+                ).absolutePath
                 val thumbFile = File(thumbPath)
                 thumbFile.parentFile?.mkdirs()
                 if (!thumbFile.isFile || thumbFile.length() == 0L) {
                     val retriever = MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(videoFile.absolutePath)
-                        val frame = retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                            ?: error("无法生成视频缩略图")
+                        val frame =
+                            retriever.getFrameAtTime(0L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                                ?: error("无法生成视频缩略图")
                         thumbFile.outputStream().use { output ->
-                            frame.compress(android.graphics.Bitmap.CompressFormat.JPEG,  seventyPercent(), output)
+                            frame.compress(
+                                android.graphics.Bitmap.CompressFormat.JPEG,
+                                seventyPercent(),
+                                output
+                            )
                         }
                         frame.recycle()
                     } finally {
@@ -629,7 +681,8 @@ class ChatDetailViewModel : ViewModel() {
                 val durationSeconds = MediaMetadataRetriever().run {
                     try {
                         setDataSource(videoFile.absolutePath)
-                        (extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L)
+                        (extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                            ?: 0L)
                             .div(1000L).toInt()
                     } finally {
                         release()
@@ -667,7 +720,8 @@ class ChatDetailViewModel : ViewModel() {
                             sendStatus = 2
                         }
                         runCatching {
-                            MsgRecord::class.java.getDeclaredField("elements").apply { isAccessible = true }
+                            MsgRecord::class.java.getDeclaredField("elements")
+                                .apply { isAccessible = true }
                                 .set(record, arrayListOf(element))
                         }
                         RecentMessageStore.put(peerId, record)
@@ -768,7 +822,8 @@ class ChatDetailViewModel : ViewModel() {
                     filePath = sendFile.absolutePath
                     md5HexStr = md5File(sendFile)
                     fileSize = sendFile.length()
-                    duration = kotlin.math.max(1, kotlin.math.round(durationMillis / 1000.0).toInt())
+                    duration =
+                        kotlin.math.max(1, kotlin.math.round(durationMillis / 1000.0).toInt())
                     this.formatType = formatType
                     voiceType = 2
                     voiceChangeType = 0
@@ -785,27 +840,27 @@ class ChatDetailViewModel : ViewModel() {
                 }
                 val elements = arrayListOf(element)
                 val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-                        Log.d(TAG, "sendVoice: code=$code, errMsg=$errMsg")
-                        if (code == 0) {
-                            val rec = MsgRecord().apply {
-                                peerUid = c.peerUid
-                                chatType = c.chatType
-                                msgTime = System.currentTimeMillis() / 1000
-                                senderUin = selfUin
-                                sendNickName = ""
-                                sendStatus = 2
-                            }
-                            runCatching {
-                                val field = MsgRecord::class.java.getDeclaredField("elements")
-                                field.isAccessible = true
-                                field.set(rec, arrayListOf(element))
-                            }
-                            RecentMessageStore.put(peerId, rec)
-                            _statusText.value = ""
-                        } else {
-                            _statusText.value = "发送语音失败: ${errMsg.orEmpty()}"
+                    Log.d(TAG, "sendVoice: code=$code, errMsg=$errMsg")
+                    if (code == 0) {
+                        val rec = MsgRecord().apply {
+                            peerUid = c.peerUid
+                            chatType = c.chatType
+                            msgTime = System.currentTimeMillis() / 1000
+                            senderUin = selfUin
+                            sendNickName = ""
+                            sendStatus = 2
                         }
+                        runCatching {
+                            val field = MsgRecord::class.java.getDeclaredField("elements")
+                            field.isAccessible = true
+                            field.set(rec, arrayListOf(element))
+                        }
+                        RecentMessageStore.put(peerId, rec)
+                        _statusText.value = ""
+                    } else {
+                        _statusText.value = "发送语音失败: ${errMsg.orEmpty()}"
                     }
+                }
                 if (!sent) _statusText.value = "消息服务不可用，无法发送语音"
             }.onFailure {
                 Log.w(TAG, "sendVoice failed", it)
@@ -872,27 +927,28 @@ class ChatDetailViewModel : ViewModel() {
         if (text.isNotBlank()) {
             elements.add(MsgElement().apply {
                 elementType = 1; elementId = 0
-                textElement = TextElement().apply { content = text; atType = 0; atUid = 0L; atNtUid = "" }
+                textElement =
+                    TextElement().apply { content = text; atType = 0; atUid = 0L; atNtUid = "" }
             })
         }
 
         val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-                Log.d(TAG, "sendTextWithImage: code=$code, errMsg=$errMsg")
-                if (code == 0) {
-                    val now = System.currentTimeMillis() / 1000
-                    val rec = MsgRecord().apply {
-                        peerUid = c.peerUid; chatType = c.chatType; msgTime = now
-                        senderUin = selfUin; sendNickName = ""; sendStatus = 2
-                    }
-                    runCatching {
-                        val f = MsgRecord::class.java.getDeclaredField("elements")
-                        f.isAccessible = true; f.set(rec, elements)
-                    }
-                    RecentMessageStore.put(peerId, rec)
-                } else {
-                    _statusText.value = "发送失败: $errMsg"
+            Log.d(TAG, "sendTextWithImage: code=$code, errMsg=$errMsg")
+            if (code == 0) {
+                val now = System.currentTimeMillis() / 1000
+                val rec = MsgRecord().apply {
+                    peerUid = c.peerUid; chatType = c.chatType; msgTime = now
+                    senderUin = selfUin; sendNickName = ""; sendStatus = 2
                 }
+                runCatching {
+                    val f = MsgRecord::class.java.getDeclaredField("elements")
+                    f.isAccessible = true; f.set(rec, elements)
+                }
+                RecentMessageStore.put(peerId, rec)
+            } else {
+                _statusText.value = "发送失败: $errMsg"
             }
+        }
         if (!sent) _statusText.value = "消息服务不可用"
     }
 
@@ -986,6 +1042,7 @@ class ChatDetailViewModel : ViewModel() {
                                     elements.add(buildPicElement(appContext, uri))
                                 } ?: error("图片内容已失效")
                             }
+
                             token.startsWith("at:") -> {
                                 val slotId = token.removePrefix("at:")
                                 val mention = atMap[slotId]
@@ -994,12 +1051,17 @@ class ChatDetailViewModel : ViewModel() {
                                 } else {
                                     val atElement = runCatching {
                                         QRoute.api(IMsgUtilApi::class.java)
-                                            .createAtTextElement("@${mention.nick}", mention.uid, mention.atType)
+                                            .createAtTextElement(
+                                                "@${mention.nick}",
+                                                mention.uid,
+                                                mention.atType
+                                            )
                                     }.getOrNull()
                                     if (atElement != null) elements.add(atElement)
                                     else textBuf.append("@").append(mention.nick)
                                 }
                             }
+
                             else -> {
                                 uriMap[token]?.let { uri ->
                                     elements.add(buildPicElement(appContext, uri))
@@ -1113,30 +1175,30 @@ class ChatDetailViewModel : ViewModel() {
         }
         val elements = arrayListOf(element)
         val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-                Log.d(TAG, "sendMsg: code=$code, errMsg=$errMsg")
-                if (code == 0) {
-                    // 构造 MsgRecord 存入 RecentMessageStore
-                    val now = System.currentTimeMillis() / 1000
-                    val rec = MsgRecord().apply {
-                        peerUid = c.peerUid
-                        chatType = c.chatType
-                        msgTime = now
-                        senderUin = selfUin
-                        sendNickName = ""
-                        sendStatus = 2 // SENT
-                    }
-                    // elements 是 val，用反射写
-                    runCatching {
-                        val f = MsgRecord::class.java.getDeclaredField("elements")
-                        f.isAccessible = true
-                        f.set(rec, arrayListOf(element))
-                    }
-                    RecentMessageStore.put(peerId, rec)
-                    Log.d(TAG, "sendMsg: put to RecentMessageStore id=$peerId")
-                } else {
-                    _statusText.value = "发送失败: $errMsg"
+            Log.d(TAG, "sendMsg: code=$code, errMsg=$errMsg")
+            if (code == 0) {
+                // 构造 MsgRecord 存入 RecentMessageStore
+                val now = System.currentTimeMillis() / 1000
+                val rec = MsgRecord().apply {
+                    peerUid = c.peerUid
+                    chatType = c.chatType
+                    msgTime = now
+                    senderUin = selfUin
+                    sendNickName = ""
+                    sendStatus = 2 // SENT
                 }
+                // elements 是 val，用反射写
+                runCatching {
+                    val f = MsgRecord::class.java.getDeclaredField("elements")
+                    f.isAccessible = true
+                    f.set(rec, arrayListOf(element))
+                }
+                RecentMessageStore.put(peerId, rec)
+                Log.d(TAG, "sendMsg: put to RecentMessageStore id=$peerId")
+            } else {
+                _statusText.value = "发送失败: $errMsg"
             }
+        }
         if (!sent) _statusText.value = "消息服务不可用"
     }
 
@@ -1169,19 +1231,21 @@ class ChatDetailViewModel : ViewModel() {
     private fun belongsToContact(record: MsgRecord, expected: Contact): Boolean =
         record.chatType == expected.chatType && record.peerUid == expected.peerUid
 
-    private fun mergeMessages(records: Collection<MsgRecord>, expected: Contact): Int = synchronized(messageLock) {
-        val known = msgList.mapTo(HashSet<String>()) { record -> messageIdentity(record) }
-        var added = 0
-        records.asSequence()
-            .filter { belongsToContact(it, expected) }
-            .filter { known.add(messageIdentity(it)) }
-            .forEach {
-                msgList.add(it)
-                added++
-            }
-        msgList.sortWith(compareBy<MsgRecord> { it.msgTime }.thenBy { it.msgSeq }.thenBy { it.clientSeq })
-        added
-    }
+    private fun mergeMessages(records: Collection<MsgRecord>, expected: Contact): Int =
+        synchronized(messageLock) {
+            val known = msgList.mapTo(HashSet<String>()) { record -> messageIdentity(record) }
+            var added = 0
+            records.asSequence()
+                .filter { belongsToContact(it, expected) }
+                .filter { known.add(messageIdentity(it)) }
+                .forEach {
+                    msgList.add(it)
+                    added++
+                }
+            msgList.sortWith(compareBy<MsgRecord> { it.msgTime }.thenBy { it.msgSeq }
+                .thenBy { it.clientSeq })
+            added
+        }
 
     private fun messageIdentity(record: MsgRecord): String {
         val commonIdentity = listOf(
@@ -1225,217 +1289,261 @@ class ChatDetailViewModel : ViewModel() {
         rec.elements?.forEach { element ->
             val content = runCatching {
                 when {
-                element.grayTipElement != null -> MessageContent.SystemTip(extractSystemTip(element))
-                element.avRecordElement != null -> element.avRecordElement?.let { record ->
-                    MessageContent.CallRecord(
-                        text = record.text?.takeIf { it.isNotBlank() } ?: "通话记录",
-                        type = record.type,
-                        time = record.time,
-                        hasRead = record.hasRead,
+                    element.grayTipElement != null -> MessageContent.SystemTip(
+                        extractSystemTip(
+                            element
+                        )
                     )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.prologueMsgElement != null -> MessageContent.Text(
-                    element.prologueMsgElement?.text.orEmpty().ifBlank { "会话开始" },
-                )
-                element.taskTopMsgElement != null -> element.taskTopMsgElement?.let { task ->
-                    MessageContent.Card(
-                        title = task.msgTitle?.takeIf { it.isNotBlank() } ?: "任务消息",
-                        description = task.msgSummary.orEmpty(),
-                        tag = "任务",
-                        previewUrl = task.iconUrl?.takeIf { it.isNotBlank() },
+
+                    element.avRecordElement != null -> element.avRecordElement?.let { record ->
+                        MessageContent.CallRecord(
+                            text = record.text?.takeIf { it.isNotBlank() } ?: "通话记录",
+                            type = record.type,
+                            time = record.time,
+                            hasRead = record.hasRead,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.prologueMsgElement != null -> MessageContent.Text(
+                        element.prologueMsgElement?.text.orEmpty().ifBlank { "会话开始" },
                     )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.actionBarElement != null -> element.actionBarElement?.let { actionBar ->
-                    MessageContent.InlineKeyboard(actionBar.botAppid, extractKeyboardRows(actionBar.rows))
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.recommendedMsgElement != null -> element.recommendedMsgElement?.let { recommended ->
-                    MessageContent.InlineKeyboard(recommended.botAppid, extractKeyboardRows(recommended.rows))
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.yoloGameResultElement != null -> element.yoloGameResultElement?.let { result ->
-                    MessageContent.Card(
-                        title = "游戏结果",
-                        description = result.userInfo.orEmpty().joinToString("\n") { user ->
-                            "${user.uid.orEmpty()} · 排名 ${user.rank} · 结果 ${user.result}"
-                        },
-                        tag = "互动消息",
-                        previewUrl = null,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.tofuRecordElement != null -> element.tofuRecordElement?.let { tofu ->
-                    MessageContent.Card(
-                        title = tofu.descriptionContent?.title?.takeIf { it.isNotBlank() } ?: "互动消息",
-                        description = tofu.contentlist.orEmpty()
-                            .mapNotNull { it.title?.takeIf(String::isNotBlank) }
-                            .joinToString("\n"),
-                        tag = "互动消息",
-                        previewUrl = tofu.icon?.takeIf { it.isNotBlank() },
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.replyElement != null -> element.replyElement?.let { reply ->
-                    MessageContent.Reply(
-                        senderName = reply.anonymousNickName?.takeIf { it.isNotBlank() }
-                            ?: reply.senderUidStr?.takeIf { it.isNotBlank() }
-                            ?: "回复消息",
-                        summary = reply.sourceMsgText?.takeIf { it.isNotBlank() }
-                            ?: reply.sourceMsgTextElems
-                                ?.joinToString("") { it.textElemContent.orEmpty() }
-                                ?.takeIf { it.isNotBlank() }
-                            ?: if (reply.sourceMsgIsIncPic) "[图片]" else "原消息",
-                        targetMessageId = reply.replayMsgId,
-                        targetSequence = reply.replayMsgSeq,
-                        expired = reply.sourceMsgExpired,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.picElement != null -> element.picElement?.let { picture ->
-                    val requestState = RichMediaRepository.requestState(
-                        RichMediaKey(rec.msgId, element.elementId),
-                    )
-                    MessageContent.Image(
-                        sourcePath = picture.sourcePath?.takeIf { it.isNotBlank() },
-                        elementId = element.elementId,
-                        localPaths = (
-                            listOfNotNull(picture.sourcePath?.takeIf { it.isNotBlank() }) +
-                            RichMediaRepository.resolveLocalPicturePaths(element)
-                            ).distinct(),
-                        thumbnailPaths = picture.thumbPath
-                            ?.values
-                            ?.filter { it.isNotBlank() }
-                            ?.distinct()
-                            .orEmpty(),
-                        width = picture.picWidth,
-                        height = picture.picHeight,
-                        transferStatus = picture.transferStatus,
-                        isLoading = requestState is RichMediaRequestState.Loading,
-                        loadError = (requestState as? RichMediaRequestState.Failed)?.message,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.marketFaceElement != null -> element.marketFaceElement?.let { face ->
-                    MessageContent.MarketFace(
-                        name = face.faceName?.takeIf { it.isNotBlank() } ?: "[动画表情]",
-                        staticPath = face.staticFacePath?.takeIf { it.isNotBlank() },
-                        dynamicPath = face.dynamicFacePath?.takeIf { it.isNotBlank() },
-                        width = face.imageWidth,
-                        height = face.imageHeight,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.giphyElement != null -> element.giphyElement?.let { giphy ->
-                    MessageContent.Giphy(
-                        id = giphy.id?.takeIf { it.isNotBlank() }.orEmpty(),
-                        mediaUrl = giphyMediaUrl(giphy.id),
-                        width = giphy.width,
-                        height = giphy.height,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.faceElement != null -> element.faceElement?.let { face ->
-                    MessageContent.Face(
-                        text = face.faceText?.takeIf { it.isNotBlank() } ?: "[表情]",
-                        packId = face.packId?.takeIf { it.isNotBlank() },
-                        stickerId = face.stickerId?.takeIf { it.isNotBlank() },
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.fileElement != null -> element.fileElement?.let { file ->
-                    val requestState = RichMediaRepository.requestState(
-                        RichMediaKey(rec.msgId, element.elementId),
-                    )
-                    MessageContent.File(
-                        elementId = element.elementId,
-                        name = file.fileName?.takeIf { it.isNotBlank() } ?: "未命名文件",
-                        path = file.filePath?.takeIf { it.isNotBlank() },
-                        sizeBytes = file.fileSize,
-                        progress = file.progress,
-                        transferStatus = file.transferStatus,
-                        fileUuid = file.fileUuid?.takeIf { it.isNotBlank() },
-                        fileMd5 = file.fileMd5?.takeIf { it.isNotBlank() },
-                        fileSha = file.fileSha?.takeIf { it.isNotBlank() },
-                        fileBizId = file.fileBizId,
-                        fileSubId = file.fileSubId?.takeIf { it.isNotBlank() },
-                        fileTransType = file.fileTransType,
-                        folderId = file.folderId?.takeIf { it.isNotBlank() },
-                        expireTime = file.expireTime,
-                        invalidState = file.invalidState,
-                        pictureWidth = file.picWidth,
-                        pictureHeight = file.picHeight,
-                        thumbnailPaths = file.picThumbPath?.values?.filter { it.isNotBlank() }.orEmpty(),
-                        videoDurationSeconds = file.videoDuration,
-                        isDownloading = requestState is RichMediaRequestState.Loading,
-                        downloadError = (requestState as? RichMediaRequestState.Failed)?.message,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.pttElement != null -> element.pttElement?.let { voice ->
-                    MessageContent.Voice(
-                        media = PttMediaRef(
-                            messageId = rec.msgId,
+
+                    element.taskTopMsgElement != null -> element.taskTopMsgElement?.let { task ->
+                        MessageContent.Card(
+                            title = task.msgTitle?.takeIf { it.isNotBlank() } ?: "任务消息",
+                            description = task.msgSummary.orEmpty(),
+                            tag = "任务",
+                            previewUrl = task.iconUrl?.takeIf { it.isNotBlank() },
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.actionBarElement != null -> element.actionBarElement?.let { actionBar ->
+                        MessageContent.InlineKeyboard(
+                            actionBar.botAppid,
+                            extractKeyboardRows(actionBar.rows)
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.recommendedMsgElement != null -> element.recommendedMsgElement?.let { recommended ->
+                        MessageContent.InlineKeyboard(
+                            recommended.botAppid,
+                            extractKeyboardRows(recommended.rows)
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.yoloGameResultElement != null -> element.yoloGameResultElement?.let { result ->
+                        MessageContent.Card(
+                            title = "游戏结果",
+                            description = result.userInfo.orEmpty().joinToString("\n") { user ->
+                                "${user.uid.orEmpty()} · 排名 ${user.rank} · 结果 ${user.result}"
+                            },
+                            tag = "互动消息",
+                            previewUrl = null,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.tofuRecordElement != null -> element.tofuRecordElement?.let { tofu ->
+                        MessageContent.Card(
+                            title = tofu.descriptionContent?.title?.takeIf { it.isNotBlank() }
+                                ?: "互动消息",
+                            description = tofu.contentlist.orEmpty()
+                                .mapNotNull { it.title?.takeIf(String::isNotBlank) }
+                                .joinToString("\n"),
+                            tag = "互动消息",
+                            previewUrl = tofu.icon?.takeIf { it.isNotBlank() },
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.replyElement != null -> element.replyElement?.let { reply ->
+                        MessageContent.Reply(
+                            senderName = reply.anonymousNickName?.takeIf { it.isNotBlank() }
+                                ?: reply.senderUidStr?.takeIf { it.isNotBlank() }
+                                ?: "回复消息",
+                            summary = reply.sourceMsgText?.takeIf { it.isNotBlank() }
+                                ?: reply.sourceMsgTextElems
+                                    ?.joinToString("") { it.textElemContent.orEmpty() }
+                                    ?.takeIf { it.isNotBlank() }
+                                ?: if (reply.sourceMsgIsIncPic) "[图片]" else "原消息",
+                            targetMessageId = reply.replayMsgId,
+                            targetSequence = reply.replayMsgSeq,
+                            expired = reply.sourceMsgExpired,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.picElement != null -> element.picElement?.let { picture ->
+                        val requestState = RichMediaRepository.requestState(
+                            RichMediaKey(rec.msgId, element.elementId),
+                        )
+                        MessageContent.Image(
+                            sourcePath = picture.sourcePath?.takeIf { it.isNotBlank() },
                             elementId = element.elementId,
-                            filePath = voice.filePath?.takeIf { it.isNotBlank() },
-                            md5Hex = voice.md5HexStr?.takeIf { it.isNotBlank() },
-                            fileName = voice.fileName?.takeIf { it.isNotBlank() },
-                            importRichMediaContext = voice.importRichMediaContext,
-                            fileUuid = voice.fileUuid?.takeIf { it.isNotBlank() },
-                            durationSeconds = voice.duration,
-                        ),
-                        progress = voice.progress,
-                        transferStatus = voice.transferStatus,
-                        transcript = voice.text?.takeIf { it.isNotBlank() },
+                            localPaths = (
+                                    listOfNotNull(picture.sourcePath?.takeIf { it.isNotBlank() }) +
+                                            RichMediaRepository.resolveLocalPicturePaths(element)
+                                    ).distinct(),
+                            thumbnailPaths = picture.thumbPath
+                                ?.values
+                                ?.filter { it.isNotBlank() }
+                                ?.distinct()
+                                .orEmpty(),
+                            width = picture.picWidth,
+                            height = picture.picHeight,
+                            transferStatus = picture.transferStatus,
+                            isLoading = requestState is RichMediaRequestState.Loading,
+                            loadError = (requestState as? RichMediaRequestState.Failed)?.message,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.marketFaceElement != null -> element.marketFaceElement?.let { face ->
+                        MessageContent.MarketFace(
+                            name = face.faceName?.takeIf { it.isNotBlank() } ?: "[动画表情]",
+                            staticPath = face.staticFacePath?.takeIf { it.isNotBlank() },
+                            dynamicPath = face.dynamicFacePath?.takeIf { it.isNotBlank() },
+                            width = face.imageWidth,
+                            height = face.imageHeight,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.giphyElement != null -> element.giphyElement?.let { giphy ->
+                        MessageContent.Giphy(
+                            id = giphy.id?.takeIf { it.isNotBlank() }.orEmpty(),
+                            mediaUrl = giphyMediaUrl(giphy.id),
+                            width = giphy.width,
+                            height = giphy.height,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.faceElement != null -> element.faceElement?.let { face ->
+                        MessageContent.Face(
+                            text = face.faceText?.takeIf { it.isNotBlank() } ?: "[表情]",
+                            packId = face.packId?.takeIf { it.isNotBlank() },
+                            stickerId = face.stickerId?.takeIf { it.isNotBlank() },
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.fileElement != null -> element.fileElement?.let { file ->
+                        val requestState = RichMediaRepository.requestState(
+                            RichMediaKey(rec.msgId, element.elementId),
+                        )
+                        MessageContent.File(
+                            elementId = element.elementId,
+                            name = file.fileName?.takeIf { it.isNotBlank() } ?: "未命名文件",
+                            path = file.filePath?.takeIf { it.isNotBlank() },
+                            sizeBytes = file.fileSize,
+                            progress = file.progress,
+                            transferStatus = file.transferStatus,
+                            fileUuid = file.fileUuid?.takeIf { it.isNotBlank() },
+                            fileMd5 = file.fileMd5?.takeIf { it.isNotBlank() },
+                            fileSha = file.fileSha?.takeIf { it.isNotBlank() },
+                            fileBizId = file.fileBizId,
+                            fileSubId = file.fileSubId?.takeIf { it.isNotBlank() },
+                            fileTransType = file.fileTransType,
+                            folderId = file.folderId?.takeIf { it.isNotBlank() },
+                            expireTime = file.expireTime,
+                            invalidState = file.invalidState,
+                            pictureWidth = file.picWidth,
+                            pictureHeight = file.picHeight,
+                            thumbnailPaths = file.picThumbPath?.values?.filter { it.isNotBlank() }
+                                .orEmpty(),
+                            videoDurationSeconds = file.videoDuration,
+                            isDownloading = requestState is RichMediaRequestState.Loading,
+                            downloadError = (requestState as? RichMediaRequestState.Failed)?.message,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.pttElement != null -> element.pttElement?.let { voice ->
+                        MessageContent.Voice(
+                            media = PttMediaRef(
+                                messageId = rec.msgId,
+                                elementId = element.elementId,
+                                filePath = voice.filePath?.takeIf { it.isNotBlank() },
+                                md5Hex = voice.md5HexStr?.takeIf { it.isNotBlank() },
+                                fileName = voice.fileName?.takeIf { it.isNotBlank() },
+                                importRichMediaContext = voice.importRichMediaContext,
+                                fileUuid = voice.fileUuid?.takeIf { it.isNotBlank() },
+                                durationSeconds = voice.duration,
+                            ),
+                            progress = voice.progress,
+                            transferStatus = voice.transferStatus,
+                            transcript = voice.text?.takeIf { it.isNotBlank() },
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.videoElement != null -> element.videoElement?.let { video ->
+                        MessageContent.Video(
+                            filePath = video.filePath?.takeIf { it.isNotBlank() },
+                            thumbnailPaths = video.thumbPath?.values?.filter { it.isNotBlank() }
+                                .orEmpty(),
+                            width = video.thumbWidth,
+                            height = video.thumbHeight,
+                            durationSeconds = video.fileTime,
+                            progress = video.progress,
+                            transferStatus = video.transferStatus,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.walletElement != null -> element.walletElement?.let { wallet ->
+                        extractWalletCard(wallet, rec.senderUin == selfUin)
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.calendarElement != null -> element.calendarElement?.let(::extractCalendarCard)
+                        ?: MessageContent.Unsupported(element.elementType)
+
+                    element.textGiftElement != null -> element.textGiftElement?.let(::extractTextGiftCard)
+                        ?: MessageContent.Unsupported(element.elementType)
+
+                    element.liveGiftElement != null -> element.liveGiftElement?.let(::extractLiveGiftCard)
+                        ?: MessageContent.Unsupported(element.elementType)
+
+                    element.arkElement != null -> element.arkElement?.let(::extractArkCard)
+                        ?: MessageContent.Unsupported(element.elementType)
+
+                    element.structLongMsgElement != null -> element.structLongMsgElement?.let { struct ->
+                        extractStructCard(struct.xmlContent.orEmpty())
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.structMsgElement != null -> element.structMsgElement?.let { struct ->
+                        extractStructCard(struct.xmlContent.orEmpty())
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.multiForwardMsgElement != null -> element.multiForwardMsgElement?.let { forward ->
+                        extractForwardCard(
+                            xmlContent = forward.xmlContent.orEmpty(),
+                            resourceId = forward.resId,
+                            rootMessageId = forwardRootMessageId ?: rec.msgId,
+                            rawMessageId = rec.msgId,
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.markdownElement != null -> MessageContent.Markdown(
+                        element.markdownElement?.content.orEmpty(),
                     )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.videoElement != null -> element.videoElement?.let { video ->
-                    MessageContent.Video(
-                        filePath = video.filePath?.takeIf { it.isNotBlank() },
-                        thumbnailPaths = video.thumbPath?.values?.filter { it.isNotBlank() }.orEmpty(),
-                        width = video.thumbWidth,
-                        height = video.thumbHeight,
-                        durationSeconds = video.fileTime,
-                        progress = video.progress,
-                        transferStatus = video.transferStatus,
+
+                    element.shareLocationElement != null -> element.shareLocationElement?.let { location ->
+                        MessageContent.Location(
+                            title = location.text?.takeIf { it.isNotBlank() } ?: "位置分享",
+                            detail = location.ext?.takeIf { it.isNotBlank() }.orEmpty(),
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.inlineKeyboardElement != null -> element.inlineKeyboardElement?.let(::extractInlineKeyboard)
+                        ?: MessageContent.Unsupported(element.elementType)
+
+                    element.faceBubbleElement != null -> element.faceBubbleElement?.let { faceBubble ->
+                        MessageContent.Text(
+                            firstNonBlank(
+                                faceBubble.faceSummary,
+                                faceBubble.content,
+                                faceBubble.oldVersionStr,
+                            ) ?: "[表情]",
+                        )
+                    } ?: MessageContent.Unsupported(element.elementType)
+
+                    element.textElement != null -> MessageContent.Text(element.textElement?.content.orEmpty())
+                    else -> MessageContent.Unsupported(
+                        element.elementType,
+                        element.javaClass.simpleName
                     )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.walletElement != null -> element.walletElement?.let { wallet ->
-                    extractWalletCard(wallet, rec.senderUin == selfUin)
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.calendarElement != null -> element.calendarElement?.let(::extractCalendarCard)
-                    ?: MessageContent.Unsupported(element.elementType)
-                element.textGiftElement != null -> element.textGiftElement?.let(::extractTextGiftCard)
-                    ?: MessageContent.Unsupported(element.elementType)
-                element.liveGiftElement != null -> element.liveGiftElement?.let(::extractLiveGiftCard)
-                    ?: MessageContent.Unsupported(element.elementType)
-                element.arkElement != null -> element.arkElement?.let(::extractArkCard)
-                    ?: MessageContent.Unsupported(element.elementType)
-                element.structLongMsgElement != null -> element.structLongMsgElement?.let { struct ->
-                    extractStructCard(struct.xmlContent.orEmpty())
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.structMsgElement != null -> element.structMsgElement?.let { struct ->
-                    extractStructCard(struct.xmlContent.orEmpty())
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.multiForwardMsgElement != null -> element.multiForwardMsgElement?.let { forward ->
-                    extractForwardCard(
-                        xmlContent = forward.xmlContent.orEmpty(),
-                        resourceId = forward.resId,
-                        rootMessageId = forwardRootMessageId ?: rec.msgId,
-                        rawMessageId = rec.msgId,
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.markdownElement != null -> MessageContent.Markdown(
-                    element.markdownElement?.content.orEmpty(),
-                )
-                element.shareLocationElement != null -> element.shareLocationElement?.let { location ->
-                    MessageContent.Location(
-                        title = location.text?.takeIf { it.isNotBlank() } ?: "位置分享",
-                        detail = location.ext?.takeIf { it.isNotBlank() }.orEmpty(),
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.inlineKeyboardElement != null -> element.inlineKeyboardElement?.let(::extractInlineKeyboard)
-                    ?: MessageContent.Unsupported(element.elementType)
-                element.faceBubbleElement != null -> element.faceBubbleElement?.let { faceBubble ->
-                    MessageContent.Text(
-                        firstNonBlank(
-                            faceBubble.faceSummary,
-                            faceBubble.content,
-                            faceBubble.oldVersionStr,
-                        ) ?: "[表情]",
-                    )
-                } ?: MessageContent.Unsupported(element.elementType)
-                element.textElement != null -> MessageContent.Text(element.textElement?.content.orEmpty())
-                    else -> MessageContent.Unsupported(element.elementType, element.javaClass.simpleName)
                 }
             }.getOrElse { error ->
                 Log.w(TAG, "chatDetail: render element failed type=${element.elementType}", error)
@@ -1607,8 +1715,8 @@ class ChatDetailViewModel : ViewModel() {
             return false
         }
         _inlineKeyboardActions.value = _inlineKeyboardActions.value + (
-            actionKey to InlineKeyboardActionState(InlineKeyboardActionPhase.Pending, "处理中…")
-        )
+                actionKey to InlineKeyboardActionState(InlineKeyboardActionPhase.Pending, "处理中…")
+                )
         val info = InlineKeyboardClickInfo().apply {
             botAppid = keyboard.botAppid
             buttonId = button.id
@@ -1619,19 +1727,28 @@ class ChatDetailViewModel : ViewModel() {
             chatType = message.chatType
             dmFlag = message.dmFlag
         }
-        val requested = chatRepository.clickInlineKeyboardButton(info) { errorCode, errorMessage, resultCode, resultMessage ->
-            val success = errorCode == 0 && resultCode == 0
-            if (success) {
-                val label = button.visitedLabel ?: button.label
-                _inlineKeyboardActions.value = _inlineKeyboardActions.value + (
-                    actionKey to InlineKeyboardActionState(InlineKeyboardActionPhase.Succeeded, label)
-                )
-                _statusText.value = "操作已发送"
-            } else {
-                _inlineKeyboardActions.value = _inlineKeyboardActions.value - actionKey
-                _statusText.value = "操作失败：${firstNonBlank(resultMessage, errorMessage) ?: "${errorCode}/${resultCode}"}"
+        val requested =
+            chatRepository.clickInlineKeyboardButton(info) { errorCode, errorMessage, resultCode, resultMessage ->
+                val success = errorCode == 0 && resultCode == 0
+                if (success) {
+                    val label = button.visitedLabel ?: button.label
+                    _inlineKeyboardActions.value = _inlineKeyboardActions.value + (
+                            actionKey to InlineKeyboardActionState(
+                                InlineKeyboardActionPhase.Succeeded,
+                                label
+                            )
+                            )
+                    _statusText.value = "操作已发送"
+                } else {
+                    _inlineKeyboardActions.value = _inlineKeyboardActions.value - actionKey
+                    _statusText.value = "操作失败：${
+                        firstNonBlank(
+                            resultMessage,
+                            errorMessage
+                        ) ?: "${errorCode}/${resultCode}"
+                    }"
+                }
             }
-        }
         if (!requested) {
             _inlineKeyboardActions.value = _inlineKeyboardActions.value - actionKey
             _statusText.value = "操作失败：消息服务不可用"
@@ -1716,8 +1833,9 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun ensureImageCached(message: UiMsg, image: MessageContent.Image) {
-        val hasLocalFile = (image.localPaths + image.thumbnailPaths + listOfNotNull(image.sourcePath))
-            .let(LocalMediaResolver::hasAvailableFile)
+        val hasLocalFile =
+            (image.localPaths + image.thumbnailPaths + listOfNotNull(image.sourcePath))
+                .let(LocalMediaResolver::hasAvailableFile)
         if (hasLocalFile || image.elementId <= 0L) return
         RichMediaRepository.requestImageThumbnail(
             messageId = message.msgId,
@@ -1767,7 +1885,8 @@ class ChatDetailViewModel : ViewModel() {
                 return@loadForwardDetail
             }
             val detailMessages = records
-                .sortedWith(compareBy<MsgRecord> { it.msgTime }.thenBy { it.msgSeq }.thenBy { it.clientSeq })
+                .sortedWith(compareBy<MsgRecord> { it.msgTime }.thenBy { it.msgSeq }
+                    .thenBy { it.clientSeq })
                 .map { record -> toUiMsg(record, forward.rootMessageId) }
             _forwardDetailState.value = ForwardDetailState.Ready(forward.title, detailMessages)
         }
@@ -1786,8 +1905,8 @@ class ChatDetailViewModel : ViewModel() {
         val currentState = _replySourceState.value
         if (
             currentState is ReplySourceState.Loading &&
-                currentState.messageId == reply.targetMessageId &&
-                currentState.sequence == reply.targetSequence
+            currentState.messageId == reply.targetMessageId &&
+            currentState.sequence == reply.targetSequence
         ) {
             return
         }
@@ -1812,7 +1931,8 @@ class ChatDetailViewModel : ViewModel() {
         }
 
         val session = chatSession.get()
-        _replySourceState.value = ReplySourceState.Loading(reply.targetMessageId, reply.targetSequence)
+        _replySourceState.value =
+            ReplySourceState.Loading(reply.targetMessageId, reply.targetSequence)
         replyTimeoutHandler.postDelayed({
             if (isCurrentSession(session) && replySourceRequest.get() == requestId) {
                 _replySourceState.value = ReplySourceState.Error(
@@ -1836,7 +1956,8 @@ class ChatDetailViewModel : ViewModel() {
             }
             if (added > 0) emitMessages()
             if (errorCode == 0 && (added > 0 || records?.isNotEmpty() == true)) {
-                _replySourceState.value = ReplySourceState.Loaded(reply.targetMessageId, reply.targetSequence)
+                _replySourceState.value =
+                    ReplySourceState.Loaded(reply.targetMessageId, reply.targetSequence)
             } else {
                 _replySourceState.value = ReplySourceState.Error(
                     reply.targetMessageId,
@@ -1944,17 +2065,20 @@ class ChatDetailViewModel : ViewModel() {
                         }
                     })
                 }
+
                 is MessageContent.Image -> {
-                    val file = (item.localPaths + item.thumbnailPaths + listOfNotNull(item.sourcePath))
-                        .asSequence()
-                        .map { File(it.removePrefix("file://")) }
-                        .firstOrNull(File::isFile)
+                    val file =
+                        (item.localPaths + item.thumbnailPaths + listOfNotNull(item.sourcePath))
+                            .asSequence()
+                            .map { File(it.removePrefix("file://")) }
+                            .firstOrNull(File::isFile)
                     if (file != null) {
                         runCatching {
                             elements.add(buildPicElementFromFile(file))
                         }.onFailure { Log.w(TAG, "forward: rebuild image failed", it) }
                     }
                 }
+
                 else -> {} // 其他类型暂不支持转发
             }
         }

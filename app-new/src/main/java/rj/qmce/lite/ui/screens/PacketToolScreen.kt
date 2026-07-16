@@ -4,15 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -21,18 +18,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.RadioButton
 import androidx.wear.compose.material3.ScreenScaffold
@@ -64,67 +57,30 @@ fun PacketToolScreen(
     val transformationSpec = rememberTransformationSpec()
 
     ScreenScaffold(scrollState = listState) { contentPadding ->
-    TransformingLazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp),
-        contentPadding = contentPadding,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        item {
-            Text(
-                text = "发包工具",
-                color = scheme.onBackground,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
-            )
-        }
-        item {
-            ModeRow(
-                selected = state.mode,
-                onSelected = vm::setMode,
-                modifier = Modifier
-                    .transformedHeight(this, transformationSpec)
-                    .graphicsLayer {
-                        with(SurfaceTransformation(transformationSpec)) {
-                            applyContainerTransformation()
-                            applyContentTransformation()
-                        }
-                    },
-            )
-        }
-        if (state.mode == PacketMode.Ark) {
+        TransformingLazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            contentPadding = contentPadding,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
             item {
                 Text(
-                    text = state.target?.let { "发送到：${it.peerName.ifBlank { it.peerUid }}" }
-                        ?: "Ark 请从聊天页进入",
-                    color = if (state.target == null) scheme.error else scheme.outline,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textAlign = TextAlign.Center,
+                    text = "发包工具",
+                    color = scheme.onBackground,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        },
+                        .padding(horizontal = 8.dp, vertical = 10.dp),
                 )
             }
-        } else {
             item {
-                PacketInput(
-                    value = state.command,
-                    onValueChange = vm::setCommand,
-                    label = if (state.mode == PacketMode.Oidb) "服务命令" else "PB 命令",
-                    hint = if (state.mode == PacketMode.Oidb) "例如 OidbSvcTrpcTcp.0x..." else "例如 MessageSvc.PbSendMsg",
-                    singleLine = true,
+                ModeRow(
+                    selected = state.mode,
+                    onSelected = vm::setMode,
                     modifier = Modifier
                         .transformedHeight(this, transformationSpec)
                         .graphicsLayer {
@@ -135,46 +91,18 @@ fun PacketToolScreen(
                         },
                 )
             }
-            if (state.mode == PacketMode.Oidb) {
+            if (state.mode == PacketMode.Ark) {
                 item {
-                    Row(
+                    Text(
+                        text = state.target?.let { "发送到：${it.peerName.ifBlank { it.peerUid }}" }
+                            ?: "Ark 请从聊天页进入",
+                        color = if (state.target == null) scheme.error else scheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .graphicsLayer {
-                                with(SurfaceTransformation(transformationSpec)) {
-                                    applyContainerTransformation()
-                                    applyContentTransformation()
-                                }
-                            },
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        PacketInput(
-                            value = state.commandId,
-                            onValueChange = vm::setCommandId,
-                            label = "Command ID",
-                            hint = "十进制或 0x",
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                        PacketInput(
-                            value = state.serviceType,
-                            onValueChange = vm::setServiceType,
-                            label = "Service type",
-                            hint = "例如 1",
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-                item {
-                    PacketInput(
-                        value = state.clientVersion,
-                        onValueChange = vm::setClientVersion,
-                        label = "客户端版本",
-                        hint = "可留空",
-                        singleLine = true,
-                        modifier = Modifier
                             .transformedHeight(this, transformationSpec)
                             .graphicsLayer {
                                 with(SurfaceTransformation(transformationSpec)) {
@@ -186,9 +114,12 @@ fun PacketToolScreen(
                 }
             } else {
                 item {
-                    FormatRow(
-                        selected = state.payloadFormat,
-                        onSelected = vm::setPayloadFormat,
+                    PacketInput(
+                        value = state.command,
+                        onValueChange = vm::setCommand,
+                        label = if (state.mode == PacketMode.Oidb) "服务命令" else "PB 命令",
+                        hint = if (state.mode == PacketMode.Oidb) "例如 OidbSvcTrpcTcp.0x..." else "例如 MessageSvc.PbSendMsg",
+                        singleLine = true,
                         modifier = Modifier
                             .transformedHeight(this, transformationSpec)
                             .graphicsLayer {
@@ -199,65 +130,129 @@ fun PacketToolScreen(
                             },
                     )
                 }
-            }
-        }
-        item {
-            PacketInput(
-                value = state.payload,
-                onValueChange = vm::setPayload,
-                label = if (state.mode == PacketMode.Ark) "Ark JSON" else "Payload",
-                hint = payloadHint(state.mode, state.payloadFormat),
-                singleLine = false,
-                modifier = Modifier
-                    .height(if (state.mode == PacketMode.Ark) 132.dp else 116.dp)
-                    .transformedHeight(this, transformationSpec)
-                    .graphicsLayer {
-                        with(SurfaceTransformation(transformationSpec)) {
-                            applyContainerTransformation()
-                            applyContentTransformation()
+                if (state.mode == PacketMode.Oidb) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .graphicsLayer {
+                                    with(SurfaceTransformation(transformationSpec)) {
+                                        applyContainerTransformation()
+                                        applyContentTransformation()
+                                    }
+                                },
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                        ) {
+                            PacketInput(
+                                value = state.commandId,
+                                onValueChange = vm::setCommandId,
+                                label = "Command ID",
+                                hint = "十进制或 0x",
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            PacketInput(
+                                value = state.serviceType,
+                                onValueChange = vm::setServiceType,
+                                label = "Service type",
+                                hint = "例如 1",
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
                         }
-                    },
-            )
-        }
-        item {
-            Button(
-                onClick = vm::send,
-                enabled = !state.sending,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .transformedHeight(this, transformationSpec),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.primaryContainer,
-                    contentColor = scheme.onPrimaryContainer,
-                    disabledContainerColor = scheme.surfaceContainer,
-                    disabledContentColor = scheme.outline,
-                ),
-                transformation = SurfaceTransformation(transformationSpec),
-            ) {
-                Text(if (state.sending) "发送中…" else "发送")
+                    }
+                    item {
+                        PacketInput(
+                            value = state.clientVersion,
+                            onValueChange = vm::setClientVersion,
+                            label = "客户端版本",
+                            hint = "可留空",
+                            singleLine = true,
+                            modifier = Modifier
+                                .transformedHeight(this, transformationSpec)
+                                .graphicsLayer {
+                                    with(SurfaceTransformation(transformationSpec)) {
+                                        applyContainerTransformation()
+                                        applyContentTransformation()
+                                    }
+                                },
+                        )
+                    }
+                } else {
+                    item {
+                        FormatRow(
+                            selected = state.payloadFormat,
+                            onSelected = vm::setPayloadFormat,
+                            modifier = Modifier
+                                .transformedHeight(this, transformationSpec)
+                                .graphicsLayer {
+                                    with(SurfaceTransformation(transformationSpec)) {
+                                        applyContainerTransformation()
+                                        applyContentTransformation()
+                                    }
+                                },
+                        )
+                    }
+                }
             }
-        }
-        if (state.status.isNotBlank()) {
             item {
-                Text(
-                    text = state.status,
-                    color = if (state.status.contains("失败") || state.status.contains("不可用")) scheme.error else scheme.outline,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
+                PacketInput(
+                    value = state.payload,
+                    onValueChange = vm::setPayload,
+                    label = if (state.mode == PacketMode.Ark) "Ark JSON" else "Payload",
+                    hint = payloadHint(state.mode, state.payloadFormat),
+                    singleLine = false,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .height(if (state.mode == PacketMode.Ark) 132.dp else 116.dp)
                         .transformedHeight(this, transformationSpec)
                         .graphicsLayer {
                             with(SurfaceTransformation(transformationSpec)) {
                                 applyContainerTransformation()
                                 applyContentTransformation()
                             }
-                        }
-                        .padding(bottom = 8.dp),
+                        },
                 )
             }
+            item {
+                Button(
+                    onClick = vm::send,
+                    enabled = !state.sending,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.primaryContainer,
+                        contentColor = scheme.onPrimaryContainer,
+                        disabledContainerColor = scheme.surfaceContainer,
+                        disabledContentColor = scheme.outline,
+                    ),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Text(if (state.sending) "发送中…" else "发送")
+                }
+            }
+            if (state.status.isNotBlank()) {
+                item {
+                    Text(
+                        text = state.status,
+                        color = if (state.status.contains("失败") || state.status.contains("不可用")) scheme.error else scheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(bottom = 8.dp),
+                    )
+                }
+            }
         }
-    }
     }
 }
 
@@ -271,9 +266,24 @@ private fun ModeRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        PacketChoice("PB", selected == PacketMode.Pb, { onSelected(PacketMode.Pb) }, Modifier.weight(1f))
-        PacketChoice("OIDB", selected == PacketMode.Oidb, { onSelected(PacketMode.Oidb) }, Modifier.weight(1f))
-        PacketChoice("Ark", selected == PacketMode.Ark, { onSelected(PacketMode.Ark) }, Modifier.weight(1f))
+        PacketChoice(
+            "PB",
+            selected == PacketMode.Pb,
+            { onSelected(PacketMode.Pb) },
+            Modifier.weight(1f)
+        )
+        PacketChoice(
+            "OIDB",
+            selected == PacketMode.Oidb,
+            { onSelected(PacketMode.Oidb) },
+            Modifier.weight(1f)
+        )
+        PacketChoice(
+            "Ark",
+            selected == PacketMode.Ark,
+            { onSelected(PacketMode.Ark) },
+            Modifier.weight(1f)
+        )
     }
 }
 
@@ -287,9 +297,24 @@ private fun FormatRow(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        PacketChoice("字段 JSON", selected == PacketPayloadFormat.FieldJson, { onSelected(PacketPayloadFormat.FieldJson) }, Modifier.weight(1f))
-        PacketChoice("Hex", selected == PacketPayloadFormat.Hex, { onSelected(PacketPayloadFormat.Hex) }, Modifier.weight(1f))
-        PacketChoice("Base64", selected == PacketPayloadFormat.Base64, { onSelected(PacketPayloadFormat.Base64) }, Modifier.weight(1f))
+        PacketChoice(
+            "字段 JSON",
+            selected == PacketPayloadFormat.FieldJson,
+            { onSelected(PacketPayloadFormat.FieldJson) },
+            Modifier.weight(1f)
+        )
+        PacketChoice(
+            "Hex",
+            selected == PacketPayloadFormat.Hex,
+            { onSelected(PacketPayloadFormat.Hex) },
+            Modifier.weight(1f)
+        )
+        PacketChoice(
+            "Base64",
+            selected == PacketPayloadFormat.Base64,
+            { onSelected(PacketPayloadFormat.Base64) },
+            Modifier.weight(1f)
+        )
     }
 }
 

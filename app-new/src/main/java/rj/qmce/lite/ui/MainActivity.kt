@@ -93,6 +93,7 @@ class MainActivity : FragmentActivity() {
         }
     }
 }
+
 lateinit var settingsVm: SettingsViewModel
 
 @Composable
@@ -145,7 +146,7 @@ private fun WearApp() {
         } else {
             onlineDesc = null
             onlineKnown = false
-            Log.e("QMCE","Not logged in")
+            Log.e("QMCE", "Not logged in")
             onDispose {}
         }
     }
@@ -217,338 +218,394 @@ private fun WearApp() {
                 }
             }
         ) {
-        if (isLoggedIn) {
-            val navController = checkNotNull(appNavController)
-            val chatDetailVm: ChatDetailViewModel = viewModel()
-            val chatSettingsVm: ChatSettingsViewModel = viewModel()
-            val chatListVm: ChatListViewModel = viewModel()
-            val contactsVm: ContactsViewModel = viewModel()
-            val qZoneVm: QZoneViewModel = viewModel()
-            val myVm: MyViewModel = viewModel()
-            val packetToolVm: PacketToolViewModel = viewModel()
-            val imagePermissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions(),
-            ) {
-                if (hasQZoneGalleryAccess(context)) {
-                    navController.navigate("qzoneImagePicker") { launchSingleTop = true }
+            if (isLoggedIn) {
+                val navController = checkNotNull(appNavController)
+                val chatDetailVm: ChatDetailViewModel = viewModel()
+                val chatSettingsVm: ChatSettingsViewModel = viewModel()
+                val chatListVm: ChatListViewModel = viewModel()
+                val contactsVm: ContactsViewModel = viewModel()
+                val qZoneVm: QZoneViewModel = viewModel()
+                val myVm: MyViewModel = viewModel()
+                val packetToolVm: PacketToolViewModel = viewModel()
+                val imagePermissionLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestMultiplePermissions(),
+                ) {
+                    if (hasQZoneGalleryAccess(context)) {
+                        navController.navigate("qzoneImagePicker") { launchSingleTop = true }
+                    }
                 }
-            }
-            SwipeDismissableNavHost(
-                navController = navController,
-                startDestination = "main"
-            ) {
-                composable("main") {
-                    MainScreen(
-                        chatListVm = chatListVm,
-                        chatDetailVm = chatDetailVm,
-                        contactsVm = contactsVm,
-                        qZoneVm = qZoneVm,
-                        myVm = myVm,
-                        uin = loggedUin,
-                        runtime = runtime,
-                        showTimeText = settings.showTimeText,
-                        showPageIndicator = settings.showPageIndicator,
-                        onOpenSettings = {
-                            navController.navigate("settings") { launchSingleTop = true }
-                        },
-                        onOpenLogoutConfirmation = {
-                            navController.navigate("logoutConfirmation") { launchSingleTop = true }
-                        },
-                        onOpenQZoneComposer = {
-                            navController.navigate("qzoneComposer") { launchSingleTop = true }
-                        },
-                        onOpenQZoneDetail = { feed ->
-                            qZoneDetailTarget = feed
-                            navController.navigate("qzoneFeedDetail") { launchSingleTop = true }
-                        },
-                        onLogout = {
-                            (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
-                                ?: LoginPrefs.clear(context)
-                            selectedContact = null
-                            isLoggedIn = false
-                            loggedUin = ""
-                        },
-                        onOpenChat = { contact ->
-                            selectedContact = contact
-                            navController.navigate("chat") { launchSingleTop = true }
-                        },
-                        onOpenChatFromContacts = { uid, uin, name ->
-                            // 从联系人页面点击，构造一个最小 RecentContactInfo
-                            val fakeContact = RecentContactInfo().apply {
-                                peerUid = uid
-                                peerUin = uin.toLongOrNull() ?: 0L
-                                peerName = name
-                                chatType = 1
-                                id = uin
-                            }
-                            selectedContact = fakeContact
-                            navController.navigate("chat") { launchSingleTop = true }
-                        }
-                    )
-                }
-                composable("chat") {
-                    val contact = selectedContact
-                    if (contact != null) {
-                        ChatDetailScreen(
+                SwipeDismissableNavHost(
+                    navController = navController,
+                    startDestination = "main"
+                ) {
+                    composable("main") {
+                        MainScreen(
+                            chatListVm = chatListVm,
+                            chatDetailVm = chatDetailVm,
+                            contactsVm = contactsVm,
+                            qZoneVm = qZoneVm,
+                            myVm = myVm,
+                            uin = loggedUin,
                             runtime = runtime,
-                            peerUid = contact.peerUid ?: "",
-                            peerUin = contact.peerUin.takeIf { it > 0L }?.toString()
-                                ?: contact.id.orEmpty(),
-                            chatType = contact.chatType,
-                            peerName = contact.peerName ?: contact.id ?: "",
-                            avatarPath = contact.avatarPath.orEmpty(),
-                            avatarUrl = contact.avatarUrl.orEmpty(),
-                            myUin = loggedUin,
-                            onBack = { navController.popBackStack() },
-                            onOpenInput = { navController.navigate("chatInput") { launchSingleTop = true } },
-                            onOpenVoiceRecorder = { navController.navigate("voiceRecord") { launchSingleTop = true } },
-                            onOpenContactPicker = { navController.navigate("contactPicker") { launchSingleTop = true } },
-                            onOpenPacketTool = { navController.navigate("packetToolChat") { launchSingleTop = true } },
-                            onOpenMembers = { navController.navigate("chatMembers") { launchSingleTop = true } },
-                            onOpenChatSettings = { navController.navigate("chatSettings") { launchSingleTop = true } },
-                            vm = chatDetailVm
-                        )
-                    }
-                }
-                composable("contactPicker") {
-                    ContactPickerScreen(
-                        title = "转发给",
-                        runtime = runtime,
-                        contactsVm = contactsVm,
-                        onSelect = { uid, uin, name ->
-                            chatDetailVm.consumePendingForward(1, uid)
-                            navController.popBackStack()
-                        },
-                        onBack = {
-                            chatDetailVm.clearPendingForward()
-                            navController.popBackStack()
-                        },
-                    )
-                }
-                composable("chatInput") {
-                    val editingText by chatDetailVm.editingText.collectAsState()
-                    ChatInputScreen(
-                        vm = chatDetailVm,
-                        peerUid = chatDetailVm.currentPeerUid,
-                        chatType = chatDetailVm.currentChatType,
-                        editingText = editingText,
-                        onSend = { text -> chatDetailVm.sendText(text) },
-                        onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
-                        peerUin = chatDetailVm.currentPeerUin,
-                        onSendMixed = { mixedText, uriMap, atMap -> chatDetailVm.sendMixed(context, mixedText, uriMap, atMap) },
-                        onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
-                        onOpenVoiceRecorder = { navController.navigate("voiceRecord") { launchSingleTop = true } },
-                        onBack = { navController.popBackStack() }
-                    )
-                }
-                composable("chatMembers") {
-                    val contact = selectedContact
-                    if (contact != null) {
-                        ChatMembersScreen(
-                            groupCode = contact.peerUin.takeIf { it > 0L } ?: contact.id?.toLongOrNull() ?: 0L,
-                            vm = chatDetailVm,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                }
-                composable("chatSettings") {
-                    val contact = selectedContact
-                    if (contact != null) {
-                        val peerUin = contact.peerUin.takeIf { it > 0L } ?: contact.id?.toLongOrNull() ?: 0L
-                        ChatSettingsScreen(
-                            contact = contact,
-                            peerUid = contact.peerUid.orEmpty(),
-                            peerUin = peerUin,
-                            displayName = contact.peerName.orEmpty().ifBlank { contact.id.orEmpty() },
-                            vm = chatSettingsVm,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                }
-                composable("voiceRecord") {
-                    VoiceRecordScreen(
-                        onSendVoice = { file, durationMillis, formatType ->
-                            chatDetailVm.sendVoice(file, durationMillis, formatType)
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("packetToolChat") {
-                    val contact = selectedContact
-                    PacketToolScreen(
-                        peerUid = contact?.peerUid ?: "",
-                        peerName = contact?.peerName ?: "",
-                        chatType = contact?.chatType ?: 0,
-                        vm = packetToolVm,
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("settings") {
-                    SettingsScreen(
-                        onOpenAppearance = {
-                            navController.navigate("appearanceSettings") { launchSingleTop = true }
-                        },
-                        onOpenInteraction = {
-                            navController.navigate("interactionSettings") { launchSingleTop = true }
-                        },
-                        onOpenSyncData = {
-                            navController.navigate("syncDataSettings") { launchSingleTop = true }
-                        },
-                        onOpenStorage = {
-                            navController.navigate("storageSettings") { launchSingleTop = true }
-                        },
-                        onOpenAbout = {
-                            navController.navigate("about") { launchSingleTop = true }
-                        },
-                    )
-                }
-                composable("appearanceSettings") {
-                    AppearanceSettingsScreen(
-                        settingsVm = settingsVm,
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("interactionSettings") {
-                    InteractionSettingsScreen(
-                        settingsVm = settingsVm,
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("syncDataSettings") {
-                    SyncDataSettingsScreen(
-                        runtime = runtime,
-                        chatListVm = chatListVm,
-                        contactsVm = contactsVm,
-                        qZoneVm = qZoneVm,
-                        myVm = myVm,
-                        onOpenPacketTool = {
-                            navController.navigate("packetToolSettings") { launchSingleTop = true }
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("storageSettings") {
-                    StorageSettingsScreen(
-                        onOpenClearCache = {
-                            navController.navigate("settingsClearChatCache") { launchSingleTop = true }
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("qzoneFeedDetail") {
-                    qZoneDetailTarget?.let { initialFeed ->
-                        QZoneFeedDetailScreen(
-                            feedId = initialFeed.feedId,
-                            initialFeed = initialFeed,
-                            vm = qZoneVm,
-                            onOpenComment = { feed ->
-                                qZoneCommentTarget = feed
-                                qZoneCommentDraft = ""
-                                navController.navigate("qzoneComment") { launchSingleTop = true }
+                            showTimeText = settings.showTimeText,
+                            showPageIndicator = settings.showPageIndicator,
+                            onOpenSettings = {
+                                navController.navigate("settings") { launchSingleTop = true }
                             },
-                            onBack = {
-                                qZoneDetailTarget = null
-                                navController.popBackStack()
+                            onOpenLogoutConfirmation = {
+                                navController.navigate("logoutConfirmation") {
+                                    launchSingleTop = true
+                                }
                             },
-                        )
-                    }
-                }
-                composable("qzoneComposer") {
-                    val qZoneComposerUris = (qZoneUris + qZonePickerUris).distinctBy(Uri::toString)
-                    QZoneComposerScreen(
-                        draft = qZoneDraft,
-                        selectedUris = qZoneComposerUris,
-                        onDraftChange = { qZoneDraft = it },
-                        onPickMedia = {
-                            if (hasQZoneGalleryAccess(context)) {
-                                navController.navigate("qzoneImagePicker") { launchSingleTop = true }
-                            } else {
-                                imagePermissionLauncher.launch(qZoneGalleryPermissions())
+                            onOpenQZoneComposer = {
+                                navController.navigate("qzoneComposer") { launchSingleTop = true }
+                            },
+                            onOpenQZoneDetail = { feed ->
+                                qZoneDetailTarget = feed
+                                navController.navigate("qzoneFeedDetail") { launchSingleTop = true }
+                            },
+                            onLogout = {
+                                (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
+                                    ?: LoginPrefs.clear(context)
+                                selectedContact = null
+                                isLoggedIn = false
+                                loggedUin = ""
+                            },
+                            onOpenChat = { contact ->
+                                selectedContact = contact
+                                navController.navigate("chat") { launchSingleTop = true }
+                            },
+                            onOpenChatFromContacts = { uid, uin, name ->
+                                // 从联系人页面点击，构造一个最小 RecentContactInfo
+                                val fakeContact = RecentContactInfo().apply {
+                                    peerUid = uid
+                                    peerUin = uin.toLongOrNull() ?: 0L
+                                    peerName = name
+                                    chatType = 1
+                                    id = uin
+                                }
+                                selectedContact = fakeContact
+                                navController.navigate("chat") { launchSingleTop = true }
                             }
-                        },
-                        onPublish = {
-                            qZoneVm.publishImages(context, qZoneDraft, qZoneComposerUris)
-                            qZoneDraft = ""
-                            qZoneUris = emptyList()
-                            qZonePickerUris = emptyList()
-                            navController.popBackStack()
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("qzoneImagePicker") {
-                    LocalImagePickerScreen(
-                        existingUris = qZoneUris.mapTo(linkedSetOf()) { it.toString() },
-                        selectedUris = qZonePickerUris.map(Uri::toString),
-                        onSelectionChange = { uris -> qZonePickerUris = uris },
-                        onDismiss = { navController.popBackStack() },
-                        onConfirm = { uris ->
-                            qZoneUris = (qZoneUris + uris).distinctBy(Uri::toString)
-                            qZonePickerUris = emptyList()
-                            navController.popBackStack()
-                        },
-                    )
-                }
-                composable("qzoneComment") {
-                    qZoneCommentTarget?.let { feed ->
-                        QZoneCommentScreen(
-                            feed = feed,
-                            draft = qZoneCommentDraft,
-                            onDraftChange = { qZoneCommentDraft = it },
-                            onSend = {
-                                qZoneVm.comment(feed.feedId, qZoneCommentDraft)
-                                qZoneCommentDraft = ""
-                                qZoneCommentTarget = null
+                        )
+                    }
+                    composable("chat") {
+                        val contact = selectedContact
+                        if (contact != null) {
+                            ChatDetailScreen(
+                                runtime = runtime,
+                                peerUid = contact.peerUid ?: "",
+                                peerUin = contact.peerUin.takeIf { it > 0L }?.toString()
+                                    ?: contact.id.orEmpty(),
+                                chatType = contact.chatType,
+                                peerName = contact.peerName ?: contact.id ?: "",
+                                avatarPath = contact.avatarPath.orEmpty(),
+                                avatarUrl = contact.avatarUrl.orEmpty(),
+                                myUin = loggedUin,
+                                onBack = { navController.popBackStack() },
+                                onOpenInput = {
+                                    navController.navigate("chatInput") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenVoiceRecorder = {
+                                    navController.navigate("voiceRecord") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenContactPicker = {
+                                    navController.navigate("contactPicker") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenPacketTool = {
+                                    navController.navigate("packetToolChat") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenMembers = {
+                                    navController.navigate("chatMembers") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenChatSettings = {
+                                    navController.navigate("chatSettings") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                vm = chatDetailVm
+                            )
+                        }
+                    }
+                    composable("contactPicker") {
+                        ContactPickerScreen(
+                            title = "转发给",
+                            runtime = runtime,
+                            contactsVm = contactsVm,
+                            onSelect = { uid, uin, name ->
+                                chatDetailVm.consumePendingForward(1, uid)
                                 navController.popBackStack()
                             },
                             onBack = {
-                                qZoneCommentDraft = ""
-                                qZoneCommentTarget = null
+                                chatDetailVm.clearPendingForward()
                                 navController.popBackStack()
                             },
                         )
                     }
+                    composable("chatInput") {
+                        val editingText by chatDetailVm.editingText.collectAsState()
+                        ChatInputScreen(
+                            vm = chatDetailVm,
+                            peerUid = chatDetailVm.currentPeerUid,
+                            chatType = chatDetailVm.currentChatType,
+                            editingText = editingText,
+                            onSend = { text -> chatDetailVm.sendText(text) },
+                            onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
+                            peerUin = chatDetailVm.currentPeerUin,
+                            onSendMixed = { mixedText, uriMap, atMap ->
+                                chatDetailVm.sendMixed(
+                                    context,
+                                    mixedText,
+                                    uriMap,
+                                    atMap
+                                )
+                            },
+                            onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
+                            onOpenVoiceRecorder = {
+                                navController.navigate("voiceRecord") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("chatMembers") {
+                        val contact = selectedContact
+                        if (contact != null) {
+                            ChatMembersScreen(
+                                groupCode = contact.peerUin.takeIf { it > 0L }
+                                    ?: contact.id?.toLongOrNull() ?: 0L,
+                                vm = chatDetailVm,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                    }
+                    composable("chatSettings") {
+                        val contact = selectedContact
+                        if (contact != null) {
+                            val peerUin =
+                                contact.peerUin.takeIf { it > 0L } ?: contact.id?.toLongOrNull()
+                                ?: 0L
+                            ChatSettingsScreen(
+                                contact = contact,
+                                peerUid = contact.peerUid.orEmpty(),
+                                peerUin = peerUin,
+                                displayName = contact.peerName.orEmpty()
+                                    .ifBlank { contact.id.orEmpty() },
+                                vm = chatSettingsVm,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                    }
+                    composable("voiceRecord") {
+                        VoiceRecordScreen(
+                            onSendVoice = { file, durationMillis, formatType ->
+                                chatDetailVm.sendVoice(file, durationMillis, formatType)
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("packetToolChat") {
+                        val contact = selectedContact
+                        PacketToolScreen(
+                            peerUid = contact?.peerUid ?: "",
+                            peerName = contact?.peerName ?: "",
+                            chatType = contact?.chatType ?: 0,
+                            vm = packetToolVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("settings") {
+                        SettingsScreen(
+                            onOpenAppearance = {
+                                navController.navigate("appearanceSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenInteraction = {
+                                navController.navigate("interactionSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenSyncData = {
+                                navController.navigate("syncDataSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenStorage = {
+                                navController.navigate("storageSettings") { launchSingleTop = true }
+                            },
+                            onOpenAbout = {
+                                navController.navigate("about") { launchSingleTop = true }
+                            },
+                        )
+                    }
+                    composable("appearanceSettings") {
+                        AppearanceSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("interactionSettings") {
+                        InteractionSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("syncDataSettings") {
+                        SyncDataSettingsScreen(
+                            runtime = runtime,
+                            chatListVm = chatListVm,
+                            contactsVm = contactsVm,
+                            qZoneVm = qZoneVm,
+                            myVm = myVm,
+                            onOpenPacketTool = {
+                                navController.navigate("packetToolSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("storageSettings") {
+                        StorageSettingsScreen(
+                            onOpenClearCache = {
+                                navController.navigate("settingsClearChatCache") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("qzoneFeedDetail") {
+                        qZoneDetailTarget?.let { initialFeed ->
+                            QZoneFeedDetailScreen(
+                                feedId = initialFeed.feedId,
+                                initialFeed = initialFeed,
+                                vm = qZoneVm,
+                                onOpenComment = { feed ->
+                                    qZoneCommentTarget = feed
+                                    qZoneCommentDraft = ""
+                                    navController.navigate("qzoneComment") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onBack = {
+                                    qZoneDetailTarget = null
+                                    navController.popBackStack()
+                                },
+                            )
+                        }
+                    }
+                    composable("qzoneComposer") {
+                        val qZoneComposerUris =
+                            (qZoneUris + qZonePickerUris).distinctBy(Uri::toString)
+                        QZoneComposerScreen(
+                            draft = qZoneDraft,
+                            selectedUris = qZoneComposerUris,
+                            onDraftChange = { qZoneDraft = it },
+                            onPickMedia = {
+                                if (hasQZoneGalleryAccess(context)) {
+                                    navController.navigate("qzoneImagePicker") {
+                                        launchSingleTop = true
+                                    }
+                                } else {
+                                    imagePermissionLauncher.launch(qZoneGalleryPermissions())
+                                }
+                            },
+                            onPublish = {
+                                qZoneVm.publishImages(context, qZoneDraft, qZoneComposerUris)
+                                qZoneDraft = ""
+                                qZoneUris = emptyList()
+                                qZonePickerUris = emptyList()
+                                navController.popBackStack()
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("qzoneImagePicker") {
+                        LocalImagePickerScreen(
+                            existingUris = qZoneUris.mapTo(linkedSetOf()) { it.toString() },
+                            selectedUris = qZonePickerUris.map(Uri::toString),
+                            onSelectionChange = { uris -> qZonePickerUris = uris },
+                            onDismiss = { navController.popBackStack() },
+                            onConfirm = { uris ->
+                                qZoneUris = (qZoneUris + uris).distinctBy(Uri::toString)
+                                qZonePickerUris = emptyList()
+                                navController.popBackStack()
+                            },
+                        )
+                    }
+                    composable("qzoneComment") {
+                        qZoneCommentTarget?.let { feed ->
+                            QZoneCommentScreen(
+                                feed = feed,
+                                draft = qZoneCommentDraft,
+                                onDraftChange = { qZoneCommentDraft = it },
+                                onSend = {
+                                    qZoneVm.comment(feed.feedId, qZoneCommentDraft)
+                                    qZoneCommentDraft = ""
+                                    qZoneCommentTarget = null
+                                    navController.popBackStack()
+                                },
+                                onBack = {
+                                    qZoneCommentDraft = ""
+                                    qZoneCommentTarget = null
+                                    navController.popBackStack()
+                                },
+                            )
+                        }
+                    }
+                    composable("settingsClearChatCache") {
+                        SettingsClearChatCacheScreen(
+                            onConfirm = {
+                                myVm.clearChatCache()
+                                navController.popBackStack()
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("logoutConfirmation") {
+                        LogoutConfirmationScreen(
+                            onConfirm = {
+                                (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
+                                    ?: LoginPrefs.clear(context)
+                                selectedContact = null
+                                isLoggedIn = false
+                                loggedUin = ""
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("about") {
+                        AboutScreen(onBack = { navController.popBackStack() })
+                    }
+                    composable("packetToolSettings") {
+                        PacketToolScreen(
+                            vm = packetToolVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
                 }
-                composable("settingsClearChatCache") {
-                    SettingsClearChatCacheScreen(
-                        onConfirm = {
-                            myVm.clearChatCache()
-                            navController.popBackStack()
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("logoutConfirmation") {
-                    LogoutConfirmationScreen(
-                        onConfirm = {
-                            (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
-                                ?: LoginPrefs.clear(context)
-                            selectedContact = null
-                            isLoggedIn = false
-                            loggedUin = ""
-                        },
-                        onBack = { navController.popBackStack() },
-                    )
-                }
-                composable("about") {
-                    AboutScreen(onBack = { navController.popBackStack() })
-                }
-                composable("packetToolSettings") {
-                    PacketToolScreen(
-                        vm = packetToolVm,
-                        onBack = { navController.popBackStack() },
-                    )
-                }
+            } else {
+                LoginScreen(onLoginSuccess = { uin, account ->
+                    LoginPrefs.saveAccount(context, account)
+                    QmceApplication.markLoginEstablished()
+                    val restarted = QmceApplication.restartAfterLogin(context)
+                    Log.d("QMCE", "ui: login persisted uin=$uin, scheduled fresh start=$restarted")
+                })
             }
-        } else {
-            LoginScreen(onLoginSuccess = { uin, account ->
-                LoginPrefs.saveAccount(context, account)
-                QmceApplication.markLoginEstablished()
-                val restarted = QmceApplication.restartAfterLogin(context)
-                Log.d("QMCE", "ui: login persisted uin=$uin, scheduled fresh start=$restarted")
-            })
         }
-    }
     }
 }
 
@@ -589,6 +646,7 @@ private fun qZoneGalleryPermissions(): Array<String> = when {
         Manifest.permission.READ_MEDIA_IMAGES,
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
@@ -603,11 +661,13 @@ private fun hasQZoneGalleryAccess(context: android.content.Context): Boolean = w
             Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
         ) == PackageManager.PERMISSION_GRANTED
     }
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
         androidx.core.content.ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_MEDIA_IMAGES,
         ) == PackageManager.PERMISSION_GRANTED
+
     else -> androidx.core.content.ContextCompat.checkSelfPermission(
         context,
         Manifest.permission.READ_EXTERNAL_STORAGE,

@@ -2,17 +2,12 @@ package rj.qmce.lite.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -22,8 +17,6 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -82,7 +75,10 @@ fun AtMemberPickerScreen(
                             }
                         }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .background(scheme.surfaceContainerHigh, androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+                        .background(
+                            scheme.surfaceContainerHigh,
+                            androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                        )
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     decorationBox = { inner ->
                         if (query.isBlank()) {

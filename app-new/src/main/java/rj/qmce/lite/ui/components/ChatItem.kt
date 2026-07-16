@@ -1,23 +1,30 @@
 package rj.qmce.lite.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.*
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Calendar
+import java.util.Locale
 
 // 消息列表的单个联系人
 @Composable
@@ -113,7 +120,8 @@ private fun formatTime(msgTime: Long): String {
     val cal = Calendar.getInstance().apply { timeInMillis = msgTime * 1000 }
     val today = Calendar.getInstance()
     return if (cal.get(Calendar.YEAR) == today.get(Calendar.YEAR) &&
-        cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)) {
+        cal.get(Calendar.DAY_OF_YEAR) == today.get(Calendar.DAY_OF_YEAR)
+    ) {
         SimpleDateFormat("HH:mm", Locale.getDefault()).format(cal.time)
     } else {
         SimpleDateFormat("MM/dd", Locale.getDefault()).format(cal.time)

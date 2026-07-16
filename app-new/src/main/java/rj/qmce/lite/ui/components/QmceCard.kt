@@ -16,13 +16,6 @@
 
 package rj.qmce.lite.ui.components
 
-import androidx.wear.compose.material3.*
-import androidx.wear.compose.material3.tokens.*
-import androidx.wear.compose.material3.LocalContentColor
-import androidx.wear.compose.material3.LocalTextStyle
-import androidx.wear.compose.material3.SurfaceTransformation
-import androidx.wear.compose.material3.Text
-
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
@@ -61,9 +54,23 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.ColorScheme
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.LARGE_VERTICAL_CONTENT_PADDING_FRACTION
+import androidx.wear.compose.material3.LocalContentColor
+import androidx.wear.compose.material3.LocalTextStyle
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.containerPainter
+import androidx.wear.compose.material3.fromToken
+import androidx.wear.compose.material3.ripple
+import androidx.wear.compose.material3.screenHeightFraction
+import androidx.wear.compose.material3.surface
 import androidx.wear.compose.material3.tokens.CardTokens
 import androidx.wear.compose.material3.tokens.ImageCardTokens
 import androidx.wear.compose.material3.tokens.OutlinedCardTokens
+import androidx.wear.compose.material3.value
 import androidx.wear.compose.materialcore.Text
 
 /**
@@ -874,7 +881,8 @@ public object CardDefaults {
      * Creates a [CardColors] that represents the default container and content colors used in a
      * [Card], [AppCard] or [TitleCard].
      */
-    @Composable public fun cardColors(): CardColors = MaterialTheme.colorScheme.defaultCardColors
+    @Composable
+    public fun cardColors(): CardColors = MaterialTheme.colorScheme.defaultCardColors
 
     /**
      * Creates a [CardColors] that represents the default container and content colors used in a
@@ -1102,13 +1110,13 @@ public object CardDefaults {
         get() {
             return CardDefaults.defaultCardColorsCached
                 ?: CardColors(
-                        containerColor = fromToken(CardTokens.ContainerColor),
-                        contentColor = fromToken(CardTokens.ContentColor),
-                        appNameColor = fromToken(CardTokens.AppNameColor),
-                        timeColor = fromToken(CardTokens.TimeColor),
-                        titleColor = fromToken(CardTokens.TitleColor),
-                        subtitleColor = fromToken(CardTokens.SubtitleColor),
-                    )
+                    containerColor = fromToken(CardTokens.ContainerColor),
+                    contentColor = fromToken(CardTokens.ContentColor),
+                    appNameColor = fromToken(CardTokens.AppNameColor),
+                    timeColor = fromToken(CardTokens.TimeColor),
+                    titleColor = fromToken(CardTokens.TitleColor),
+                    subtitleColor = fromToken(CardTokens.SubtitleColor),
+                )
                     .also { CardDefaults.defaultCardColorsCached = it }
         }
 
@@ -1116,13 +1124,13 @@ public object CardDefaults {
         get() {
             return CardDefaults.defaultOutlinedCardColorsCached
                 ?: CardColors(
-                        containerColor = Color.Transparent,
-                        contentColor = fromToken(OutlinedCardTokens.ContentColor),
-                        appNameColor = fromToken(OutlinedCardTokens.AppNameColor),
-                        timeColor = fromToken(OutlinedCardTokens.TimeColor),
-                        titleColor = fromToken(OutlinedCardTokens.TitleColor),
-                        subtitleColor = fromToken(OutlinedCardTokens.SubtitleColor),
-                    )
+                    containerColor = Color.Transparent,
+                    contentColor = fromToken(OutlinedCardTokens.ContentColor),
+                    appNameColor = fromToken(OutlinedCardTokens.AppNameColor),
+                    timeColor = fromToken(OutlinedCardTokens.TimeColor),
+                    titleColor = fromToken(OutlinedCardTokens.TitleColor),
+                    subtitleColor = fromToken(OutlinedCardTokens.SubtitleColor),
+                )
                     .also { CardDefaults.defaultOutlinedCardColorsCached = it }
         }
 
@@ -1130,19 +1138,20 @@ public object CardDefaults {
         get() {
             return CardDefaults.defaultCardWithContainerPainterColorsCached
                 ?: CardColors(
-                        containerColor = Color.Unspecified,
-                        contentColor = fromToken(ImageCardTokens.ContentColor),
-                        appNameColor = fromToken(ImageCardTokens.AppNameColor),
-                        timeColor = fromToken(ImageCardTokens.TimeColor),
-                        titleColor = fromToken(ImageCardTokens.TitleColor),
-                        subtitleColor = fromToken(ImageCardTokens.SubtitleColor),
-                    )
+                    containerColor = Color.Unspecified,
+                    contentColor = fromToken(ImageCardTokens.ContentColor),
+                    appNameColor = fromToken(ImageCardTokens.AppNameColor),
+                    timeColor = fromToken(ImageCardTokens.TimeColor),
+                    titleColor = fromToken(ImageCardTokens.TitleColor),
+                    subtitleColor = fromToken(ImageCardTokens.SubtitleColor),
+                )
                     .also { CardDefaults.defaultCardWithContainerPainterColorsCached = it }
         }
 }
 
 @Composable
-internal fun Modifier.cardSizeModifier(minHeight: Dp): Modifier = defaultMinSize(minHeight = minHeight)
+internal fun Modifier.cardSizeModifier(minHeight: Dp): Modifier =
+    defaultMinSize(minHeight = minHeight)
 
 /**
  * Represents Colors used in [Card]. Unlike other Material 3 components, Cards do not change their
@@ -1283,11 +1292,14 @@ internal fun Modifier.cardContainerModifier(
                 interactionSource = interactionSource,
             )
         } else {
-            Modifier.focusable(enabled = true, interactionSource = interactionSource).semantics(
-                mergeDescendants = true
-            ) {}
+            Modifier
+                .focusable(enabled = true, interactionSource = interactionSource)
+                .semantics(
+                    mergeDescendants = true
+                ) {}
         }
-    return this.cardSizeModifier(minHeight)
+    return this
+        .cardSizeModifier(minHeight)
         .fillMaxWidth()
         .surface(transformation = transformation, painter = painter, shape = shape, border = border)
         .then(clickableModifier)

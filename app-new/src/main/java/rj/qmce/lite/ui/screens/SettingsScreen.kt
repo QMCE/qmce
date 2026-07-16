@@ -37,7 +37,6 @@ import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import mqq.app.AppRuntime
@@ -309,7 +308,9 @@ fun SyncDataSettingsScreen(
                         operationStatus,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                 }
             }
@@ -336,7 +337,9 @@ fun StorageSettingsScreen(
                     "清理后不会删除帐号、联系人或已发送消息，只会删除内核缓存的聊天媒体文件。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
                 )
             }
             item(key = "storage-clear-cache") {
@@ -367,7 +370,9 @@ private fun SettingsSwitchRow(
         checked = checked,
         onCheckedChange = onCheckedChange,
         enabled = enabled,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         transformation = transformation,
         label = { Text(title) },
         secondaryLabel = { Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis) },
@@ -385,7 +390,9 @@ private fun SettingsActionRow(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         transformation = transformation,
         colors = ButtonDefaults.filledTonalButtonColors(),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,

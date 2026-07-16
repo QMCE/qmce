@@ -16,19 +16,17 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
@@ -48,8 +46,18 @@ class CrashActivity : ComponentActivity() {
         }.onFailure {
             setContentView(android.widget.TextView(this).apply {
                 text = "崩溃日志 ID：${report.id}\n\n${report.error}\n\n${report.stacktrace}"
-                setTextColor(ContextCompat.getColor(this@CrashActivity, rj.qmce.lite.R.color.qmce_fallback_text))
-                setBackgroundColor(ContextCompat.getColor(this@CrashActivity, rj.qmce.lite.R.color.qmce_fallback_background))
+                setTextColor(
+                    ContextCompat.getColor(
+                        this@CrashActivity,
+                        rj.qmce.lite.R.color.qmce_fallback_text
+                    )
+                )
+                setBackgroundColor(
+                    ContextCompat.getColor(
+                        this@CrashActivity,
+                        rj.qmce.lite.R.color.qmce_fallback_background
+                    )
+                )
                 setPadding(32, 32, 32, 32)
                 textSize = 14f
             })
@@ -145,8 +153,8 @@ class CrashActivity : ComponentActivity() {
                             color = MaterialTheme.colorScheme.onSurface,
                             fontFamily = FontFamily.Monospace,
                             style = MaterialTheme.typography.bodySmall,
-                            
-                        )
+
+                            )
                     }
                 }
             }

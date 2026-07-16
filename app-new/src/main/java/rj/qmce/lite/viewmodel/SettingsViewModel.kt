@@ -17,7 +17,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val manualScale: Float = DEFAULT_MANUAL_SCALE,
     )
 
-    private val preferences = application.getSharedPreferences(PREFERENCES_NAME, Application.MODE_PRIVATE)
+    private val preferences =
+        application.getSharedPreferences(PREFERENCES_NAME, Application.MODE_PRIVATE)
     private val _settings = MutableStateFlow(
         UiSettings(
             showTimeText = preferences.getBoolean(KEY_SHOW_TIME_TEXT, true),

@@ -8,14 +8,14 @@ import com.tencent.qqnt.kernel.nativeinterface.BuddyListCategory
 import com.tencent.qqnt.kernel.nativeinterface.BuddyListReqType
 import com.tencent.qqnt.kernel.nativeinterface.IBuddyListCallback
 import com.tencent.qqnt.watch.contact.api.IContactRuntimeService
-import rj.qmce.lite.QmceApplication
-import rj.qmce.lite.kernel.KernelBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
+import rj.qmce.lite.QmceApplication
+import rj.qmce.lite.kernel.KernelBridge
 import java.util.concurrent.atomic.AtomicInteger
 
 class ContactsViewModel : ViewModel() {
@@ -86,7 +86,11 @@ class ContactsViewModel : ViewModel() {
 
     private fun requestBuddyList(buddySvc: IBuddyService, forceRefresh: Boolean) {
         buddySvc.getBuddyListV2(forceRefresh, BuddyListReqType.KNOMAL, object : IBuddyListCallback {
-            override fun onResult(code: Int, errMsg: String?, list: java.util.ArrayList<BuddyListCategory>?) {
+            override fun onResult(
+                code: Int,
+                errMsg: String?,
+                list: java.util.ArrayList<BuddyListCategory>?
+            ) {
                 Log.d(TAG, "getBuddyListV2: code=$code, count=${list?.size}")
                 if (code == 0 && !list.isNullOrEmpty()) {
                     val generation = loadGeneration.incrementAndGet()
@@ -107,7 +111,8 @@ class ContactsViewModel : ViewModel() {
         generation: Int,
     ) {
         val allUids = list.flatMap { it.buddyUids }.distinct()
-        val nickMap = runCatching { buddySvc.getBuddyNick(ArrayList(allUids)) }.getOrNull() ?: emptyMap()
+        val nickMap =
+            runCatching { buddySvc.getBuddyNick(ArrayList(allUids)) }.getOrNull() ?: emptyMap()
         val uinsByUid = LinkedHashMap<String, Long>()
         var lastResolvedCount = -1
 
@@ -138,7 +143,8 @@ class ContactsViewModel : ViewModel() {
             }.getOrNull()
             allUids.forEach { uid ->
                 if (uid !in uinsByUid) {
-                    contactService?.getUinByUid(uid)?.takeIf { it > 0L }?.let { uinsByUid[uid] = it }
+                    contactService?.getUinByUid(uid)?.takeIf { it > 0L }
+                        ?.let { uinsByUid[uid] = it }
                 }
             }
             val recentByUid = KernelBridge.getRecentContactService()
@@ -169,23 +175,23 @@ class ContactsViewModel : ViewModel() {
                 .filter { uid -> uid.isNotBlank() }
                 .distinct()
                 .map { uid ->
-                val uin = uinsByUid[uid] ?: 0L
-                val recent = recentByUid[uid]
-                val fallbackUrls = if (uin > 0L) listOf(
-                    "https://q1.qlogo.cn/g?b=qq&nk=$uin&s=100",
-                    "https://q2.qlogo.cn/headimg_dl?dst_uin=$uin&spec=100",
-                    "https://qlogo2.store.qq.com/qzone/$uin/$uin/100",
-                ) else emptyList()
-                UiBuddy(
-                    uid = uid,
-                    uin = uin,
-                    nick = nickMap[uid]?.takeIf { it.isNotBlank() } ?: uid,
-                    remark = "",
-                    avatarPath = recent?.avatarPath.orEmpty(),
-                    avatarUrls = listOfNotNull(recent?.avatarUrl?.takeIf { it.isNotBlank() }) + fallbackUrls,
-                    categoryId = category.categoryId,
-                    categoryName = category.categroyName.orEmpty(),
-                )
+                    val uin = uinsByUid[uid] ?: 0L
+                    val recent = recentByUid[uid]
+                    val fallbackUrls = if (uin > 0L) listOf(
+                        "https://q1.qlogo.cn/g?b=qq&nk=$uin&s=100",
+                        "https://q2.qlogo.cn/headimg_dl?dst_uin=$uin&spec=100",
+                        "https://qlogo2.store.qq.com/qzone/$uin/$uin/100",
+                    ) else emptyList()
+                    UiBuddy(
+                        uid = uid,
+                        uin = uin,
+                        nick = nickMap[uid]?.takeIf { it.isNotBlank() } ?: uid,
+                        remark = "",
+                        avatarPath = recent?.avatarPath.orEmpty(),
+                        avatarUrls = listOfNotNull(recent?.avatarUrl?.takeIf { it.isNotBlank() }) + fallbackUrls,
+                        categoryId = category.categoryId,
+                        categoryName = category.categroyName.orEmpty(),
+                    )
                 }
                 .toList()
             buddies.takeIf { it.isNotEmpty() }?.let {

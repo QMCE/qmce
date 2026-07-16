@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +36,6 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -106,7 +104,9 @@ fun MyScreen(
                     "账号",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 5.dp),
                 )
             }
             item(key = "my-logout") {
@@ -125,7 +125,9 @@ fun MyScreen(
                         operationStatus,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                 }
             }
@@ -141,11 +143,16 @@ private fun ProfileHeader(
 ) {
     val scheme = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            modifier = Modifier.size(52.dp).clip(CircleShape).background(scheme.surfaceContainerHigh),
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(scheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
             if (avatarModel != null) {
@@ -179,7 +186,11 @@ private fun ProfileHeader(
                     CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 1.5.dp)
                 }
             }
-            Text("QQ：${profile.uin}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            Text(
+                "QQ：${profile.uin}",
+                style = MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant
+            )
             if (profile.signature.isNotBlank()) {
                 Text(
                     profile.signature,
@@ -204,11 +215,21 @@ private fun MyActionRow(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
         transformation = transformation,
         colors = ButtonDefaults.filledTonalButtonColors(),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
         icon = { Icon(icon, contentDescription = null) },
-        secondaryLabel = subtitle?.let { { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) } },
+        secondaryLabel = subtitle?.let {
+            {
+                Text(
+                    it,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        },
     ) { Text(title, fontWeight = FontWeight.Medium, maxLines = 1) }
 }

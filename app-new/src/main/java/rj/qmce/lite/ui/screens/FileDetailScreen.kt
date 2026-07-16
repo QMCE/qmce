@@ -20,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
@@ -46,15 +45,24 @@ internal fun FileDetailScreen(
         LocalMediaResolver.resolveFile(content.path)
     }
     val expiry = content.expireTime?.takeIf { it > 0L }?.let { epoch ->
-        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(normalizeEpochMillis(epoch)))
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT)
+            .format(Date(normalizeEpochMillis(epoch)))
     }
     val status = fileTransferStatus(content, localFile != null)
 
     Column(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("文件详情", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "文件详情",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(14.dp))
         Text(
             text = content.name,
@@ -106,8 +114,8 @@ internal fun FileDetailScreen(
             Button(
                 onClick = onDownloadFile,
                 enabled = downloadUnavailableReason == null &&
-                    !content.isDownloading &&
-                    (content.invalidState == null || content.invalidState == 0),
+                        !content.isDownloading &&
+                        (content.invalidState == null || content.invalidState == 0),
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -130,15 +138,32 @@ internal fun FileDetailScreen(
 @Composable
 private fun FileDetailLine(label: String, value: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, modifier = Modifier.width(48.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-        Text(value, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            label,
+            modifier = Modifier.width(48.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            value,
+            modifier = Modifier.weight(1f),
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
-private fun fileTransferStatus(content: ChatDetailViewModel.MessageContent.File, hasLocalFile: Boolean): String = when {
+private fun fileTransferStatus(
+    content: ChatDetailViewModel.MessageContent.File,
+    hasLocalFile: Boolean
+): String = when {
     hasLocalFile -> "已缓存"
     content.invalidState != null && content.invalidState != 0 -> "文件不可用"
     content.isDownloading -> "正在请求"
@@ -150,4 +175,5 @@ private fun fileExtensionLabel(name: String): String? = name.substringAfterLast(
     .takeIf { it.isNotBlank() }
     ?.uppercase()
 
-private fun normalizeEpochMillis(value: Long): Long = if (value < 10_000_000_000L) value * 1000L else value
+private fun normalizeEpochMillis(value: Long): Long =
+    if (value < 10_000_000_000L) value * 1000L else value

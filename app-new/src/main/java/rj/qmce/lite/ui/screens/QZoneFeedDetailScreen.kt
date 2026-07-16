@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
@@ -80,11 +79,16 @@ fun QZoneFeedDetailScreen(
         ) {
             item(key = "feed-detail-author:${feed.feedId}") {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
-                        modifier = Modifier.size(32.dp).clip(CircleShape).background(scheme.surfaceContainerHigh),
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(scheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center,
                     ) {
                         AsyncImage(
@@ -96,7 +100,12 @@ fun QZoneFeedDetailScreen(
                     }
                     Spacer(Modifier.width(8.dp))
                     Column {
-                        Text(feed.nick, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(
+                            feed.nick,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1
+                        )
                         Text(
                             feed.displayTime.ifBlank { feedTimeText(feed.time) },
                             style = MaterialTheme.typography.bodySmall,
@@ -110,7 +119,9 @@ fun QZoneFeedDetailScreen(
                     Text(
                         feed.content,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                 }
             }
@@ -125,7 +136,9 @@ fun QZoneFeedDetailScreen(
             if (feed.picUrls.isNotEmpty()) {
                 item(key = "feed-detail-images:${feed.feedId}") {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
                         feed.picUrls.chunked(2).forEachIndexed { rowIndex, row ->
@@ -134,10 +147,16 @@ fun QZoneFeedDetailScreen(
                                     Card(
                                         onClick = {
                                             gallery = feed.picUrls.mapIndexed { index, imageUrl ->
-                                                ViewerMedia("qzone:${feed.feedId}:$index", imageUrl, "动态图片")
+                                                ViewerMedia(
+                                                    "qzone:${feed.feedId}:$index",
+                                                    imageUrl,
+                                                    "动态图片"
+                                                )
                                             }
                                         },
-                                        modifier = Modifier.weight(1f).height(96.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(96.dp),
                                     ) {
                                         AsyncImage(
                                             model = url,
@@ -185,7 +204,9 @@ fun QZoneFeedDetailScreen(
                     "评论 ${feed.commentCount}",
                     style = MaterialTheme.typography.titleSmall,
                     color = scheme.primary,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
             if (feed.comments.isEmpty()) {
@@ -194,7 +215,9 @@ fun QZoneFeedDetailScreen(
                         "还没有评论",
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
             } else {
@@ -208,7 +231,11 @@ fun QZoneFeedDetailScreen(
                                 .background(scheme.surfaceContainerHigh)
                                 .padding(horizontal = 9.dp, vertical = 7.dp),
                         ) {
-                            Text(comment.author, color = scheme.primary, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                comment.author,
+                                color = scheme.primary,
+                                style = MaterialTheme.typography.titleSmall
+                            )
                             if (comment.text.isNotBlank()) {
                                 Text(comment.text, style = MaterialTheme.typography.bodyMedium)
                             }

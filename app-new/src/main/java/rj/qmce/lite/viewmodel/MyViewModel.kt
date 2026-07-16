@@ -71,11 +71,13 @@ class MyViewModel : ViewModel() {
                     )
                 }.onFailure { error -> Log.w(TAG, "profile refresh request failed", error) }
                 Thread.sleep(700)
-                val refreshed = profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
+                val refreshed =
+                    profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
                 applyProfile(
                     uin = uin,
                     localNickname = selfProfileService?.getCurrentAccountNickName(uin).orEmpty(),
-                    localAvatarPath = selfProfileService?.getCurrentAccountAvatarPath(uin).orEmpty(),
+                    localAvatarPath = selfProfileService?.getCurrentAccountAvatarPath(uin)
+                        .orEmpty(),
                     info = refreshed ?: info,
                 )
             }
@@ -98,7 +100,8 @@ class MyViewModel : ViewModel() {
         runCatching {
             storageService.clearAllChatCacheInfo(object : IOperateCallback {
                 override fun onResult(code: Int, errMsg: String?) {
-                    _operationStatus.value = if (code == 0) "聊天缓存已清理" else "清理失败: ${errMsg.orEmpty()}"
+                    _operationStatus.value =
+                        if (code == 0) "聊天缓存已清理" else "清理失败: ${errMsg.orEmpty()}"
                     Log.d(TAG, "clear chat cache: code=$code, errMsg=$errMsg")
                 }
             })
@@ -124,7 +127,8 @@ class MyViewModel : ViewModel() {
             uin = uin,
             nickname = localNickname.ifBlank { profileNickname }.ifBlank { uin },
             signature = signature,
-            avatarPath = localAvatarPath.removePrefix("file://").takeIf { File(it).isFile }.orEmpty(),
+            avatarPath = localAvatarPath.removePrefix("file://").takeIf { File(it).isFile }
+                .orEmpty(),
             avatarUrls = avatarUrls(uin),
             isLoggedIn = QmceApplication.ensureRuntime()?.isLogin() == true,
             refreshing = false,

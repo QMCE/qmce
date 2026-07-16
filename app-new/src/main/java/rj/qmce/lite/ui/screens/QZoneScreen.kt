@@ -123,7 +123,12 @@ fun QZoneScreen(
 
                 feeds.isEmpty() -> {
                     item(key = "qzone-empty") {
-                        QZoneListNotice("暂无动态", scheme.outline, transformationSpec, verticalPadding = 16.dp)
+                        QZoneListNotice(
+                            "暂无动态",
+                            scheme.outline,
+                            transformationSpec,
+                            verticalPadding = 16.dp
+                        )
                     }
                 }
 
@@ -157,14 +162,26 @@ fun QZoneScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
                         Spacer(Modifier.width(6.dp))
-                        Text("加载中…", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
+                        Text(
+                            "加载中…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.outline
+                        )
                     }
                 }
             } else if (feeds.isNotEmpty() && !vm.hasMoreData()) {
                 item(key = "qzone-end") {
-                    QZoneListNotice("— 已经到底了 —", scheme.outline, transformationSpec, verticalPadding = 8.dp)
+                    QZoneListNotice(
+                        "— 已经到底了 —",
+                        scheme.outline,
+                        transformationSpec,
+                        verticalPadding = 8.dp
+                    )
                 }
             }
         }
@@ -204,16 +221,28 @@ private fun FeedPreviewCard(
     transformation: SurfaceTransformation,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val timeText = remember(feed.displayTime, feed.time) { feed.displayTime.ifBlank { feedTimeText(feed.time) } }
+    val timeText = remember(
+        feed.displayTime,
+        feed.time
+    ) { feed.displayTime.ifBlank { feedTimeText(feed.time) } }
     Card(
         onClick = onOpenDetail,
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         transformation = transformation,
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp)
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(28.dp).clip(CircleShape).background(scheme.surfaceContainerHigh),
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(scheme.surfaceContainerHigh),
                     contentAlignment = Alignment.Center,
                 ) {
                     AsyncImage(
@@ -225,13 +254,27 @@ private fun FeedPreviewCard(
                 }
                 Spacer(Modifier.width(8.dp))
                 Column {
-                    Text(feed.nick, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text(timeText, style = MaterialTheme.typography.bodySmall, color = scheme.outline)
+                    Text(
+                        feed.nick,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Text(
+                        timeText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.outline
+                    )
                 }
             }
             if (feed.content.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
-                Text(feed.content, style = MaterialTheme.typography.bodyLarge, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                Text(
+                    feed.content,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             feed.forward?.let {
                 Spacer(Modifier.height(6.dp))
@@ -241,7 +284,12 @@ private fun FeedPreviewCard(
                 Spacer(Modifier.height(6.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     feed.picUrls.take(3).forEach { url ->
-                        Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(scheme.surfaceContainerHigh)) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(scheme.surfaceContainerHigh)
+                        ) {
                             AsyncImage(
                                 model = url,
                                 contentDescription = "动态图片",
@@ -252,10 +300,17 @@ private fun FeedPreviewCard(
                     }
                     if (feed.picUrls.size > 3) {
                         Box(
-                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)).background(scheme.surfaceContainerHigh),
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(scheme.surfaceContainerHigh),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("+${feed.picUrls.size - 3}", style = MaterialTheme.typography.bodySmall, color = scheme.outline)
+                            Text(
+                                "+${feed.picUrls.size - 3}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline
+                            )
                         }
                     }
                 }

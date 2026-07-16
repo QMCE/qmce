@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,10 +25,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +93,7 @@ fun LoginScreen(
             onContinue = { step = LoginGuideStep.Agreement },
             onBack = { step = LoginGuideStep.Welcome },
         )
+
         LoginGuideStep.Agreement -> AgreementGuide(
             agreed = agreed,
             onAgreedChanged = { agreed = it },
@@ -105,6 +105,7 @@ fun LoginScreen(
             },
             onBack = { step = LoginGuideStep.ScreenType },
         )
+
         LoginGuideStep.Qr -> QrLoginGuide(
             qrBitmap = qrBitmap,
             statusText = statusText,
@@ -124,31 +125,35 @@ private fun WelcomeGuide(onContinue: () -> Unit) {
     val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
         item(key = "welcome-content") {
-        Column(
+            Column(
                 modifier = Modifier
-                .fillMaxWidth()
-                .transformedHeight(this, transformationSpec)
-                .graphicsLayer {
-                    with(SurfaceTransformation(transformationSpec)) {
-                        applyContainerTransformation()
-                        applyContentTransformation()
+                    .fillMaxWidth()
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
+                        }
                     }
-                }
-                .padding(horizontal = 6.dp, vertical = 30.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            QQLogo(68.dp)
-            Spacer(Modifier.height(18.dp))
-            Text("欢迎使用", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "QQ Max",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(30.dp))
-            PrimaryGuideButton(text = "开始使用", onClick = onContinue)
-        }
+                    .padding(horizontal = 6.dp, vertical = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                QQLogo(68.dp)
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "欢迎使用",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "QQ Max",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(30.dp))
+                PrimaryGuideButton(text = "开始使用", onClick = onContinue)
+            }
         }
     }
 }
@@ -162,75 +167,79 @@ private fun ScreenTypeGuide(
 ) {
     val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
-            item(key = "back") {
-                GuideBackButton(
-                    onBack = onBack,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-            }
-            item(key = "title") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
+        item(key = "back") {
+            GuideBackButton(
+                onBack = onBack,
+                modifier = Modifier.transformedHeight(this, transformationSpec),
+                transformation = SurfaceTransformation(transformationSpec),
+            )
+        }
+        item(key = "title") {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
                         }
-                        .padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text("选择屏幕适配类型", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        "这将影响列表的缩放效果",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                    }
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "选择屏幕适配类型",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    "这将影响列表的缩放效果",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            item(key = "round") {
-                Box(
-                    Modifier
-                        .transformedHeight(this, transformationSpec)
-                        .padding(vertical = 4.dp),
-                ) {
-                    ScreenTypeOption(
-                        type = ScreenType.Round,
-                        selected = selected == ScreenType.Round,
-                        onSelected = onSelected,
-                        modifier = Modifier,
-                        transformation = SurfaceTransformation(transformationSpec),
-                    )
-                }
-            }
-            item(key = "square") {
-                Box(
-                    Modifier
-                        .transformedHeight(this, transformationSpec)
-                        .padding(vertical = 4.dp),
-                ) {
-                    ScreenTypeOption(
-                        type = ScreenType.Square,
-                        selected = selected == ScreenType.Square,
-                        onSelected = onSelected,
-                        modifier = Modifier,
-                        transformation = SurfaceTransformation(transformationSpec),
-                    )
-                }
-            }
-            item(key = "continue") {
-                PrimaryGuideButton(
-                    text = "继续",
-                    onClick = onContinue,
-                    modifier = Modifier
-                        .transformedHeight(this, transformationSpec)
-                        .padding(top = 8.dp, bottom = 10.dp),
+        }
+        item(key = "round") {
+            Box(
+                Modifier
+                    .transformedHeight(this, transformationSpec)
+                    .padding(vertical = 4.dp),
+            ) {
+                ScreenTypeOption(
+                    type = ScreenType.Round,
+                    selected = selected == ScreenType.Round,
+                    onSelected = onSelected,
+                    modifier = Modifier,
                     transformation = SurfaceTransformation(transformationSpec),
                 )
+            }
+        }
+        item(key = "square") {
+            Box(
+                Modifier
+                    .transformedHeight(this, transformationSpec)
+                    .padding(vertical = 4.dp),
+            ) {
+                ScreenTypeOption(
+                    type = ScreenType.Square,
+                    selected = selected == ScreenType.Square,
+                    onSelected = onSelected,
+                    modifier = Modifier,
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+        }
+        item(key = "continue") {
+            PrimaryGuideButton(
+                text = "继续",
+                onClick = onContinue,
+                modifier = Modifier
+                    .transformedHeight(this, transformationSpec)
+                    .padding(top = 8.dp, bottom = 10.dp),
+                transformation = SurfaceTransformation(transformationSpec),
+            )
         }
     }
 }
@@ -253,37 +262,41 @@ private fun AgreementGuide(
             )
         }
         item(key = "agreement-content") {
-        Column(
+            Column(
                 modifier = Modifier
-                .fillMaxWidth()
-                .transformedHeight(this, transformationSpec)
-                .graphicsLayer {
-                    with(SurfaceTransformation(transformationSpec)) {
-                        applyContainerTransformation()
-                        applyContentTransformation()
+                    .fillMaxWidth()
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
+                        }
                     }
-                }
-                .padding(horizontal = 2.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            QQLogo(54.dp)
-            Spacer(Modifier.height(15.dp))
-            Text("同意许可协议", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "继续使用即表示你同意 QQ Max 的用户许可协议与隐私说明。",
-                style = MaterialTheme.typography.bodyLarge,
-                color = scheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                
-            )
-            Spacer(Modifier.height(20.dp))
-            CheckboxButton(
-                checked = agreed,
-                onCheckedChange = onAgreedChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("我已阅读并同意") },
-            )
+                    .padding(horizontal = 2.dp, vertical = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                QQLogo(54.dp)
+                Spacer(Modifier.height(15.dp))
+                Text(
+                    "同意许可协议",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "继续使用即表示你同意 QQ Max 的用户许可协议与隐私说明。",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = scheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+
+                    )
+                Spacer(Modifier.height(20.dp))
+                CheckboxButton(
+                    checked = agreed,
+                    onCheckedChange = onAgreedChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("我已阅读并同意") },
+                )
                 Spacer(Modifier.height(16.dp))
                 PrimaryGuideButton(text = "同意并继续", enabled = agreed, onClick = onContinue)
                 Spacer(Modifier.height(10.dp))
@@ -311,40 +324,43 @@ private fun QrLoginGuide(
             )
         }
         item(key = "qr-content") {
-        Column(
+            Column(
                 modifier = Modifier
-                .fillMaxWidth()
-                .transformedHeight(this, transformationSpec)
-                .graphicsLayer {
-                    with(SurfaceTransformation(transformationSpec)) {
-                        applyContainerTransformation()
-                        applyContentTransformation()
+                    .fillMaxWidth()
+                    .transformedHeight(this, transformationSpec)
+                    .graphicsLayer {
+                        with(SurfaceTransformation(transformationSpec)) {
+                            applyContainerTransformation()
+                            applyContentTransformation()
+                        }
                     }
+                    .padding(horizontal = 2.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                when {
+                    uiState is AuthViewModel.LoginUiState.Error -> {
+                        LoginErrorContent(uiState.message, onRetry)
+                    }
+
+                    uiState is AuthViewModel.LoginUiState.Expired -> {
+                        LoginErrorContent("二维码已过期，请重新获取", onRetry)
+                    }
+
+                    uiState is AuthViewModel.LoginUiState.Preparing ||
+                            uiState is AuthViewModel.LoginUiState.RequestingQr ||
+                            qrBitmap == null -> {
+                        LoginLoadingContent(statusText)
+                    }
+
+                    else -> QrCodeContent(
+                        qrBitmap = qrBitmap,
+                        statusText = statusText,
+                        isBusy = isBusy,
+                        canRefresh = uiState is AuthViewModel.LoginUiState.QrReady,
+                        onRetry = onRetry,
+                    )
                 }
-                .padding(horizontal = 2.dp, vertical = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            when {
-                uiState is AuthViewModel.LoginUiState.Error -> {
-                    LoginErrorContent(uiState.message, onRetry)
-                }
-                uiState is AuthViewModel.LoginUiState.Expired -> {
-                    LoginErrorContent("二维码已过期，请重新获取", onRetry)
-                }
-                uiState is AuthViewModel.LoginUiState.Preparing ||
-                    uiState is AuthViewModel.LoginUiState.RequestingQr ||
-                    qrBitmap == null -> {
-                    LoginLoadingContent(statusText)
-                }
-                else -> QrCodeContent(
-                    qrBitmap = qrBitmap,
-                    statusText = statusText,
-                    isBusy = isBusy,
-                    canRefresh = uiState is AuthViewModel.LoginUiState.QrReady,
-                    onRetry = onRetry,
-                )
             }
-        }
         }
     }
 }
@@ -360,7 +376,11 @@ private fun QrCodeContent(
     val scheme = MaterialTheme.colorScheme
     Text("扫码登录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(5.dp))
-    Text("请使用手机 QQ 扫描二维码", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+    Text(
+        "请使用手机 QQ 扫描二维码",
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant
+    )
     Spacer(Modifier.height(16.dp))
     Box(
         modifier = Modifier
@@ -386,7 +406,9 @@ private fun QrCodeContent(
 private fun LoginLoadingContent(statusText: String) {
     Spacer(Modifier.height(40.dp))
     Box(
-        modifier = Modifier.size(82.dp).background(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
+        modifier = Modifier
+            .size(82.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainer, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(modifier = Modifier.size(34.dp), strokeWidth = 3.dp)
@@ -394,7 +416,12 @@ private fun LoginLoadingContent(statusText: String) {
     Spacer(Modifier.height(20.dp))
     Text("正在准备登录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(8.dp))
-    Text(statusText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    Text(
+        statusText,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
 }
 
 @Composable
@@ -402,7 +429,9 @@ private fun LoginErrorContent(statusText: String, onRetry: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Spacer(Modifier.height(28.dp))
     Box(
-        modifier = Modifier.size(72.dp).background(scheme.errorContainer, CircleShape),
+        modifier = Modifier
+            .size(72.dp)
+            .background(scheme.errorContainer, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Text("!", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = scheme.onErrorContainer)
@@ -410,7 +439,12 @@ private fun LoginErrorContent(statusText: String, onRetry: () -> Unit) {
     Spacer(Modifier.height(18.dp))
     Text("登录出错", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Spacer(Modifier.height(8.dp))
-    Text(statusText, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    Text(
+        statusText,
+        style = MaterialTheme.typography.bodySmall,
+        color = scheme.onSurfaceVariant,
+        textAlign = TextAlign.Center
+    )
     Spacer(Modifier.height(20.dp))
     PrimaryGuideButton(text = "重新扫码", onClick = onRetry)
 }
@@ -423,7 +457,12 @@ private fun LoginStatus(statusText: String, isBusy: Boolean) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
             Spacer(Modifier.width(7.dp))
         }
-        Text(statusText, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
+        Text(
+            statusText,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -449,13 +488,18 @@ private fun ScreenTypeOption(
 
 @Composable
 private fun ScreenPreview(type: ScreenType, selected: Boolean) {
-    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+    val color =
+        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
     Box(
         modifier = Modifier
             .size(if (type == ScreenType.Round) 34.dp else 32.dp)
             .clip(if (type == ScreenType.Round) CircleShape else RoundedCornerShape(7.dp))
             .background(color.copy(alpha = 0.22f))
-            .border(2.dp, color, if (type == ScreenType.Round) CircleShape else RoundedCornerShape(7.dp)),
+            .border(
+                2.dp,
+                color,
+                if (type == ScreenType.Round) CircleShape else RoundedCornerShape(7.dp)
+            ),
     )
 }
 
@@ -487,7 +531,9 @@ private fun GuideScrollColumn(content: TransformingLazyColumnScope.() -> Unit) {
 @Composable
 private fun QQLogo(size: androidx.compose.ui.unit.Dp) {
     Box(
-        modifier = Modifier.size(size).background(Color.White, CircleShape),
+        modifier = Modifier
+            .size(size)
+            .background(Color.White, CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         Image(
@@ -559,4 +605,5 @@ private fun SecondaryGuideButton(text: String, enabled: Boolean, onClick: () -> 
     }
 }
 
-private fun String.isLoginError(): Boolean = contains("失败") || contains("错误") || contains("过期") || contains("不可用")
+private fun String.isLoginError(): Boolean =
+    contains("失败") || contains("错误") || contains("过期") || contains("不可用")

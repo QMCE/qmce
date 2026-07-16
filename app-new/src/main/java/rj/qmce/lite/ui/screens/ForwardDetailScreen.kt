@@ -24,8 +24,8 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
-import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import kotlinx.coroutines.launch
+import rj.qmce.lite.viewmodel.ChatDetailViewModel
 
 @Composable
 internal fun ForwardDetailScreen(
@@ -52,28 +52,39 @@ internal fun ForwardDetailScreen(
         when (state) {
             ChatDetailViewModel.ForwardDetailState.Idle -> {
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(contentPadding),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(title, style = MaterialTheme.typography.titleSmall)
                 }
             }
+
             is ChatDetailViewModel.ForwardDetailState.Loading -> {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(contentPadding),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(title, style = MaterialTheme.typography.titleSmall)
                     CircularProgressIndicator(
-                        modifier = Modifier.padding(top = 12.dp).size(32.dp),
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .size(32.dp),
                         strokeWidth = 3.dp,
                     )
                 }
             }
+
             is ChatDetailViewModel.ForwardDetailState.Error -> {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 24.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(contentPadding)
+                        .padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
@@ -97,6 +108,7 @@ internal fun ForwardDetailScreen(
                     }
                 }
             }
+
             is ChatDetailViewModel.ForwardDetailState.Ready -> {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -106,7 +118,9 @@ internal fun ForwardDetailScreen(
                     item(key = "forward-detail-title") {
                         Text(
                             text = title,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp, vertical = 8.dp),
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.titleSmall,
                             textAlign = TextAlign.Center,
@@ -128,10 +142,14 @@ internal fun ForwardDetailScreen(
                             onOpenReply = { reply ->
                                 val targetIndex = state.messages.indexOfFirst { message ->
                                     message.msgId == reply.targetMessageId ||
-                                        (reply.targetSequence != null && message.msgSeq == reply.targetSequence)
+                                            (reply.targetSequence != null && message.msgSeq == reply.targetSequence)
                                 }
                                 if (targetIndex >= 0) {
-                                    coroutineScope.launch { listState.animateScrollToItem(targetIndex) }
+                                    coroutineScope.launch {
+                                        listState.animateScrollToItem(
+                                            targetIndex
+                                        )
+                                    }
                                 }
                             },
                             onOpenFile = onOpenFile,

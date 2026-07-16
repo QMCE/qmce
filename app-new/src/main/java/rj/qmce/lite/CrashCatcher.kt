@@ -76,7 +76,11 @@ object CrashCatcher {
             error = "${throwable.javaClass.name}: ${throwable.message ?: "无错误消息"}",
             stacktrace = Log.getStackTraceString(throwable),
         )
-        Log.e(TAG, "${report.process} ${report.thread} report=${report.id}: ${report.error}", throwable)
+        Log.e(
+            TAG,
+            "${report.process} ${report.thread} report=${report.id}: ${report.error}",
+            throwable
+        )
         persistReport(context, report)
         reportToCrashlytics(report, throwable)
 

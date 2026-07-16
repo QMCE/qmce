@@ -3,7 +3,6 @@ package rj.qmce.lite.ui.screens
 import android.media.MediaPlayer
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,10 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -27,9 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
@@ -98,7 +94,9 @@ private fun VideoPlayerScreen(
                 playing = true
             }
             mediaPlayer.setOnCompletionListener { playing = false; currentMs = 0 }
-            mediaPlayer.setOnErrorListener { _, _, _ -> error = "无法播放此视频"; playing = false; true }
+            mediaPlayer.setOnErrorListener { _, _, _ ->
+                error = "无法播放此视频"; playing = false; true
+            }
             mediaPlayer.prepareAsync()
         }.onFailure { error = "无法播放此视频" }
         onDispose {
@@ -114,35 +112,70 @@ private fun VideoPlayerScreen(
     }
 
     Column(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(10.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(title, color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        Text(
+            title,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1
+        )
         Box(
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(vertical = 8.dp)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
             AndroidView(
                 factory = { ctx ->
                     SurfaceView(ctx).also { view ->
                         view.holder.addCallback(object : SurfaceHolder.Callback {
-                            override fun surfaceCreated(surfaceHolder: SurfaceHolder) { holder = surfaceHolder }
-                            override fun surfaceChanged(surfaceHolder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-                            override fun surfaceDestroyed(surfaceHolder: SurfaceHolder) { holder = null }
+                            override fun surfaceCreated(surfaceHolder: SurfaceHolder) {
+                                holder = surfaceHolder
+                            }
+
+                            override fun surfaceChanged(
+                                surfaceHolder: SurfaceHolder,
+                                format: Int,
+                                width: Int,
+                                height: Int
+                            ) = Unit
+
+                            override fun surfaceDestroyed(surfaceHolder: SurfaceHolder) {
+                                holder = null
+                            }
                         })
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
             )
             if (!prepared && error == null) CircularProgressIndicator(modifier = Modifier.size(30.dp))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            error?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Button(
                 onClick = {
                     val mediaPlayer = player ?: return@Button
-                    if (playing) { mediaPlayer.pause(); playing = false }
-                    else { mediaPlayer.start(); playing = true }
+                    if (playing) {
+                        mediaPlayer.pause(); playing = false
+                    } else {
+                        mediaPlayer.start(); playing = true
+                    }
                 },
                 enabled = prepared && error == null,
             ) { Text(if (playing) "暂停" else "播放") }

@@ -16,13 +16,6 @@
 
 package rj.qmce.lite.ui.components
 
-import androidx.wear.compose.material3.*
-import androidx.wear.compose.material3.tokens.*
-import androidx.wear.compose.material3.LocalContentColor
-import androidx.wear.compose.material3.LocalTextStyle
-import androidx.wear.compose.material3.SurfaceTransformation
-import androidx.wear.compose.material3.Text
-
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.Interaction
@@ -65,6 +58,24 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.material3.ColorScheme
+import androidx.wear.compose.material3.DisabledContentAlpha
+import androidx.wear.compose.material3.LARGE_VERTICAL_CONTENT_PADDING_FRACTION
+import androidx.wear.compose.material3.LocalContentColor
+import androidx.wear.compose.material3.LocalTextStyle
+import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.SMALL_VERTICAL_CONTENT_PADDING_FRACTION
+import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextConfiguration
+import androidx.wear.compose.material3.containerPainter
+import androidx.wear.compose.material3.fromToken
+import androidx.wear.compose.material3.provideNullableScopeContent
+import androidx.wear.compose.material3.provideScopeContent
+import androidx.wear.compose.material3.ripple
+import androidx.wear.compose.material3.screenHeightFraction
+import androidx.wear.compose.material3.surface
+import androidx.wear.compose.material3.toDisabledColor
 import androidx.wear.compose.material3.tokens.ChildButtonTokens
 import androidx.wear.compose.material3.tokens.CompactButtonTokens
 import androidx.wear.compose.material3.tokens.FilledButtonTokens
@@ -72,6 +83,12 @@ import androidx.wear.compose.material3.tokens.FilledTonalButtonTokens
 import androidx.wear.compose.material3.tokens.ImageButtonTokens
 import androidx.wear.compose.material3.tokens.OutlinedButtonTokens
 import androidx.wear.compose.material3.tokens.ShapeTokens
+import androidx.wear.compose.material3.value
+import rj.qmce.lite.ui.components.ButtonDefaults.DisabledContainerAlpha
+import rj.qmce.lite.ui.components.ButtonDefaults.buttonColors
+import rj.qmce.lite.ui.components.ButtonDefaults.childButtonColors
+import rj.qmce.lite.ui.components.ButtonDefaults.filledTonalButtonColors
+import rj.qmce.lite.ui.components.ButtonDefaults.filledVariantButtonColors
 
 /**
  * Base level Wear Material3 [Button] that offers a single slot to take any content. Used as the
@@ -1402,7 +1419,9 @@ public fun CompactButtonContent(
             )
         }
     } else {
-        Box(modifier = modifier.fillMaxSize().wrapContentSize(align = Alignment.Center)) {
+        Box(modifier = modifier
+            .fillMaxSize()
+            .wrapContentSize(align = Alignment.Center)) {
             if (icon != null) {
                 provideScopeContent(colors.iconColor(enabled), icon)()
             }
@@ -1991,32 +2010,32 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultFilledTonalButtonColorsCached
                 ?: ButtonColors(
-                        containerColor = fromToken(FilledTonalButtonTokens.ContainerColor),
-                        contentColor = fromToken(FilledTonalButtonTokens.LabelColor),
-                        secondaryContentColor =
-                            fromToken(FilledTonalButtonTokens.SecondaryLabelColor),
-                        iconColor = fromToken(FilledTonalButtonTokens.IconColor),
-                        disabledContainerColor =
-                            fromToken(FilledTonalButtonTokens.DisabledContainerColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledTonalButtonTokens.DisabledContainerOpacity
-                                ),
-                        disabledContentColor =
-                            fromToken(FilledTonalButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(FilledTonalButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(FilledTonalButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = fromToken(FilledTonalButtonTokens.ContainerColor),
+                    contentColor = fromToken(FilledTonalButtonTokens.LabelColor),
+                    secondaryContentColor =
+                        fromToken(FilledTonalButtonTokens.SecondaryLabelColor),
+                    iconColor = fromToken(FilledTonalButtonTokens.IconColor),
+                    disabledContainerColor =
+                        fromToken(FilledTonalButtonTokens.DisabledContainerColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledTonalButtonTokens.DisabledContainerOpacity
+                            ),
+                    disabledContentColor =
+                        fromToken(FilledTonalButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(FilledTonalButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(FilledTonalButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledTonalButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultFilledTonalButtonColorsCached = it }
         }
 
@@ -2024,33 +2043,33 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultFilledVariantButtonColorsCached
                 ?: ButtonColors(
-                        containerColor = fromToken(FilledButtonTokens.VariantContainerColor),
-                        contentColor = fromToken(FilledButtonTokens.VariantLabelColor),
-                        secondaryContentColor =
-                            fromToken(FilledButtonTokens.VariantSecondaryLabelColor)
-                                .copy(alpha = FilledButtonTokens.VariantSecondaryLabelOpacity),
-                        iconColor = fromToken(FilledButtonTokens.VariantIconColor),
-                        disabledContainerColor =
-                            fromToken(FilledButtonTokens.DisabledContainerColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContainerOpacity
-                                ),
-                        disabledContentColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = fromToken(FilledButtonTokens.VariantContainerColor),
+                    contentColor = fromToken(FilledButtonTokens.VariantLabelColor),
+                    secondaryContentColor =
+                        fromToken(FilledButtonTokens.VariantSecondaryLabelColor)
+                            .copy(alpha = FilledButtonTokens.VariantSecondaryLabelOpacity),
+                    iconColor = fromToken(FilledButtonTokens.VariantIconColor),
+                    disabledContainerColor =
+                        fromToken(FilledButtonTokens.DisabledContainerColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContainerOpacity
+                            ),
+                    disabledContentColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultFilledVariantButtonColorsCached = it }
         }
 
@@ -2058,27 +2077,27 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultOutlinedButtonColorsCached
                 ?: ButtonColors(
-                        containerColor = Color.Transparent,
-                        contentColor = fromToken(OutlinedButtonTokens.LabelColor),
-                        secondaryContentColor = fromToken(OutlinedButtonTokens.SecondaryLabelColor),
-                        iconColor = fromToken(OutlinedButtonTokens.IconColor),
-                        disabledContainerColor = Color.Transparent,
-                        disabledContentColor =
-                            fromToken(OutlinedButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(OutlinedButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(OutlinedButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = Color.Transparent,
+                    contentColor = fromToken(OutlinedButtonTokens.LabelColor),
+                    secondaryContentColor = fromToken(OutlinedButtonTokens.SecondaryLabelColor),
+                    iconColor = fromToken(OutlinedButtonTokens.IconColor),
+                    disabledContainerColor = Color.Transparent,
+                    disabledContentColor =
+                        fromToken(OutlinedButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(OutlinedButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(OutlinedButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = OutlinedButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultOutlinedButtonColorsCached = it }
         }
 
@@ -2086,27 +2105,27 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultChildButtonColorsCached
                 ?: ButtonColors(
-                        containerColor = Color.Transparent,
-                        contentColor = fromToken(ChildButtonTokens.LabelColor),
-                        secondaryContentColor = fromToken(ChildButtonTokens.SecondaryLabelColor),
-                        iconColor = fromToken(ChildButtonTokens.IconColor),
-                        disabledContainerColor = Color.Transparent,
-                        disabledContentColor =
-                            fromToken(ChildButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ChildButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(ChildButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ChildButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(ChildButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ChildButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = Color.Transparent,
+                    contentColor = fromToken(ChildButtonTokens.LabelColor),
+                    secondaryContentColor = fromToken(ChildButtonTokens.SecondaryLabelColor),
+                    iconColor = fromToken(ChildButtonTokens.IconColor),
+                    disabledContainerColor = Color.Transparent,
+                    disabledContentColor =
+                        fromToken(ChildButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ChildButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(ChildButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ChildButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(ChildButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ChildButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultChildButtonColorsCached = it }
         }
 
@@ -2114,33 +2133,33 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultButtonColorsCached
                 ?: ButtonColors(
-                        containerColor = fromToken(FilledButtonTokens.ContainerColor),
-                        contentColor = fromToken(FilledButtonTokens.LabelColor),
-                        secondaryContentColor =
-                            fromToken(FilledButtonTokens.SecondaryLabelColor)
-                                .copy(alpha = FilledButtonTokens.SecondaryLabelOpacity),
-                        iconColor = fromToken(FilledButtonTokens.IconColor),
-                        disabledContainerColor =
-                            fromToken(FilledButtonTokens.DisabledContainerColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContainerOpacity
-                                ),
-                        disabledContentColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(FilledButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = FilledButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = fromToken(FilledButtonTokens.ContainerColor),
+                    contentColor = fromToken(FilledButtonTokens.LabelColor),
+                    secondaryContentColor =
+                        fromToken(FilledButtonTokens.SecondaryLabelColor)
+                            .copy(alpha = FilledButtonTokens.SecondaryLabelOpacity),
+                    iconColor = fromToken(FilledButtonTokens.IconColor),
+                    disabledContainerColor =
+                        fromToken(FilledButtonTokens.DisabledContainerColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContainerOpacity
+                            ),
+                    disabledContentColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(FilledButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = FilledButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultButtonColorsCached = it }
         }
 
@@ -2148,29 +2167,29 @@ public object ButtonDefaults {
         get() {
             return ButtonDefaults.defaultButtonWithContainerPainterColorsCached
                 ?: ButtonColors(
-                        containerColor = Color.Unspecified,
-                        contentColor = fromToken(ImageButtonTokens.ContentColor),
-                        secondaryContentColor =
-                            fromToken(ImageButtonTokens.SecondaryContentColor)
-                                .copy(alpha = ImageButtonTokens.SecondaryContentOpacity),
-                        iconColor = fromToken(ImageButtonTokens.IconColor),
-                        disabledContainerColor = Color.Unspecified,
-                        disabledContentColor =
-                            fromToken(ImageButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ImageButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledSecondaryContentColor =
-                            fromToken(ImageButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ImageButtonTokens.DisabledContentOpacity
-                                ),
-                        disabledIconColor =
-                            fromToken(ImageButtonTokens.DisabledContentColor)
-                                .toDisabledColor(
-                                    disabledAlpha = ImageButtonTokens.DisabledContentOpacity
-                                ),
-                    )
+                    containerColor = Color.Unspecified,
+                    contentColor = fromToken(ImageButtonTokens.ContentColor),
+                    secondaryContentColor =
+                        fromToken(ImageButtonTokens.SecondaryContentColor)
+                            .copy(alpha = ImageButtonTokens.SecondaryContentOpacity),
+                    iconColor = fromToken(ImageButtonTokens.IconColor),
+                    disabledContainerColor = Color.Unspecified,
+                    disabledContentColor =
+                        fromToken(ImageButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ImageButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledSecondaryContentColor =
+                        fromToken(ImageButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ImageButtonTokens.DisabledContentOpacity
+                            ),
+                    disabledIconColor =
+                        fromToken(ImageButtonTokens.DisabledContentColor)
+                            .toDisabledColor(
+                                disabledAlpha = ImageButtonTokens.DisabledContentOpacity
+                            ),
+                )
                     .also { ButtonDefaults.defaultButtonWithContainerPainterColorsCached = it }
         }
 }
@@ -2448,7 +2467,8 @@ private fun Modifier.buttonContainerModifier(
         }
     // Fill the container height but not its width as buttons have fixed size height but we
     // want them to be able to fit their content
-    return this.width(intrinsicSize = IntrinsicSize.Max)
+    return this
+        .width(intrinsicSize = IntrinsicSize.Max)
         .surface(transformation = transformation, painter = painter, shape = shape, border = border)
         .combinedClickable(
             enabled = enabled,

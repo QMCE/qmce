@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -25,7 +24,6 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -84,9 +82,17 @@ fun QZoneCommentScreen(
                                 .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
-                            Text(comment.author, color = scheme.primary, style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                comment.author,
+                                color = scheme.primary,
+                                style = MaterialTheme.typography.titleSmall
+                            )
                             if (comment.text.isNotBlank()) {
-                                Text(comment.text, color = scheme.onSurface, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    comment.text,
+                                    color = scheme.onSurface,
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                             }
                             comment.replies.takeLast(4).forEach { reply ->
                                 Row(
@@ -131,7 +137,11 @@ fun QZoneCommentScreen(
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     decorationBox = { innerTextField ->
                         if (draft.isBlank()) {
-                            Text("写下评论…", color = scheme.outline, style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "写下评论…",
+                                color = scheme.outline,
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
                         innerTextField()
                     },

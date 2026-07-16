@@ -26,13 +26,13 @@ import com.tencent.qqnt.watch.app.WatchAppInterface
 import com.tencent.qqnt.watch.app.WatchApplicationDelegate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import rj.qmce.lite.fix.PackageSignatureProvider
 import mqq.app.AppRuntime
 import mqq.app.Constants
 import mqq.app.IAccountCallback
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.fix.LegacyKiller
+import rj.qmce.lite.fix.PackageSignatureProvider
 import rj.qmce.lite.fix.SignatureProbe
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
@@ -91,8 +91,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 ?.apply {
                     addFlags(
                         Intent.FLAG_ACTIVITY_NEW_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                            Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                                Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                                Intent.FLAG_ACTIVITY_CLEAR_TOP,
                     )
                 }
                 ?: run {
@@ -100,14 +100,15 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     return false
                 }
             val pendingFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                android.app.PendingIntent.FLAG_IMMUTABLE
+                    android.app.PendingIntent.FLAG_IMMUTABLE
             val pendingIntent = android.app.PendingIntent.getActivity(
                 context,
                 0x514D,
                 launchIntent,
                 pendingFlags,
             )
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
+            val alarmManager =
+                context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
             if (alarmManager == null) {
                 loginRestartScheduled.set(false)
                 return false
@@ -207,7 +208,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     override fun attachBaseContext(base: Context) {
         Log.d("QMCE", "attachBaseContext start")
-        Flag.USE_OLD_SIGNKILL = false          // disable old signature spoofing, use PackageSignatureProvider
+        Flag.USE_OLD_SIGNKILL =
+            false          // disable old signature spoofing, use PackageSignatureProvider
         LegacyKiller.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
         PackageSignatureProvider.install()                 // new CREATOR hook for IPC signature
         if (isMainProcess()) {

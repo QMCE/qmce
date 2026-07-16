@@ -4,7 +4,6 @@ import android.content.pm.PackageManager
 import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,8 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.MaterialTheme
@@ -57,10 +55,14 @@ fun QmceCallScreen(onFinish: () -> Unit) {
     val permissionResultHandler = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
-        val hasAllPermissions = QmceCallController.requiredPermissions(state.mode).all { permission ->
-            grants[permission] == true ||
-                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
-        }
+        val hasAllPermissions =
+            QmceCallController.requiredPermissions(state.mode).all { permission ->
+                grants[permission] == true ||
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            permission
+                        ) == PackageManager.PERMISSION_GRANTED
+            }
         if (hasAllPermissions) {
             QmceCallController.acceptIncoming()
         } else {
@@ -102,9 +104,13 @@ fun QmceCallScreen(onFinish: () -> Unit) {
                 onFinish = onFinish,
                 onAcceptIncoming = {
                     QmceCallController.silenceIncomingAlert()
-                    val missingPermissions = QmceCallController.requiredPermissions(state.mode).filter { permission ->
-                        ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
-                    }
+                    val missingPermissions =
+                        QmceCallController.requiredPermissions(state.mode).filter { permission ->
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                permission
+                            ) != PackageManager.PERMISSION_GRANTED
+                        }
                     if (missingPermissions.isEmpty()) {
                         QmceCallController.acceptIncoming()
                     } else {
@@ -143,7 +149,7 @@ private fun CallIdentity(state: CallUiState) {
             text = peer?.name ?: "QQ 通话",
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,

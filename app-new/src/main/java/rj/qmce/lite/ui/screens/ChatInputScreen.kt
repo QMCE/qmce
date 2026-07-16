@@ -9,17 +9,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
@@ -40,7 +36,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -80,6 +75,7 @@ import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
 // 不可见标记字符（Unicode 私用区），用户不会输入
 private const val IMG_MARKER = ''
+
 // 发送时包裹 slotId 的边界字符，和 IMG_MARKER 不同
 private const val BOUNDARY_START = ''
 private const val BOUNDARY_END = ''
@@ -220,6 +216,7 @@ fun ChatInputScreen(
                     pendingPhotoUri = uri
                     takePhotoLauncher.launch(uri)
                 }
+
                 CameraAction.Video -> {
                     val uri = createCaptureUri(context, "video", "mp4")
                     pendingVideoUri = uri
@@ -246,7 +243,11 @@ fun ChatInputScreen(
     }
 
     fun launchCamera(action: CameraAction) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
             startCamera(action)
         } else {
             pendingCameraAction = action
@@ -389,7 +390,8 @@ fun ChatInputScreen(
 
                     if (hasImages || hasMentions) {
                         val uriMap = imageSlots.associate { it.id to it.uri }
-                        val atMap = atSlots.mapIndexed { index, mention -> "at-$index" to mention }.toMap()
+                        val atMap =
+                            atSlots.mapIndexed { index, mention -> "at-$index" to mention }.toMap()
                         var imageIndex = 0
                         var atIndex = 0
                         val mappedText = buildString {
@@ -397,12 +399,16 @@ fun ChatInputScreen(
                                 when (ch) {
                                     IMG_MARKER -> {
                                         val id = imageSlots.getOrNull(imageIndex++)?.id.orEmpty()
-                                        append(BOUNDARY_START).append("img:").append(id).append(BOUNDARY_END)
+                                        append(BOUNDARY_START).append("img:").append(id)
+                                            .append(BOUNDARY_END)
                                     }
+
                                     AT_MARKER -> {
-                                        append(BOUNDARY_START).append("at:").append("at-$atIndex").append(BOUNDARY_END)
+                                        append(BOUNDARY_START).append("at:").append("at-$atIndex")
+                                            .append(BOUNDARY_END)
                                         atIndex++
                                     }
+
                                     else -> append(ch)
                                 }
                             }
@@ -485,7 +491,8 @@ fun ChatInputScreen(
                         val newMarkers = newValue.text.count { it == IMG_MARKER }
                         if (newMarkers < oldMarkers) {
                             // 找出哪个标记被删了（位置法）
-                            val removedIdx = findRemovedMarkerIndex(textFieldValue.text, newValue.text)
+                            val removedIdx =
+                                findRemovedMarkerIndex(textFieldValue.text, newValue.text)
                             if (removedIdx in imageSlots.indices) {
                                 imageSlots.removeAt(removedIdx)
                             }
@@ -493,7 +500,11 @@ fun ChatInputScreen(
                         val oldAtMarkers = textFieldValue.text.count { it == AT_MARKER }
                         val newAtMarkers = newValue.text.count { it == AT_MARKER }
                         if (newAtMarkers < oldAtMarkers) {
-                            val removedIdx = findRemovedMarkerIndex(textFieldValue.text, newValue.text, AT_MARKER)
+                            val removedIdx = findRemovedMarkerIndex(
+                                textFieldValue.text,
+                                newValue.text,
+                                AT_MARKER
+                            )
                             if (removedIdx in atSlots.indices) atSlots.removeAt(removedIdx)
                         }
                         textFieldValue = newValue
@@ -785,9 +796,11 @@ private fun galleryReadPermissions(): Array<String> = when {
         Manifest.permission.READ_MEDIA_IMAGES,
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
         Manifest.permission.READ_MEDIA_IMAGES,
     )
+
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
@@ -797,17 +810,19 @@ private fun hasGalleryAccess(context: android.content.Context): Boolean = when {
             context,
             android.Manifest.permission.READ_MEDIA_IMAGES,
         ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                context,
-                android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            ) == PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                ) == PackageManager.PERMISSION_GRANTED
     }
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
         ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.READ_MEDIA_IMAGES,
         ) == PackageManager.PERMISSION_GRANTED
     }
+
     else -> {
         ContextCompat.checkSelfPermission(
             context,
@@ -821,9 +836,11 @@ private fun videoReadPermissions(): Array<String> = when {
         Manifest.permission.READ_MEDIA_VIDEO,
         android.Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
         Manifest.permission.READ_MEDIA_VIDEO,
     )
+
     else -> arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
@@ -833,17 +850,19 @@ private fun hasVideoGalleryAccess(context: android.content.Context): Boolean = w
             context,
             Manifest.permission.READ_MEDIA_VIDEO,
         ) == PackageManager.PERMISSION_GRANTED ||
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            ) == PackageManager.PERMISSION_GRANTED
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                ) == PackageManager.PERMISSION_GRANTED
     }
+
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> {
         ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.READ_MEDIA_VIDEO,
         ) == PackageManager.PERMISSION_GRANTED
     }
+
     else -> {
         ContextCompat.checkSelfPermission(
             context,
@@ -904,7 +923,11 @@ private fun imgMarkerTransformation(
 
         val mapping = object : OffsetMapping {
             override fun originalToTransformed(offset: Int): Int =
-                if (offset in revMap.indices) revMap[offset].coerceIn(0, origArr.size) else origArr.size
+                if (offset in revMap.indices) revMap[offset].coerceIn(
+                    0,
+                    origArr.size
+                ) else origArr.size
+
             override fun transformedToOriginal(offset: Int): Int =
                 if (offset in origArr.indices) origArr[offset] else text.length
         }
@@ -914,7 +937,11 @@ private fun imgMarkerTransformation(
 }
 
 /** 找出从 oldText 到 newText 中被删掉的指定标记序号（0-based）。 */
-private fun findRemovedMarkerIndex(oldText: String, newText: String, marker: Char = IMG_MARKER): Int {
+private fun findRemovedMarkerIndex(
+    oldText: String,
+    newText: String,
+    marker: Char = IMG_MARKER
+): Int {
     var markerIdx = 0
     var j = 0
     for (i in oldText.indices) {

@@ -38,10 +38,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -71,7 +69,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -110,11 +107,11 @@ import mqq.app.AppRuntime
 import rj.qmce.lite.data.call.CallMode
 import rj.qmce.lite.data.call.CallStartResult
 import rj.qmce.lite.data.call.QmceCallController
-import rj.qmce.lite.data.chat.PttPlaybackPhase
-import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.data.chat.PttPlaybackPhase
+import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.ui.components.CurvedCard
 import rj.qmce.lite.ui.components.curvedCompactButton
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -204,7 +201,10 @@ fun ChatDetailScreen(
     var pendingHistoryAnchor by remember(peerUid, chatType) { mutableStateOf<HistoryAnchor?>(null) }
     var viewerMedia by remember(peerUid, chatType) { mutableStateOf<ViewerMedia?>(null) }
     var videoPlayer by remember(peerUid, chatType) { mutableStateOf<VideoPlayback?>(null) }
-    var selectedActionMessage by remember(peerUid, chatType) { mutableStateOf<ChatDetailViewModel.UiMsg?>(null) }
+    var selectedActionMessage by remember(
+        peerUid,
+        chatType
+    ) { mutableStateOf<ChatDetailViewModel.UiMsg?>(null) }
     var selectedFile by remember(peerUid, chatType) { mutableStateOf<FileDetailTarget?>(null) }
     var selectedTextContent by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var pendingCallRecordMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
@@ -217,7 +217,7 @@ fun ChatDetailScreen(
         val query = messageSearchQuery.trim()
         if (query.isBlank()) emptyList() else messages.filter { message ->
             message.text.contains(query, ignoreCase = true) ||
-                message.senderNick.contains(query, ignoreCase = true)
+                    message.senderNick.contains(query, ignoreCase = true)
         }.takeLast(20).asReversed()
     }
     val searchScope = rememberCoroutineScope()
@@ -253,8 +253,14 @@ fun ChatDetailScreen(
             )
         ) {
             CallStartResult.Requested -> Unit
-            is CallStartResult.Rejected -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
-            is CallStartResult.Failed -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+            is CallStartResult.Rejected -> Toast.makeText(
+                context,
+                result.message,
+                Toast.LENGTH_SHORT
+            ).show()
+
+            is CallStartResult.Failed -> Toast.makeText(context, result.message, Toast.LENGTH_SHORT)
+                .show()
         }
     }
     val callPermissionLauncher = rememberLauncherForActivityResult(
@@ -265,18 +271,28 @@ fun ChatDetailScreen(
         val requiredPermissions = QmceCallController.requiredPermissions(mode)
         if (requiredPermissions.all { permission ->
                 grants[permission] == true ||
-                    ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            permission
+                        ) == PackageManager.PERMISSION_GRANTED
             }
         ) {
             startCall(mode)
         } else {
-            Toast.makeText(context, "需要麦克风${if (mode == CallMode.Video) "和相机" else ""}权限", Toast.LENGTH_SHORT)
+            Toast.makeText(
+                context,
+                "需要麦克风${if (mode == CallMode.Video) "和相机" else ""}权限",
+                Toast.LENGTH_SHORT
+            )
                 .show()
         }
     }
     val requestCall: (CallMode) -> Unit = { mode ->
         val missingPermissions = QmceCallController.requiredPermissions(mode).filter { permission ->
-            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(
+                context,
+                permission
+            ) != PackageManager.PERMISSION_GRANTED
         }
         if (missingPermissions.isEmpty()) {
             startCall(mode)
@@ -292,8 +308,8 @@ fun ChatDetailScreen(
         if (olderPageVersion >= anchor.resultVersion) {
             val shouldRestorePosition =
                 olderPageVersion == anchor.resultVersion &&
-                    !listState.isScrollInProgress &&
-                    anchorIndex >= 0
+                        !listState.isScrollInProgress &&
+                        anchorIndex >= 0
             SideEffect {
                 pendingHistoryAnchor = null
                 isHistoryRequestPending = false
@@ -336,49 +352,49 @@ fun ChatDetailScreen(
                 canScrollBackward = listState.canScrollBackward,
             )
         }.collect { state ->
-                val movedTowardTop = previousState?.let { previous ->
-                    state.firstVisibleItemIndex < previous.firstVisibleItemIndex ||
+            val movedTowardTop = previousState?.let { previous ->
+                state.firstVisibleItemIndex < previous.firstVisibleItemIndex ||
                         (
-                            state.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
-                                state.firstVisibleItemOffset < previous.firstVisibleItemOffset
-                            )
-                } == true
-                if (state.canScrollBackward) {
-                    reachedTopFromUpwardScroll = false
-                } else if (
-                    state.isScrolling &&
-                        (movedTowardTop || previousState?.canScrollBackward == true)
-                ) {
-                    reachedTopFromUpwardScroll = true
-                }
-                if (
-                    initialPositioned &&
-                    !state.isScrolling &&
-                    !state.canScrollBackward &&
-                    !currentIsLoadingOlder &&
-                    !currentHistoryRequestPending &&
-                    reachedTopFromUpwardScroll
-                ) {
-                    val anchor = listState.layoutInfo.visibleItemsInfo
-                        .firstOrNull { item ->
-                            currentTimelineItems.getOrNull(item.index) is ChatTimelineItem.Message
-                        }
-                        ?.let { item ->
-                            HistoryAnchor(
-                                messageKey = currentTimelineItems[item.index].key,
-                                viewportOffset = item.offset,
-                                resultVersion = currentOlderPageVersion + 1,
-                            )
-                        }
-                    isHistoryRequestPending = vm.loadOlderMessages()
-                    pendingHistoryAnchor = anchor?.takeIf { isHistoryRequestPending }
-                    reachedTopFromUpwardScroll = false
-                }
-                if (state.isScrolling && pendingHistoryAnchor != null) {
-                    pendingHistoryAnchor = null
-                }
-                previousState = state
+                                state.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
+                                        state.firstVisibleItemOffset < previous.firstVisibleItemOffset
+                                )
+            } == true
+            if (state.canScrollBackward) {
+                reachedTopFromUpwardScroll = false
+            } else if (
+                state.isScrolling &&
+                (movedTowardTop || previousState?.canScrollBackward == true)
+            ) {
+                reachedTopFromUpwardScroll = true
             }
+            if (
+                initialPositioned &&
+                !state.isScrolling &&
+                !state.canScrollBackward &&
+                !currentIsLoadingOlder &&
+                !currentHistoryRequestPending &&
+                reachedTopFromUpwardScroll
+            ) {
+                val anchor = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { item ->
+                        currentTimelineItems.getOrNull(item.index) is ChatTimelineItem.Message
+                    }
+                    ?.let { item ->
+                        HistoryAnchor(
+                            messageKey = currentTimelineItems[item.index].key,
+                            viewportOffset = item.offset,
+                            resultVersion = currentOlderPageVersion + 1,
+                        )
+                    }
+                isHistoryRequestPending = vm.loadOlderMessages()
+                pendingHistoryAnchor = anchor?.takeIf { isHistoryRequestPending }
+                reachedTopFromUpwardScroll = false
+            }
+            if (state.isScrolling && pendingHistoryAnchor != null) {
+                pendingHistoryAnchor = null
+            }
+            previousState = state
+        }
     }
 
     LaunchedEffect(listState.isScrollInProgress) {
@@ -402,7 +418,7 @@ fun ChatDetailScreen(
         val targetIndex = timelineItems.indexOfFirst { item ->
             val target = (item as? ChatTimelineItem.Message)?.message ?: return@indexOfFirst false
             target.msgId == reply.targetMessageId ||
-                (reply.targetSequence != null && target.msgSeq == reply.targetSequence)
+                    (reply.targetSequence != null && target.msgSeq == reply.targetSequence)
         }
         if (targetIndex >= 0) {
             listState.animateScrollToItem(targetIndex)
@@ -423,44 +439,53 @@ fun ChatDetailScreen(
     val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
         pageCount = { if (showCallPage) 3 else 2 },
     )
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         androidx.wear.compose.foundation.pager.HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
         ) { page ->
-                when (page) {
-                    0 -> {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            if (statusText.isNotEmpty() && statusText !in transientChatStatuses) {
-                                Text(
-                                    text = statusText,
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                                    color = MaterialTheme.colorScheme.outline,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1,
-                                )
-                            }
-                            ScreenScaffold(
-                                scrollState = listState,
-                                modifier = Modifier.fillMaxWidth().weight(1f),
-                                contentPadding = PaddingValues(
-                                    start = 10.dp,
-                                    end = 10.dp,
-                                    top = 6.dp,
-                                    bottom = 52.dp,
-                                ),
-                            ) { contentPadding ->
-                                LazyColumn(
-                                    modifier = Modifier.fillMaxSize(),
-                                    state = listState,
-                                    contentPadding = contentPadding,
-                                ) {
+            when (page) {
+                0 -> {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (statusText.isNotEmpty() && statusText !in transientChatStatuses) {
+                            Text(
+                                text = statusText,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                            )
+                        }
+                        ScreenScaffold(
+                            scrollState = listState,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentPadding = PaddingValues(
+                                start = 10.dp,
+                                end = 10.dp,
+                                top = 6.dp,
+                                bottom = 52.dp,
+                            ),
+                        ) { contentPadding ->
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                state = listState,
+                                contentPadding = contentPadding,
+                            ) {
                                 items(timelineItems, key = { item -> item.key }) { item ->
                                     when (item) {
                                         is ChatTimelineItem.DateDivider -> ChatDateDivider(item.label)
                                         is ChatTimelineItem.Message -> {
-                                            val isSelected = multiSelectMode && item.message.msgId in selectedMsgIds
+                                            val isSelected =
+                                                multiSelectMode && item.message.msgId in selectedMsgIds
                                             Box(modifier = Modifier.fillMaxWidth()) {
                                                 MessageBubble(
                                                     message = item.message,
@@ -479,17 +504,22 @@ fun ChatDetailScreen(
                                                         if (multiSelectMode) return@MessageBubble
                                                         val isLoaded = messages.any { candidate ->
                                                             candidate.msgId == reply.targetMessageId ||
-                                                                (reply.targetSequence != null && candidate.msgSeq == reply.targetSequence)
+                                                                    (reply.targetSequence != null && candidate.msgSeq == reply.targetSequence)
                                                         }
                                                         pendingReplyNavigation = reply
                                                         if (!isLoaded) vm.loadReplySource(reply)
                                                     },
                                                     onOpenFile = { message, file ->
-                                                        if (!multiSelectMode) selectedFile = FileDetailTarget(message, file)
+                                                        if (!multiSelectMode) selectedFile =
+                                                            FileDetailTarget(message, file)
                                                     },
                                                     inlineKeyboardActions = inlineKeyboardActions,
                                                     onClickInlineKeyboard = { message, keyboard, button ->
-                                                        vm.clickInlineKeyboardButton(message, keyboard, button)
+                                                        vm.clickInlineKeyboardButton(
+                                                            message,
+                                                            keyboard,
+                                                            button
+                                                        )
                                                     },
                                                     voicePlaybackState = { voice ->
                                                         pttPlaybackStates[voice.media.messageId]
@@ -505,9 +535,15 @@ fun ChatDetailScreen(
                                                     Box(
                                                         modifier = Modifier
                                                             .align(if (item.message.isSelf) Alignment.CenterEnd else Alignment.CenterStart)
-                                                            .padding(start = if (!item.message.isSelf) 2.dp else 0.dp, end = if (item.message.isSelf) 2.dp else 0.dp)
+                                                            .padding(
+                                                                start = if (!item.message.isSelf) 2.dp else 0.dp,
+                                                                end = if (item.message.isSelf) 2.dp else 0.dp
+                                                            )
                                                             .size(18.dp)
-                                                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                                                            .background(
+                                                                MaterialTheme.colorScheme.primary,
+                                                                CircleShape
+                                                            ),
                                                         contentAlignment = Alignment.Center,
                                                     ) {
                                                         Icon(
@@ -522,30 +558,19 @@ fun ChatDetailScreen(
                                         }
                                     }
                                 }
-                                }
                             }
                         }
                     }
-                    1 -> if (showCallPage) {
-                        CallPage(
-                            peerName = name.ifEmpty { peerName },
-                            onRequestCall = requestCall,
-                            onOpenPacketTool = onOpenPacketTool,
-                        )
-                    } else {
-                        ChatInfoScreen(
-                            peerUid = peerUid,
-                            peerUin = peerUin.toLongOrNull() ?: 0L,
-                            chatType = chatType,
-                            peerName = name.ifEmpty { peerName },
-                            avatarPath = avatarPath,
-                            avatarUrl = avatarUrl,
-                            vm = vm,
-                            onOpenMembers = onOpenMembers,
-                            onOpenSettings = onOpenChatSettings,
-                        )
-                    }
-                    2 -> ChatInfoScreen(
+                }
+
+                1 -> if (showCallPage) {
+                    CallPage(
+                        peerName = name.ifEmpty { peerName },
+                        onRequestCall = requestCall,
+                        onOpenPacketTool = onOpenPacketTool,
+                    )
+                } else {
+                    ChatInfoScreen(
                         peerUid = peerUid,
                         peerUin = peerUin.toLongOrNull() ?: 0L,
                         chatType = chatType,
@@ -557,6 +582,19 @@ fun ChatDetailScreen(
                         onOpenSettings = onOpenChatSettings,
                     )
                 }
+
+                2 -> ChatInfoScreen(
+                    peerUid = peerUid,
+                    peerUin = peerUin.toLongOrNull() ?: 0L,
+                    chatType = chatType,
+                    peerName = name.ifEmpty { peerName },
+                    avatarPath = avatarPath,
+                    avatarUrl = avatarUrl,
+                    vm = vm,
+                    onOpenMembers = onOpenMembers,
+                    onOpenSettings = onOpenChatSettings,
+                )
+            }
         }
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -571,7 +609,8 @@ fun ChatDetailScreen(
                         if (text.isNotBlank()) copyMessageText(context, text)
                         else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
                     },
-                    onForward = Toast.makeText(context, "批量转发开发中", Toast.LENGTH_SHORT).show().let { {} },
+                    onForward = Toast.makeText(context, "批量转发开发中", Toast.LENGTH_SHORT).show()
+                        .let { {} },
                     onDelete = {
                         if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
                     },
@@ -581,9 +620,9 @@ fun ChatDetailScreen(
                     visible = composerActionsVisible,
                     modifier = Modifier.padding(bottom = 2.dp),
                     enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                        slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+                            slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
                     exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                        slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+                            slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
                 ) {
                     ChatComposerActions(
                         onOpenInput = onOpenInput,
@@ -615,7 +654,8 @@ fun ChatDetailScreen(
             )
         }
         selectedFile?.let { target ->
-            val currentMessage = messages.firstOrNull { it.stableKey == target.message.stableKey } ?: target.message
+            val currentMessage =
+                messages.firstOrNull { it.stableKey == target.message.stableKey } ?: target.message
             val currentFile = currentMessage.contents
                 .filterIsInstance<ChatDetailViewModel.MessageContent.File>()
                 .firstOrNull { it.elementId == target.content.elementId }
@@ -662,29 +702,44 @@ fun ChatDetailScreen(
                 onAction = { action ->
                     selectedActionMessage = null
                     when (action.id) {
-                        "copy" -> copyMessageText(context, MessageActionResolver.copyableText(message))
-                        "read_text" -> selectedTextContent = MessageActionResolver.copyableText(message)
-                        "share_text" -> shareMessageText(context, MessageActionResolver.copyableText(message))
+                        "copy" -> copyMessageText(
+                            context,
+                            MessageActionResolver.copyableText(message)
+                        )
+
+                        "read_text" -> selectedTextContent =
+                            MessageActionResolver.copyableText(message)
+
+                        "share_text" -> shareMessageText(
+                            context,
+                            MessageActionResolver.copyableText(message)
+                        )
+
                         "view_media" -> message.firstLocalMediaFile()?.let { file ->
                             viewerMedia = ViewerMedia("${message.stableKey}:action", file, "图片")
                         } ?: Toast.makeText(context, "图片尚未缓存", Toast.LENGTH_SHORT).show()
+
                         "share_media" -> message.firstLocalMediaFile()?.let { file ->
                             shareLocalMedia(context, file)
                         }
+
                         "forward_detail" -> message.contents
                             .filterIsInstance<ChatDetailViewModel.MessageContent.Forward>()
                             .firstOrNull()
                             ?.let(vm::loadForwardDetail)
+
                         "recall" -> vm.recallMessage(message.msgId)
                         "delete" -> vm.deleteMessage(message.msgId)
                         "repeat" -> {
                             val text = MessageActionResolver.copyableText(message)
                             if (text.isNotBlank()) vm.sendText(text)
                         }
+
                         "forward" -> {
                             vm.setPendingForward(message)
                             onOpenContactPicker()
                         }
+
                         "multi_select" -> vm.enterMultiSelect(message.msgId)
                         "edit" -> {
                             val text = MessageActionResolver.copyableText(message)
@@ -725,13 +780,20 @@ private fun CallPage(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("发起通话", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "发起通话",
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(6.dp))
         // Text(peerName, color = Color(0xFFD1CBD7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(12.dp))
         Button(
             onClick = { onRequestCall(CallMode.Voice) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -742,7 +804,9 @@ private fun CallPage(
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { onRequestCall(CallMode.Video) },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
@@ -753,7 +817,9 @@ private fun CallPage(
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = onOpenPacketTool,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
@@ -825,11 +891,16 @@ internal fun MessageBubble(
     val bubbleShape = RoundedCornerShape(10.dp)
     val isSingleMedia = message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
-            it is ChatDetailViewModel.MessageContent.MarketFace ||
-            it is ChatDetailViewModel.MessageContent.Giphy
+                it is ChatDetailViewModel.MessageContent.MarketFace ||
+                it is ChatDetailViewModel.MessageContent.Giphy
     }
 
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = alignment) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = alignment
+    ) {
         Column(
             modifier = Modifier.widthIn(max = 172.dp),
             horizontalAlignment = if (message.isSelf) Alignment.End else Alignment.Start,
@@ -851,7 +922,10 @@ internal fun MessageBubble(
                 containerColor = containerColor,
                 contentColor = messageContentColor,
                 shape = bubbleShape,
-                contentPadding = if (isSingleMedia) PaddingValues(0.dp) else PaddingValues(horizontal = 11.dp, vertical = 7.dp),
+                contentPadding = if (isSingleMedia) PaddingValues(0.dp) else PaddingValues(
+                    horizontal = 11.dp,
+                    vertical = 7.dp
+                ),
                 onClick = { onTap?.invoke() },
                 onLongClick = { onLongClick(message) },
             ) {
@@ -909,6 +983,7 @@ private fun MessageContentItem(
         is ChatDetailViewModel.MessageContent.Text -> {
             RichMessageText(content.value, onLongClick)
         }
+
         is ChatDetailViewModel.MessageContent.Image -> LocalMessageImage(
             content = content,
             ensureCached = { ensureImageCached(message, content) },
@@ -916,24 +991,35 @@ private fun MessageContentItem(
                 onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", file, "图片"))
             },
         )
+
         is ChatDetailViewModel.MessageContent.Face -> {
             RichMessageText(content.text, onLongClick)
         }
+
         is ChatDetailViewModel.MessageContent.MarketFace -> {
             LocalMarketFace(content) { file ->
                 onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", file, content.name))
             }
         }
+
         is ChatDetailViewModel.MessageContent.Giphy -> GiphyMessageContent(content) { mediaUrl ->
             onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", mediaUrl, "GIF"))
         }
+
         is ChatDetailViewModel.MessageContent.Voice -> VoiceMessageContent(
             content = content,
             playbackState = voicePlaybackState(content),
             onTogglePlayback = { onToggleVoice(content) },
         )
+
         is ChatDetailViewModel.MessageContent.Video -> VideoMessageContent(content, onOpenVideo)
-        is ChatDetailViewModel.MessageContent.File -> FileMessageContent(content) { onOpenFile(message, content) }
+        is ChatDetailViewModel.MessageContent.File -> FileMessageContent(content) {
+            onOpenFile(
+                message,
+                content
+            )
+        }
+
         is ChatDetailViewModel.MessageContent.Reply -> ReplyMessageContent(content, onOpenReply)
         is ChatDetailViewModel.MessageContent.Card -> StructuredCardContent(
             title = content.title,
@@ -942,6 +1028,7 @@ private fun MessageContentItem(
             previewUrl = content.previewUrl,
             actionUrl = content.actionUrl,
         )
+
         is ChatDetailViewModel.MessageContent.StructCard -> StructuredCardContent(
             title = content.title,
             description = listOfNotNull(
@@ -952,7 +1039,12 @@ private fun MessageContentItem(
             previewUrl = null,
             actionUrl = null,
         )
-        is ChatDetailViewModel.MessageContent.Forward -> ForwardMessageContent(content, onOpenForward)
+
+        is ChatDetailViewModel.MessageContent.Forward -> ForwardMessageContent(
+            content,
+            onOpenForward
+        )
+
         is ChatDetailViewModel.MessageContent.SystemTip -> SystemTipLine(content.text)
         is ChatDetailViewModel.MessageContent.Location -> LocationMessageContent(content)
         is ChatDetailViewModel.MessageContent.Wallet -> WalletMessageContent(content)
@@ -963,11 +1055,21 @@ private fun MessageContentItem(
             actionStates = inlineKeyboardActions,
             onClick = onClickInlineKeyboard,
         )
-        is ChatDetailViewModel.MessageContent.Markdown -> MarkdownMessageContent(content.value, onLongClick)
+
+        is ChatDetailViewModel.MessageContent.Markdown -> MarkdownMessageContent(
+            content.value,
+            onLongClick
+        )
+
         is ChatDetailViewModel.MessageContent.LinkPreview -> LinkPreviewMessageContent(content)
-        is ChatDetailViewModel.MessageContent.CallRecord -> CallRecordMessageContent(content, onRequestCall)
+        is ChatDetailViewModel.MessageContent.CallRecord -> CallRecordMessageContent(
+            content,
+            onRequestCall
+        )
+
         is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback(
-            content.detail?.let { "[$it · 类型 ${content.elementType}]" } ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
+            content.detail?.let { "[$it · 类型 ${content.elementType}]" }
+                ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
         )
     }
 }
@@ -979,7 +1081,11 @@ private fun LocalMessageImage(
     onOpen: (File) -> Unit,
 ) {
     val localFile = remember(content.localPaths, content.thumbnailPaths, content.sourcePath) {
-        LocalMediaResolver.firstAvailable(content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
+        LocalMediaResolver.firstAvailable(
+            content.localPaths + content.thumbnailPaths + listOfNotNull(
+                content.sourcePath
+            )
+        )
     }
     val size = mediaSize(content.width, content.height)
     if (localFile == null) {
@@ -1015,7 +1121,10 @@ private fun LocalMessageImage(
 }
 
 @Composable
-private fun LocalMarketFace(content: ChatDetailViewModel.MessageContent.MarketFace, onOpen: (File) -> Unit) {
+private fun LocalMarketFace(
+    content: ChatDetailViewModel.MessageContent.MarketFace,
+    onOpen: (File) -> Unit
+) {
     val localFile = remember(content.staticPath, content.dynamicPath) {
         LocalMediaResolver.firstAvailable(listOf(content.dynamicPath, content.staticPath))
     }
@@ -1088,9 +1197,13 @@ private fun MarkdownMessageContent(value: String, onLongClick: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(5.dp))
+                        .background(
+                            MaterialTheme.colorScheme.surfaceContainerHigh,
+                            RoundedCornerShape(5.dp)
+                        )
                         .padding(horizontal = 7.dp, vertical = 4.dp),
                 )
+
                 is MarkdownBlock.Heading -> RichMessageText(
                     value = block.value,
                     onLongClick = onLongClick,
@@ -1100,6 +1213,7 @@ private fun MarkdownMessageContent(value: String, onLongClick: () -> Unit) {
                         else -> MaterialTheme.typography.titleSmall
                     },
                 )
+
                 is MarkdownBlock.Paragraph -> RichMessageText(block.value, onLongClick)
             }
         }
@@ -1167,11 +1281,12 @@ private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageConten
     when (val state = content.state) {
         LinkPreviewState.Idle,
         LinkPreviewState.Loading,
-        -> Text(
+            -> Text(
             text = "正在解析链接…",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
+
         is LinkPreviewState.Ready -> {
             val preview = state.preview
             Card(
@@ -1189,7 +1304,9 @@ private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageConten
                         AsyncImage(
                             model = preview.imageUrl,
                             contentDescription = null,
-                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(6.dp)),
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(6.dp)),
                             contentScale = ContentScale.Crop,
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1215,6 +1332,7 @@ private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageConten
                 }
             }
         }
+
         LinkPreviewState.Failed -> Unit
     }
 }
@@ -1273,11 +1391,15 @@ private fun CallRecordConfirmationScreen(
 ) {
     BackHandler(onBack = onDismiss)
     Box(
-        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -1297,7 +1419,11 @@ private fun CallRecordConfirmationScreen(
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = TextAlign.Center,
             )
-            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+            Button(
+                onClick = onConfirm, modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp)
+            ) {
                 Text("继续")
             }
             Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
@@ -1350,7 +1476,9 @@ private fun ReplyMessageContent(
     Card(
         onClick = { onOpenReply(content) },
         enabled = !content.expired,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -1394,29 +1522,41 @@ private fun FileMessageContent(
         contentPadding = PaddingValues(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(23.dp))
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(content.name, color = LocalContentColor.current, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(
-                text = buildList {
-                    add(Formatter.formatShortFileSize(context, content.sizeBytes))
-                    content.progress?.let { add("$it%") }
-                }.joinToString(" · "),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
+            Icon(
+                Icons.Default.Description,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(23.dp)
             )
-            Text(
-                text = when {
-                    localFile != null -> "已缓存"
-                    else -> "点击查看"
-                },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-            )
-        }
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    content.name,
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = buildList {
+                        add(Formatter.formatShortFileSize(context, content.sizeBytes))
+                        content.progress?.let { add("$it%") }
+                    }.joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+                Text(
+                    text = when {
+                        localFile != null -> "已缓存"
+                        else -> "点击查看"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -1432,8 +1572,18 @@ private fun VoiceMessageContent(
     val positionSeconds = (playbackState?.positionMillis ?: 0) / 1_000
     val status = when (phase) {
         PttPlaybackPhase.Preparing -> "正在准备..."
-        PttPlaybackPhase.Playing -> "${formatMediaDuration(positionSeconds)} / ${formatMediaDuration(durationSeconds)}"
-        PttPlaybackPhase.Paused -> "${formatMediaDuration(positionSeconds)} / ${formatMediaDuration(durationSeconds)}"
+        PttPlaybackPhase.Playing -> "${formatMediaDuration(positionSeconds)} / ${
+            formatMediaDuration(
+                durationSeconds
+            )
+        }"
+
+        PttPlaybackPhase.Paused -> "${formatMediaDuration(positionSeconds)} / ${
+            formatMediaDuration(
+                durationSeconds
+            )
+        }"
+
         PttPlaybackPhase.Failed -> playbackState?.error ?: "无法播放此语音"
         PttPlaybackPhase.Idle -> content.progress?.let { "传输中 $it%" } ?: "点击播放"
     }
@@ -1467,7 +1617,13 @@ private fun VoiceMessageContent(
                     fontWeight = FontWeight.Medium,
                 )
                 content.transcript?.let { transcript ->
-                    Text(transcript, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        transcript,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             Icon(
@@ -1500,7 +1656,9 @@ private fun VideoMessageContent(
     Card(
         onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
         enabled = localFile != null,
-        modifier = Modifier.fillMaxWidth().height(132.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(132.dp),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
@@ -1511,37 +1669,41 @@ private fun VideoMessageContent(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center,
         ) {
-        if (thumbnail != null) {
-            AsyncImage(
-                model = thumbnail,
-                contentDescription = "视频封面",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+            if (thumbnail != null) {
+                AsyncImage(
+                    model = thumbnail,
+                    contentDescription = "视频封面",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+            Icon(
+                Icons.Default.PlayArrow,
+                contentDescription = "视频",
+                tint = LocalContentColor.current,
+                modifier = Modifier.size(34.dp),
             )
-        }
-        Icon(
-            Icons.Default.PlayArrow,
-            contentDescription = "视频",
-            tint = LocalContentColor.current,
-            modifier = Modifier.size(34.dp),
-        )
-        Text(
-            text = buildList {
-                add(formatDuration(content.durationSeconds))
-                content.progress?.let { add("$it%") }
-            }.joinToString(" · "),
-            modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
-            color = LocalContentColor.current,
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (localFile == null) {
             Text(
-                text = "视频未缓存",
-                modifier = Modifier.align(Alignment.TopStart).padding(7.dp),
+                text = buildList {
+                    add(formatDuration(content.durationSeconds))
+                    content.progress?.let { add("$it%") }
+                }.joinToString(" · "),
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(7.dp),
                 color = LocalContentColor.current,
                 style = MaterialTheme.typography.bodySmall,
             )
-        }
+            if (localFile == null) {
+                Text(
+                    text = "视频未缓存",
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(7.dp),
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }
@@ -1559,19 +1721,39 @@ private fun StructuredCardContent(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                actionUrl?.let { url -> Modifier.clickable { openHttpLink(context, url) } } ?: Modifier,
+                actionUrl?.let { url -> Modifier.clickable { openHttpLink(context, url) } }
+                    ?: Modifier,
             )
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(9.dp),
     ) {
         tag?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
             Spacer(Modifier.height(2.dp))
         }
-        Text(title, color = LocalContentColor.current, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(
+            title,
+            color = LocalContentColor.current,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
         description.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(3.dp))
-        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Text(
+                it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         previewUrl?.let { url ->
             Spacer(Modifier.height(7.dp))
@@ -1603,9 +1785,21 @@ private fun ForwardMessageContent(
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(9.dp),
     ) {
-        Text(content.title, color = LocalContentColor.current, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2)
+        Text(
+            content.title,
+            color = LocalContentColor.current,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2
+        )
         content.preview.forEach { line ->
-            Text(line, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                line,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
@@ -1613,19 +1807,20 @@ private fun ForwardMessageContent(
 private const val URL_ANNOTATION_TAG = "url"
 private val httpUrlRegex = Regex("https?://[^\\s<>\\\"]+")
 
-private fun String.toLinkedAnnotatedString(linkColor: Color): AnnotatedString = buildAnnotatedString {
-    var cursor = 0
-    httpUrlRegex.findAll(this@toLinkedAnnotatedString).forEach { match ->
-        append(this@toLinkedAnnotatedString.substring(cursor, match.range.first))
-        pushStringAnnotation(URL_ANNOTATION_TAG, match.value)
-        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
-            append(match.value)
+private fun String.toLinkedAnnotatedString(linkColor: Color): AnnotatedString =
+    buildAnnotatedString {
+        var cursor = 0
+        httpUrlRegex.findAll(this@toLinkedAnnotatedString).forEach { match ->
+            append(this@toLinkedAnnotatedString.substring(cursor, match.range.first))
+            pushStringAnnotation(URL_ANNOTATION_TAG, match.value)
+            withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+                append(match.value)
+            }
+            pop()
+            cursor = match.range.last + 1
         }
-        pop()
-        cursor = match.range.last + 1
+        append(this@toLinkedAnnotatedString.substring(cursor))
     }
-    append(this@toLinkedAnnotatedString.substring(cursor))
-}
 
 @Composable
 private fun LocationMessageContent(content: ChatDetailViewModel.MessageContent.Location) {
@@ -1636,12 +1831,29 @@ private fun LocationMessageContent(content: ChatDetailViewModel.MessageContent.L
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+        Icon(
+            Icons.Default.LocationOn,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp)
+        )
         Spacer(Modifier.width(8.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(content.title, color = LocalContentColor.current, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                content.title,
+                color = LocalContentColor.current,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
             content.detail.takeIf { it.isNotBlank() }?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1660,7 +1872,9 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
                 AsyncImage(
                     model = iconUrl,
                     contentDescription = null,
-                    modifier = Modifier.size(26.dp).clip(RoundedCornerShape(6.dp)),
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp)),
                     contentScale = ContentScale.Crop,
                 )
                 Spacer(Modifier.width(8.dp))
@@ -1768,13 +1982,19 @@ private fun InlineKeyboardMessageContent(
             .padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
-        Text("机器人操作", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "机器人操作",
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold
+        )
         content.rows.forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                 row.forEach { button ->
                     val actionKey = "${message.stableKey}:keyboard:${button.stableKey}"
                     val action = actionStates[actionKey]
-                    val isPending = action?.phase == ChatDetailViewModel.InlineKeyboardActionPhase.Pending
+                    val isPending =
+                        action?.phase == ChatDetailViewModel.InlineKeyboardActionPhase.Pending
                     val label = action?.label ?: button.label
                     Button(
                         onClick = { onClick(content, button) },
@@ -1808,18 +2028,33 @@ private fun MultiSelectBottomBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onExit, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)) {
+        IconButton(
+            onClick = onExit,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
             Icon(Icons.Default.Close, contentDescription = "退出多选")
         }
         Text(
             text = "已选 $selectedCount 条",
-            color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Medium,
         )
-        IconButton(onClick = onCopy, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)) {
+        IconButton(
+            onClick = onCopy,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
             Icon(Icons.Default.ContentCopy, contentDescription = "复制")
         }
-        IconButton(onClick = onDelete, modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)) {
-            Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "删除",
+                tint = MaterialTheme.colorScheme.error
+            )
         }
     }
 }
@@ -1828,7 +2063,9 @@ private fun MultiSelectBottomBar(
 private fun SystemTipLine(text: String) {
     Text(
         text = text,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 7.dp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
         textAlign = TextAlign.Center,
@@ -1871,7 +2108,15 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(0.dp),
-        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
     } else {
         Card(
             onClick = onClick,
@@ -1879,7 +2124,15 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
             shape = RoundedCornerShape(8.dp),
             contentPadding = PaddingValues(0.dp),
-        ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    label,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
     }
 }
 
@@ -1903,12 +2156,29 @@ private fun formatDuration(seconds: Int): String {
 @Composable
 private fun ChatDateDivider(date: String) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Spacer(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
-        Text(date, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 8.dp))
-        Spacer(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant))
+        Spacer(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+        Text(
+            date,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 8.dp)
+        )
+        Spacer(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
     }
 }
 
