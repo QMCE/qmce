@@ -30,7 +30,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalView
-//import com.google.wear.input.WearHapticFeedbackConstants
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +41,7 @@ import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.withContext
-import kotlin.time.Duration.Companion.milliseconds
+import rj.qmce.lite.AppConfig
 
 /** Handles haptics for rotary usage */
 internal interface RotaryHapticHandler {
@@ -62,7 +61,7 @@ internal fun rememberRotaryHapticHandler(
     scrollableState: ScrollableState,
     hapticsEnabled: Boolean,
 ): RotaryHapticHandler =
-    if (hapticsEnabled) {
+    if (hapticsEnabled && !AppConfig.isMiWatch5Mode) {
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.VANILLA_ICE_CREAM)
             rememberCustomRotaryHapticHandler(
                 scrollableState = scrollableState,
@@ -134,7 +133,7 @@ internal fun getCustomRotaryConstants(view: View): HapticConstants =
         // Order here is very important: We want to use WearSDK haptic constants for
         // all devices having api 34 and up, but for Wear3.5 and Wear 4 constants should be
         // different for Galaxy watches and other devices.
-//        hasWearSDK(view.context) -> HapticConstants.WearSDKHapticConstants
+        hasWearSDK(view.context) -> HapticConstants.WearSDKHapticConstants
         isGalaxyWatch() -> HapticConstants.GalaxyWatchConstants
         isWear3_5(view.context) -> HapticConstants.Wear3Point5RotaryHapticConstants
         isWear4() -> HapticConstants.Wear4RotaryHapticConstants
@@ -148,12 +147,12 @@ internal sealed class HapticConstants(
     val scrollLimit: Int?,
 ) {
     /** Rotary haptic constants from WearSDK */
-//    object WearSDKHapticConstants :
-//        HapticConstants(
-//            WearHapticFeedbackConstants.getScrollItemFocus(),
-//            WearHapticFeedbackConstants.getScrollTick(),
-//            WearHapticFeedbackConstants.getScrollLimit(),
-//        )
+    object WearSDKHapticConstants :
+        HapticConstants(
+            getWearHapticConstant("getScrollItemFocus"),
+            getWearHapticConstant("getScrollTick"),
+            getWearHapticConstant("getScrollLimit"),
+        )
 
     /**
      * Rotary haptic constants for Galaxy Watch. These constants are used by Samsung for producing
@@ -377,12 +376,23 @@ private fun isWear4(): Boolean = Build.VERSION.SDK_INT == Build.VERSION_CODES.TI
 private fun hasWearSDK(context: Context): Boolean =
     context.packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH) &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-        !"robolectric".equals(Build.FINGERPRINT, ignoreCase = true)
+        !"robolectric".equals(Build.FINGERPRINT, ignoreCase = true) &&
+        runCatching {
+            Class.forName(WEAR_HAPTIC_CONSTANTS_CLASS, false, context.classLoader)
+        }.isSuccess
+
+private fun getWearHapticConstant(methodName: String): Int? = runCatching {
+    Class.forName(WEAR_HAPTIC_CONSTANTS_CLASS)
+        .getMethod(methodName)
+        .invoke(null) as? Int
+}.getOrNull()
 
 private fun getWearPlatformMrNumber(context: Context): Int =
     Settings.Global.getString(context.contentResolver, WEAR_PLATFORM_MR_NUMBER)?.toIntOrNull() ?: 0
 
 private const val WEAR_PLATFORM_MR_NUMBER: String = "wear_platform_mr_number"
+private const val WEAR_HAPTIC_CONSTANTS_CLASS: String =
+    "com.google.wear.input.WearHapticFeedbackConstants"
 
 private fun ScrollableState.reachedTheLimit(scrollDelta: Float): Boolean =
     (scrollDelta > 0 && !canScrollForward) || (scrollDelta < 0 && !canScrollBackward)
@@ -415,6 +425,6 @@ private inline fun debugLog(generateMsg: () -> String) {
 internal fun <T> Flow<T>.throttleLatest(timeframe: Long): Flow<T> = flow {
     conflate().collect {
         emit(it)
-        delay(timeframe.milliseconds)
+        delay(timeframe)
     }
 }

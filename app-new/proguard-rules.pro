@@ -25,9 +25,10 @@
 -dontwarn com.tencent.**
 -dontwarn mqq.**
 -dontwarn oicq.**
+-keep class moye.** { *; }
 
 # ── 签名伪装 ──
--keep class moye.** { *; }
+-keep class rj.qmce.lite.fix.** { *; }
 
 # ── 应用代码 ──
 #-keep class rj.qmce.lite.** { *; }
