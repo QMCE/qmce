@@ -18,9 +18,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SaveAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -71,8 +73,22 @@ fun QZoneFeedDetailScreen(
     }
     var gallery by remember(feed.feedId) { mutableStateOf<List<ViewerMedia>>(emptyList()) }
     var videoUrl by remember(feed.feedId) { mutableStateOf<String?>(null) }
+    var showDeleteConfirmation by remember(feed.feedId) { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
     val scheme = MaterialTheme.colorScheme
+
+    if (showDeleteConfirmation) {
+        QZoneDeleteConfirmationScreen(
+            deleteState = vm.deleteState.collectAsState().value,
+            onConfirm = { vm.deleteFeed(feed.feedId) },
+            onDismiss = {
+                vm.clearDeleteState()
+                showDeleteConfirmation = false
+            },
+            onDeleted = onBack,
+        )
+        return
+    }
 
     ScreenScaffold(
         scrollState = listState,
@@ -165,7 +181,28 @@ fun QZoneFeedDetailScreen(
                     ) { Text("系统分享") }
                 }
             }
+            if (vm.canDeleteFeed(feed)) {
+                item(key = "feed-detail-delete:${feed.feedId}") {
+                    Button(
+                        onClick = {
+                            vm.clearDeleteState()
+                            showDeleteConfirmation = true
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                    ) { Text("删除动态") }
+                }
+            }
             if (feed.picUrls.isNotEmpty()) {
+                item(key = "feed-detail-save-image:${feed.feedId}") {
+                    CompactButton(
+                        onClick = { vm.saveImage(context, feed.picUrls.first()) },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                        icon = { Icon(Icons.Default.SaveAlt, contentDescription = "保存图片") },
+                    )
+                }
                 item(key = "feed-detail-images:${feed.feedId}") {
                     Column(
                         modifier = Modifier

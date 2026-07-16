@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import rj.qmce.lite.viewmodel.QZoneViewModel
 import androidx.compose.material3.TextField as MaterialTextField
 import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
@@ -35,12 +37,18 @@ import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 fun QZoneComposerScreen(
     draft: String,
     selectedUris: List<Uri>,
+    publishState: QZoneViewModel.PublishState,
     onDraftChange: (String) -> Unit,
     onPickMedia: () -> Unit,
     onPublish: () -> Unit,
+    onPublishSucceeded: () -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+    BackHandler(enabled = publishState is QZoneViewModel.PublishState.Publishing) {}
+    LaunchedEffect(publishState) {
+        if (publishState is QZoneViewModel.PublishState.Succeeded) onPublishSucceeded()
+    }
 
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
@@ -51,7 +59,7 @@ fun QZoneComposerScreen(
         edgeButton = {
             EdgeButton(
                 onClick = onPublish,
-                enabled = canPublish,
+                enabled = canPublish && publishState !is QZoneViewModel.PublishState.Publishing,
                 buttonSize = EdgeButtonSize.Small,
             ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
         },
@@ -62,6 +70,11 @@ fun QZoneComposerScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            if (publishState is QZoneViewModel.PublishState.Failed) {
+                item(key = "qzone-composer-error") {
+                    Text("发表失败：${publishState.message}", modifier = Modifier.padding(horizontal = 14.dp))
+                }
+            }
             item(key = "qzone-composer-input") {
                 MaterialTextField(
                     value = draft,

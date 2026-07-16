@@ -29,7 +29,6 @@ public final class LegacyKiller {
     private static final String ORIGIN_PACKAGE_NAME = "com.tencent.qqlite";
     private static final String ORIGIN_VERSION_NAME = "9.0.3";
     private static final int ORIGIN_VERSION_CODE = 2465;
-    private static final int API_ANDROID_17 = 37;
 
     @SuppressWarnings("TextBlockMigration")
     private static final String ORIGIN_SIGNATURE_BASE64 = "MIICUzCCAbygAwIBAgIES7sDYTANBgkqhkiG9w0BAQUFADBtMQ4wDAYDVQQGEwVDaGluYTEPMA0G\n" +
@@ -97,8 +96,9 @@ public final class LegacyKiller {
 
     private static void installCreatorHook(Signature signature) throws Exception {
         if (creatorInstalled) return;
-        if (Build.VERSION.SDK_INT >= API_ANDROID_17) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
             Log.w(TAG, "skip PackageInfo.CREATOR hook on Android 17+");
+            // fixme: work proper but may cause ban?
             return;
         }
         Parcelable.Creator<PackageInfo> originalCreator = PackageInfo.CREATOR;
@@ -189,8 +189,13 @@ public final class LegacyKiller {
             }
             if (result instanceof PackageInfo && shouldSpoofPackage(originalPackage)) {
                 PackageInfo packageInfo = (PackageInfo) result;
-                fixPackageInfoVersion(packageInfo);
-                if (Build.VERSION.SDK_INT >= API_ANDROID_17) {
+                if (isAppCenterDeviceInfoStack()) {
+                    fixAppCenterPackageInfoVersion(packageInfo);
+                } else {
+                    fixPackageInfoVersion(packageInfo);
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
+                    // another way to rewrite sign on a17
                     PackageSignatureProvider.rewritePackageInfo(packageInfo);
                 }
             }
@@ -208,6 +213,17 @@ public final class LegacyKiller {
             }
             if ("com.tencent.mobileqq.msf.service.MsfService".equals(c) || c.startsWith("com.tencent.mobileqq.msf.service.")) {
                 return false;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isAppCenterDeviceInfoStack() {
+        StackTraceElement[] frames = Thread.currentThread().getStackTrace();
+        for (StackTraceElement frame : frames) {
+            if ("com.microsoft.appcenter.utils.DeviceInfoHelper".equals(frame.getClassName()) &&
+                    "getPackageInfo".equals(frame.getMethodName())) {
+                return true;
             }
         }
         return false;
@@ -283,6 +299,16 @@ public final class LegacyKiller {
         if (info.applicationInfo != null && ORIGIN_PACKAGE_NAME.equals(info.packageName)) {
             info.applicationInfo.packageName = ORIGIN_PACKAGE_NAME;
         }
+    }
+
+    private static void fixAppCenterPackageInfoVersion(PackageInfo info) {
+        if (info == null) return;
+        info.versionName = BuildConfig.VERSION_NAME;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.setLongVersionCode(BuildConfig.VERSION_CODE);
+        }
+        //noinspection deprecation
+        info.versionCode = BuildConfig.VERSION_CODE;
     }
 
     private static void exemptHiddenApi() {

@@ -13,6 +13,7 @@ import com.tencent.watch.qzone_impl.publish.business.model.ImageInfo
 import com.tencent.watch.qzone_impl.publish.business.model.MediaWrapper
 import com.tencent.watch.qzone_impl.publish.business.model.QzoneShuoShuoParams
 import com.tencent.watch.qzone_impl.publish.business.publishqueue.QZonePublishQueue
+import com.tencent.watch.qzone_impl.publish.business.task.QZoneDeleteFeedTask
 import com.tencent.watch.qzone_impl.publish.business.task.QZoneLikeFeedTask
 import com.tencent.watch.qzone_impl.publish.business.task.QZoneUploadShuoShuoTask
 import com.tencent.watch.qzone_impl.service.QZoneWriteOperationService
@@ -120,6 +121,33 @@ class QZoneWriteRepository {
             i = data.feedType
         }
         val task = QZoneLikeFeedTask(null, params, 1)
+        runCatching { task.javaClass.getField("clientKey").set(task, feedCommInfo.clientkey) }
+        QZonePublishQueue.e().b(task)
+    }
+
+    suspend fun deleteFeed(data: BusinessFeedData): Result<Unit> = runCatching {
+        val feedCommInfo = data.feedCommInfo
+        val appId = feedCommInfo.appid
+        val cellId = runCatching { data.idInfo?.cellId }.getOrNull().orEmpty()
+        require(cellId.isNotBlank()) { "动态标识不可用" }
+        val sourceSubId = if (appId == 4) {
+            "2"
+        } else {
+            runCatching { data.idInfo?.subId }.getOrNull().orEmpty()
+        }
+        val busiParam = runCatching { data.operationInfo?.busiParam }.getOrNull()?.let(::HashMap)
+        if (appId == 311 || appId == 6100) {
+            busiParam?.set(10, "1")
+        }
+        val task = QZoneDeleteFeedTask(
+            appId,
+            UinUtils.b(),
+            cellId,
+            sourceSubId,
+            0,
+            busiParam,
+            4,
+        )
         runCatching { task.javaClass.getField("clientKey").set(task, feedCommInfo.clientkey) }
         QZonePublishQueue.e().b(task)
     }

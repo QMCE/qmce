@@ -518,11 +518,13 @@ private fun WearApp() {
                         }
                     }
                     composable("qzoneComposer") {
+                        val publishState by qZoneVm.publishState.collectAsState()
                         val qZoneComposerUris =
                             (qZoneUris + qZonePickerUris).distinctBy(Uri::toString)
                         QZoneComposerScreen(
                             draft = qZoneDraft,
                             selectedUris = qZoneComposerUris,
+                            publishState = publishState,
                             onDraftChange = { qZoneDraft = it },
                             onPickMedia = {
                                 if (hasQZoneGalleryAccess(context)) {
@@ -535,12 +537,18 @@ private fun WearApp() {
                             },
                             onPublish = {
                                 qZoneVm.publishImages(context, qZoneDraft, qZoneComposerUris)
+                            },
+                            onPublishSucceeded = {
                                 qZoneDraft = ""
                                 qZoneUris = emptyList()
                                 qZonePickerUris = emptyList()
+                                qZoneVm.clearPublishState()
                                 navController.popBackStack()
                             },
-                            onBack = { navController.popBackStack() },
+                            onBack = {
+                                qZoneVm.clearPublishState()
+                                navController.popBackStack()
+                            },
                         )
                     }
                     composable("qzoneImagePicker") {

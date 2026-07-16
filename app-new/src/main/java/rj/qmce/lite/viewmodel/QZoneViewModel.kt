@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
+import com.tencent.watch.qzone_impl.utils.UinUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.qzone.QZoneFeedRepository
+import rj.qmce.lite.data.qzone.QZoneMediaRepository
 import rj.qmce.lite.data.qzone.QZoneWriteRepository
 import java.util.UUID
 
@@ -69,6 +71,22 @@ class QZoneViewModel : ViewModel() {
         data class Failed(val message: String) : CommentSendState
     }
 
+    sealed interface PublishState {
+        data object Idle : PublishState
+        data object Publishing : PublishState
+        data object Succeeded : PublishState
+        data class Failed(val message: String) : PublishState
+    }
+
+    sealed interface DeleteState {
+        data object Idle : DeleteState
+        data object Submitting : DeleteState
+        data object Refreshing : DeleteState
+        data object Confirmed : DeleteState
+        data object Unconfirmed : DeleteState
+        data class Failed(val message: String) : DeleteState
+    }
+
     data class FeedReply(
         val author: String,
         val text: String,
@@ -86,6 +104,10 @@ class QZoneViewModel : ViewModel() {
     val commentReplyTarget: StateFlow<CommentReplyTarget?> = _commentReplyTarget
     private val _commentSendState = MutableStateFlow<CommentSendState>(CommentSendState.Idle)
     val commentSendState: StateFlow<CommentSendState> = _commentSendState
+    private val _publishState = MutableStateFlow<PublishState>(PublishState.Idle)
+    val publishState: StateFlow<PublishState> = _publishState
+    private val _deleteState = MutableStateFlow<DeleteState>(DeleteState.Idle)
+    val deleteState: StateFlow<DeleteState> = _deleteState
 
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
@@ -105,6 +127,7 @@ class QZoneViewModel : ViewModel() {
     private var lastSubmittedFingerprint = ""
     private val qZoneFeedRepository = QZoneFeedRepository()
     private val qZoneWriteRepository = QZoneWriteRepository()
+    private val qZoneMediaRepository = QZoneMediaRepository()
 
     fun init(rt: AppRuntime?) {
         runtime = rt
@@ -119,28 +142,35 @@ class QZoneViewModel : ViewModel() {
     }
 
     fun publishText(text: String) {
+        if (_publishState.value is PublishState.Publishing) return
         val content = text.trim()
         if (content.isBlank()) {
             _operationStatus.value = "动态内容不能为空"
+            _publishState.value = PublishState.Failed("动态内容不能为空")
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = "正在发表动态…"
+            _publishState.value = PublishState.Publishing
             qZoneWriteRepository.publishText(content).onSuccess {
                 _operationStatus.value = "动态已发送"
+                _publishState.value = PublishState.Succeeded
                 delay(1200)
                 loadFeeds(forceRefresh = true)
             }.onFailure { error ->
                 Log.e(TAG, "publishText failed", error)
                 _operationStatus.value = "发表失败：${error.message ?: "未知错误"}"
+                _publishState.value = PublishState.Failed(error.message ?: "未知错误")
             }
         }
     }
 
     fun publishImages(context: Context, text: String, uris: List<Uri>) {
+        if (_publishState.value is PublishState.Publishing) return
         val content = text.trim()
         if (content.isBlank() && uris.isEmpty()) {
             _operationStatus.value = "动态内容不能为空"
+            _publishState.value = PublishState.Failed("动态内容不能为空")
             return
         }
         if (uris.isEmpty()) {
@@ -149,13 +179,85 @@ class QZoneViewModel : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = "正在准备图片…"
+            _publishState.value = PublishState.Publishing
             qZoneWriteRepository.publishImages(context, content, uris).onSuccess {
                 _operationStatus.value = "动态已发送"
+                _publishState.value = PublishState.Succeeded
                 delay(2500)
                 loadFeeds(forceRefresh = true)
             }.onFailure { error ->
                 Log.e(TAG, "publishImages failed", error)
                 _operationStatus.value = "图片动态失败：${error.message ?: "未知错误"}"
+                _publishState.value = PublishState.Failed(error.message ?: "未知错误")
+            }
+        }
+    }
+
+    fun clearPublishState() {
+        _publishState.value = PublishState.Idle
+    }
+
+    fun canDeleteFeed(feed: FeedItem): Boolean =
+        feed.uin.toLongOrNull() == UinUtils.b()
+
+    fun clearDeleteState() {
+        _deleteState.value = DeleteState.Idle
+    }
+
+    fun deleteFeed(feedId: String) {
+        if (_deleteState.value is DeleteState.Submitting || _deleteState.value is DeleteState.Refreshing) {
+            return
+        }
+        val data = synchronized(feedDataById) { feedDataById[feedId] }
+        if (data == null) {
+            _operationStatus.value = "动态数据尚未准备好，请稍后重试"
+            _deleteState.value = DeleteState.Failed("动态数据尚未准备好，请稍后重试")
+            return
+        }
+        val authorUin = runCatching { data.cellUserInfo?.user?.uin?.toString() }
+            .getOrNull()
+            ?.toLongOrNull()
+            ?: runCatching { data.owner_uin.toString().toLongOrNull() }.getOrNull()
+        if (authorUin == null || authorUin != UinUtils.b()) {
+            _operationStatus.value = "只能删除自己发表的动态"
+            _deleteState.value = DeleteState.Failed("当前动态不属于此账号")
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            _operationStatus.value = "正在提交删除请求…"
+            _deleteState.value = DeleteState.Submitting
+            qZoneWriteRepository.deleteFeed(data).onSuccess {
+                _operationStatus.value = "删除请求已提交，正在刷新确认…"
+                _deleteState.value = DeleteState.Refreshing
+                delay(1500)
+                loadFeeds(forceRefresh = true)
+                var remainingChecks = 24
+                while (_loading.value && remainingChecks-- > 0) {
+                    delay(250)
+                }
+                if (_feeds.value.none { it.feedId == feedId }) {
+                    _operationStatus.value = "动态已删除"
+                    _deleteState.value = DeleteState.Confirmed
+                } else {
+                    _operationStatus.value = "删除请求已提交，但暂未从动态流确认"
+                    _deleteState.value = DeleteState.Unconfirmed
+                }
+            }.onFailure { error ->
+                Log.e(TAG, "deleteFeed failed", error)
+                val message = error.message ?: "未知错误"
+                _operationStatus.value = "删除失败：$message"
+                _deleteState.value = DeleteState.Failed(message)
+            }
+        }
+    }
+
+    fun saveImage(context: Context, sourceUrl: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _operationStatus.value = "正在保存图片…"
+            qZoneMediaRepository.saveImage(context, sourceUrl).onSuccess {
+                _operationStatus.value = "图片已保存到图库"
+            }.onFailure { error ->
+                _operationStatus.value = "保存失败：${error.message ?: "未知错误"}"
             }
         }
     }
