@@ -51,8 +51,6 @@
 -keep class androidx.navigation.NavOptions { *; }
 
 
-
-
 # ── multidex ──
 -keep class com.bytedance.** { *; }
 
