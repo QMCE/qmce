@@ -19,6 +19,9 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.GifDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import com.microsoft.appcenter.AppCenter
+import com.microsoft.appcenter.analytics.Analytics
+import com.microsoft.appcenter.crashes.Crashes
 import com.tencent.mmkv.MMKV
 import com.tencent.mobileqq.qmmkv.MMKVHandlerImpl
 import com.tencent.mobileqq.qmmkv.QMMKV
@@ -208,8 +211,6 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     override fun attachBaseContext(base: Context) {
         Log.d("QMCE", "attachBaseContext start")
-        Flag.USE_OLD_SIGNKILL =
-            false          // disable old signature spoofing, use PackageSignatureProvider
         LegacyKiller.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
         PackageSignatureProvider.install()                 // new CREATOR hook for IPC signature
         if (isMainProcess()) {
@@ -230,6 +231,10 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         Log.d("QMCE", "onCreate start")
         super.onCreate()
         Log.d("QMCE", "onCreate super done")
+        AppCenter.start(
+            this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
+            Analytics::class.java, Crashes::class.java
+        )
         CrashCatcher.install(this)
         Log.d("QMCE", "crashcatcher init done")
         SignatureProbe.dump(this)
@@ -282,7 +287,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
      */
     val currentProcessNameByActivityManager: String
         get() {
-            val pid: Int = android.os.Process.myPid()
+            val pid: Int = Process.myPid()
             val am = this.getSystemService(ACTIVITY_SERVICE) as ActivityManager
             val runningAppList = am.runningAppProcesses
             for (processInfo in runningAppList) {

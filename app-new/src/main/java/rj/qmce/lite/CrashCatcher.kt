@@ -6,7 +6,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Process
 import android.util.Log
-import com.google.firebase.crashlytics.FirebaseCrashlytics
+import com.microsoft.appcenter.crashes.Crashes
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,7 +82,7 @@ object CrashCatcher {
             throwable
         )
         persistReport(context, report)
-        reportToCrashlytics(report, throwable)
+        reportToAppCenter(report, throwable)
 
         val intent = Intent(context, rj.qmce.lite.ui.CrashActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -108,18 +108,20 @@ object CrashCatcher {
             .commit()
     }
 
-    private fun reportToCrashlytics(report: CrashReport, throwable: Throwable) {
+    private fun reportToAppCenter(report: CrashReport, throwable: Throwable) {
         runCatching {
-            FirebaseCrashlytics.getInstance().apply {
-                setCustomKey("qmce_report_id", report.id)
-                setCustomKey("qmce_process", report.process)
-                setCustomKey("qmce_thread", report.thread)
-                log("uncaught report=${report.id} process=${report.process} thread=${report.thread}")
-                recordException(throwable)
-                sendUnsentReports()
-            }
+            Crashes.trackError(
+                throwable,
+                mapOf(
+                    "qmce_report_id" to report.id,
+                    "qmce_process" to report.process,
+                    "qmce_thread" to report.thread,
+                    "qmce_fatal" to "true",
+                ),
+                emptyList(),
+            )
         }.onFailure {
-            Log.w(TAG, "Crashlytics unavailable; local report is still saved", it)
+            Log.w(TAG, "App Center Crashes unavailable; local report is still saved", it)
         }
     }
 

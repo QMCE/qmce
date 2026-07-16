@@ -8,12 +8,6 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val hasFirebaseConfig = file("google-services.json").isFile
-if (hasFirebaseConfig) {
-    apply(plugin = "com.google.gms.google-services")
-    apply(plugin = "com.google.firebase.crashlytics")
-}
-
 android {
     namespace = "rj.qmce.lite"
     compileSdk = 37
@@ -113,9 +107,10 @@ androidComponents {
 }
 
 dependencies {
-    // Firebase Crashlytics; google-services.json enables the Gradle plugins above.
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.crashlytics)
+    // AppCenter
+
+    implementation("com.microsoft.appcenter:appcenter-analytics:5.0.4")
+    implementation("com.microsoft.appcenter:appcenter-crashes:5.0.4")
 
     // QQ API
     implementation(files("libs/qq-sdk.jar"))
