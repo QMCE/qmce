@@ -23,8 +23,10 @@ object RichMediaRepository {
     private val timeoutExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "QMCE-RichMediaTimeout").apply { isDaemon = true }
     }
+
     @Volatile
     private var activeMessageService: IMsgService? = null
+
     @Volatile
     private var invalidationListener: (() -> Unit)? = null
 
@@ -111,7 +113,7 @@ object RichMediaRepository {
         Log.d(
             TAG,
             "richMedia: complete msg=${notify.msgId}, element=${notify.msgElementId}, " +
-                "status=${notify.trasferStatus}, error=${notify.fileErrCode}",
+                    "status=${notify.trasferStatus}, error=${notify.fileErrCode}",
         )
         return true
     }
@@ -121,7 +123,10 @@ object RichMediaRepository {
             if (pendingRequests.remove(key)) {
                 pendingTimeouts.remove(key)
                 requestStates[key] = RichMediaRequestState.Failed("加载超时")
-                Log.w(TAG, "richMedia: request timed out msg=${key.messageId}, element=${key.elementId}")
+                Log.w(
+                    TAG,
+                    "richMedia: request timed out msg=${key.messageId}, element=${key.elementId}"
+                )
                 invalidationListener?.invoke()
             }
         }, REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
@@ -138,7 +143,8 @@ object RichMediaRepository {
     private fun finishRequest(key: RichMediaKey, state: RichMediaRequestState) {
         pendingRequests.remove(key)
         pendingTimeouts.remove(key)?.cancel(false)
-        if (state is RichMediaRequestState.Idle) requestStates.remove(key) else requestStates[key] = state
+        if (state is RichMediaRequestState.Idle) requestStates.remove(key) else requestStates[key] =
+            state
         invalidationListener?.invoke()
     }
 
@@ -170,7 +176,8 @@ object RichMediaRepository {
     fun resolveLocalPicturePaths(element: MsgElement): List<String> =
         PicSize.values().mapNotNull { size ->
             runCatching {
-                val downloader = AIOPicDownloader::class.java.getField("a").get(null) as AIOPicDownloader
+                val downloader =
+                    AIOPicDownloader::class.java.getField("a").get(null) as AIOPicDownloader
                 downloader.d(element, size)
             }.getOrNull()
                 ?.let(LocalMediaResolver::resolveFile)

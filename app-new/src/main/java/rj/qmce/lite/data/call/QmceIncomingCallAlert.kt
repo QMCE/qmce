@@ -50,7 +50,8 @@ internal object QmceIncomingCallAlert {
 
     @Suppress("DEPRECATION")
     private fun acquireWakeLock(context: Context) {
-        val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        val powerManager =
+            context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
         wakeLock = powerManager.newWakeLock(
             PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
             "qmce:incoming-call",
@@ -90,7 +91,8 @@ internal object QmceIncomingCallAlert {
 
     @Suppress("DEPRECATION")
     private fun startVibration(context: Context) {
-        val currentVibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
+        val currentVibrator =
+            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator ?: return
         if (!currentVibrator.hasVibrator()) return
         val attributes = AudioAttributes.Builder()
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

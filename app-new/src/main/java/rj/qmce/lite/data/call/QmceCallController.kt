@@ -223,8 +223,10 @@ object QmceCallController {
                 intent == null -> true
                 intent.hasExtra(EXTRA_ONLY_AUDIO) ->
                     intent.getBooleanExtra(EXTRA_ONLY_AUDIO, true)
+
                 intent.hasExtra(EXTRA_ACTIVITY_ONLY_AUDIO) ->
                     intent.getBooleanExtra(EXTRA_ACTIVITY_ONLY_AUDIO, true)
+
                 else -> true
             }
             val isReceiver = intent?.getBooleanExtra(EXTRA_IS_RECEIVER, true) ?: true
@@ -320,7 +322,9 @@ object QmceCallController {
         val current = _state.value
         if (current.phase !in activePhases) return
         val enabled = !current.isSpeakerOn
-        runCatching { QavBussinessCtrl.t().x(if (enabled) AUDIO_ROUTE_SPEAKER else AUDIO_ROUTE_EARPIECE) }
+        runCatching {
+            QavBussinessCtrl.t().x(if (enabled) AUDIO_ROUTE_SPEAKER else AUDIO_ROUTE_EARPIECE)
+        }
             .onFailure { Log.w(TAG, "switch audio route failed", it) }
         _state.value = current.copy(isSpeakerOn = enabled)
     }
@@ -659,7 +663,7 @@ object QmceCallController {
         Log.w(
             TAG,
             "runtime isLogin=false; runtimeUin=$runtimeUin, mobileUin=$mobileUin, " +
-                "kernelReady=$kernelReady, usable=$usable",
+                    "kernelReady=$kernelReady, usable=$usable",
         )
         return usable
     }

@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -117,6 +119,7 @@ fun ChatInputScreen(
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
     var showVideoPicker by remember { mutableStateOf(false) }
     var showToolPanel by remember { mutableStateOf(false) }
+    var showEmojiPicker by remember { mutableStateOf(false) }
     var showAtPicker by remember { mutableStateOf(false) }
     var atQuery by remember { mutableStateOf("") }
 
@@ -150,6 +153,15 @@ fun ChatInputScreen(
         textFieldValue = TextFieldValue(
             text = text.substring(0, cursor) + inserted + text.substring(cursor),
             selection = TextRange(cursor + inserted.length),
+        )
+    }
+
+    fun insertEmoji(emoji: String) {
+        val cursor = textFieldValue.selection.end
+        val text = textFieldValue.text
+        textFieldValue = TextFieldValue(
+            text = text.substring(0, cursor) + emoji + text.substring(cursor),
+            selection = TextRange(cursor + emoji.length),
         )
     }
 
@@ -271,6 +283,17 @@ fun ChatInputScreen(
         return
     }
 
+    if (showEmojiPicker) {
+        EmojiPickerScreen(
+            onSelect = { emoji ->
+                insertEmoji(emoji)
+                showEmojiPicker = false
+            },
+            onBack = { showEmojiPicker = false },
+        )
+        return
+    }
+
     if (showToolPanel) {
         ChatInputToolsScreen(
             isGroupChat = chatType == 2 && peerUin.toLongOrNull() != null,
@@ -305,6 +328,10 @@ fun ChatInputScreen(
                 showToolPanel = false
                 vm.loadGroupMembers(uin)
                 showAtPicker = true
+            },
+            onSelectEmoji = {
+                showToolPanel = false
+                showEmojiPicker = true
             },
             onRecordVoice = {
                 showToolPanel = false
@@ -541,6 +568,7 @@ private fun ChatInputToolsScreen(
     onCapturePhoto: () -> Unit,
     onCaptureVideo: () -> Unit,
     onSelectMember: () -> Unit,
+    onSelectEmoji: () -> Unit,
     onRecordVoice: () -> Unit,
 ) {
     var showVideoActions by remember { mutableStateOf(false) }
@@ -554,6 +582,16 @@ private fun ChatInputToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            item(key = "emoji") {
+                ChatInputToolButton(
+                    icon = Icons.Default.EmojiEmotions,
+                    label = "表情",
+                    description = "插入常用表情",
+                    onClick = onSelectEmoji,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
             item(key = "image") {
                 ChatInputToolButton(
                     icon = Icons.Default.Image,
@@ -626,6 +664,63 @@ private fun ChatInputToolsScreen(
                         modifier = Modifier.transformedHeight(this, transformationSpec),
                         transformation = SurfaceTransformation(transformationSpec),
                     )
+                }
+            }
+        }
+    }
+}
+
+private val commonEmojiRows = listOf(
+    listOf("😀", "😁", "😂", "🥹"),
+    listOf("😊", "😍", "😘", "🤔"),
+    listOf("😢", "😭", "😡", "😴"),
+    listOf("👍", "👎", "👏", "🙏"),
+    listOf("🎉", "❤️", "🔥", "💯"),
+    listOf("👀", "🤝", "😎", "🤗"),
+)
+
+@Composable
+private fun EmojiPickerScreen(
+    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    BackHandler(onBack = onBack)
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = contentPadding,
+        ) {
+            item(key = "emoji-title") {
+                Text(
+                    text = "表情",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+            }
+            commonEmojiRows.forEachIndexed { rowIndex, row ->
+                item(key = "emoji-row:$rowIndex") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        row.forEach { emoji ->
+                            Button(
+                                onClick = { onSelect(emoji) },
+                                modifier = Modifier.weight(1f),
+                            ) {
+                                Text(emoji, style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
                 }
             }
         }

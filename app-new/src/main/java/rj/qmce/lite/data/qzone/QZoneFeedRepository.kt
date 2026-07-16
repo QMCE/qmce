@@ -11,8 +11,8 @@ import com.tencent.watch.qzone_impl.feed.QZoneFeedService
 import com.tencent.watch.qzone_impl.feed.ServiceCallbackWrapper
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
 import com.tencent.watch.qzone_impl.utils.UinUtils
-import java.lang.ref.WeakReference
 import kotlinx.coroutines.delay
+import java.lang.ref.WeakReference
 
 class QZoneFeedRepository {
 
@@ -32,7 +32,8 @@ class QZoneFeedRepository {
         isCurrent: () -> Boolean,
         onFeeds: (List<BusinessFeedData>, finishLoading: Boolean) -> Unit,
     ): RefreshResult {
-        val service = QZoneFeedService.h() ?: return RefreshResult.Unavailable("QZoneFeedService 不可用")
+        val service =
+            QZoneFeedService.h() ?: return RefreshResult.Unavailable("QZoneFeedService 不可用")
         feedService = service
 
         val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
@@ -122,38 +123,40 @@ class QZoneFeedRepository {
             }
             feedObserver = observer
             observedFeedService = service
-            EventCenter.b().a(observer, 0, EventSource("Feed", null), FEED_EVENT_UPDATED, FEED_EVENT_REFRESHED)
+            EventCenter.b()
+                .a(observer, 0, EventSource("Feed", null), FEED_EVENT_UPDATED, FEED_EVENT_REFRESHED)
             Log.d(TAG, "registered feed observer")
         }.onFailure { error ->
             Log.e(TAG, "failed to register feed observer", error)
         }
     }
 
-    private fun feedFingerprint(list: List<BusinessFeedData>): String = list.joinToString("|") { data ->
-        val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
-        val time = runCatching { data.cellFeedCommInfo?.time }.getOrNull() ?: 0L
-        val summary = runCatching { data.getCellSummaryV2()?.summary }.getOrNull().orEmpty()
-        val title = runCatching { data.cellTitleInfo?.title }.getOrNull().orEmpty()
-        val nick = runCatching { data.cellUserInfo?.user?.nickName }.getOrNull().orEmpty()
-        val likes = runCatching { data.cellLikeInfo?.likeNum }.getOrNull() ?: 0
-        val comments = runCatching {
-            data.cellCommentInfo?.c.orEmpty().joinToString(",") { comment ->
-                "${comment.commentid}:${comment.user?.uin}:${comment.comment}:${comment.replies?.size ?: 0}"
-            }
-        }.getOrNull().orEmpty()
-        val pictures = runCatching {
-            data.cellPictureInfo?.pics.orEmpty().joinToString(",") {
-                it.currentUrl?.url ?: it.bigUrl?.url ?: it.originUrl?.url.orEmpty()
-            }
-        }.getOrNull().orEmpty()
-        val video = runCatching { data.cellVideoInfo?.videoUrl?.url }.getOrNull().orEmpty()
-        val original = runCatching {
-            data.originalInfo?.let { originalData ->
-                "${originalData.cellUserInfo?.user?.nickName}:${originalData.getCellSummaryV2()?.summary}:${originalData.cellTitleInfo?.title}"
-            }
-        }.getOrNull().orEmpty()
-        "$id:$time:$nick:$summary:$title:$likes:$comments:$pictures:$video:$original"
-    }
+    private fun feedFingerprint(list: List<BusinessFeedData>): String =
+        list.joinToString("|") { data ->
+            val id = runCatching { data.cellIdInfo?.cellId }.getOrNull().orEmpty()
+            val time = runCatching { data.cellFeedCommInfo?.time }.getOrNull() ?: 0L
+            val summary = runCatching { data.getCellSummaryV2()?.summary }.getOrNull().orEmpty()
+            val title = runCatching { data.cellTitleInfo?.title }.getOrNull().orEmpty()
+            val nick = runCatching { data.cellUserInfo?.user?.nickName }.getOrNull().orEmpty()
+            val likes = runCatching { data.cellLikeInfo?.likeNum }.getOrNull() ?: 0
+            val comments = runCatching {
+                data.cellCommentInfo?.c.orEmpty().joinToString(",") { comment ->
+                    "${comment.commentid}:${comment.user?.uin}:${comment.comment}:${comment.replies?.size ?: 0}"
+                }
+            }.getOrNull().orEmpty()
+            val pictures = runCatching {
+                data.cellPictureInfo?.pics.orEmpty().joinToString(",") {
+                    it.currentUrl?.url ?: it.bigUrl?.url ?: it.originUrl?.url.orEmpty()
+                }
+            }.getOrNull().orEmpty()
+            val video = runCatching { data.cellVideoInfo?.videoUrl?.url }.getOrNull().orEmpty()
+            val original = runCatching {
+                data.originalInfo?.let { originalData ->
+                    "${originalData.cellUserInfo?.user?.nickName}:${originalData.getCellSummaryV2()?.summary}:${originalData.cellTitleInfo?.title}"
+                }
+            }.getOrNull().orEmpty()
+            "$id:$time:$nick:$summary:$title:$likes:$comments:$pictures:$video:$original"
+        }
 
     private companion object {
         private const val TAG = "QMCE-QZoneFeed"

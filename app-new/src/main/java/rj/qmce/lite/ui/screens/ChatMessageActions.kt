@@ -11,10 +11,14 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Repeat
@@ -71,6 +75,8 @@ object MessageActionResolver {
         }
 
         if (copyable.isNotBlank()) add(MessageAction("copy", "复制"))
+        if (copyable.length > 80) add(MessageAction("read_text", "查看全文"))
+        if (copyable.isNotBlank()) add(MessageAction("share_text", "系统分享"))
 
         // 重复发送：最后一条消息且与前一条文本相同
         if (context.isLastMessage && copyable.isNotBlank()) {
@@ -185,6 +191,63 @@ fun copyMessageText(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("QQ 消息", text))
     Toast.makeText(context, "已复制", Toast.LENGTH_SHORT).show()
+}
+
+fun shareMessageText(context: Context, text: String) {
+    if (text.isBlank()) return
+    runCatching {
+        context.startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, text),
+                "分享消息",
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.onFailure {
+        Toast.makeText(context, "没有可用的分享应用", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+fun MessageTextReaderScreen(
+    text: String,
+    onDismiss: () -> Unit,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    BackHandler(onBack = onDismiss)
+    ScreenScaffold(scrollState = listState) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+            contentPadding = contentPadding,
+        ) {
+            item(key = "reader-text") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = { copyMessageText(context, text) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("复制全部")
+                    }
+                    Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        Text("返回")
+                    }
+                }
+            }
+        }
+    }
 }
 
 fun openHttpLink(context: Context, url: String): Boolean {

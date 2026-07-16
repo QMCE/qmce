@@ -16,7 +16,12 @@ object OfficialPttPlayer {
 
     fun toggle(media: PttMediaRef) {
         if (media.messageId <= 0L) {
-            publish(media.messageId) { it.copy(phase = PttPlaybackPhase.Failed, error = "语音消息无效") }
+            publish(media.messageId) {
+                it.copy(
+                    phase = PttPlaybackPhase.Failed,
+                    error = "语音消息无效"
+                )
+            }
             return
         }
         val path = RichMediaRepository.resolvePttPath(media)

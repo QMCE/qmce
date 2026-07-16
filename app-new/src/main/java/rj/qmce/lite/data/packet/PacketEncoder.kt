@@ -47,8 +47,14 @@ object PacketEncoder {
                     encodeValue(output, fieldNumber, value.get(index))
                 }
             }
+
             is Boolean -> writeVarintField(output, fieldNumber, if (value) 1L else 0L)
-            is Byte, is Short, is Int, is Long -> writeVarintField(output, fieldNumber, (value as Number).toLong())
+            is Byte, is Short, is Int, is Long -> writeVarintField(
+                output,
+                fieldNumber,
+                (value as Number).toLong()
+            )
+
             is Float, is Double -> throw IllegalArgumentException("暂不支持浮点字段，请改用整数或字符串")
             is String -> {
                 val bytes = if (value.startsWith("hex->")) {
@@ -58,6 +64,7 @@ object PacketEncoder {
                 }
                 writeMessage(output, fieldNumber, bytes)
             }
+
             else -> throw IllegalArgumentException("不支持的字段类型: ${value.javaClass.simpleName}")
         }
     }

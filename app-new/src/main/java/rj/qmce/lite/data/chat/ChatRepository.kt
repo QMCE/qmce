@@ -7,14 +7,14 @@ import com.tencent.qqnt.kernel.api.impl.MsgService
 import com.tencent.qqnt.kernel.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsAndStatusRecord
+import com.tencent.qqnt.kernel.nativeinterface.IClickInlineKeyboardButtonCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetAioFirstViewLatestMsgCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMsgWithStatusCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMultiMsgCallback
-import com.tencent.qqnt.kernel.nativeinterface.IClickInlineKeyboardButtonCallback
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgListener
 import com.tencent.qqnt.kernel.nativeinterface.IMsgOperateCallback
-import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
+import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgAttributeInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
@@ -103,14 +103,17 @@ class ChatRepository {
                     (args?.getOrNull(0) as? ArrayList<MsgRecord>)?.let(listener::onReceived)
                     null
                 }
+
                 "onAddSendMsg" -> {
                     (args?.getOrNull(0) as? MsgRecord)?.let(listener::onAddedSendMessage)
                     null
                 }
+
                 "onRichMediaDownloadComplete" -> {
                     (args?.getOrNull(0) as? FileTransNotifyInfo)?.let(listener::onRichMediaDownloadComplete)
                     null
                 }
+
                 "hashCode" -> System.identityHashCode(proxyInstance)
                 "equals" -> proxyInstance === args?.getOrNull(0)
                 "toString" -> "QMCE-ChatRepositoryListener"

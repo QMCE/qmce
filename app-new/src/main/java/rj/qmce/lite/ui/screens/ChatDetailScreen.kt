@@ -206,6 +206,7 @@ fun ChatDetailScreen(
     var videoPlayer by remember(peerUid, chatType) { mutableStateOf<VideoPlayback?>(null) }
     var selectedActionMessage by remember(peerUid, chatType) { mutableStateOf<ChatDetailViewModel.UiMsg?>(null) }
     var selectedFile by remember(peerUid, chatType) { mutableStateOf<FileDetailTarget?>(null) }
+    var selectedTextContent by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var pendingCallRecordMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     var pendingReplyNavigation by remember(peerUid, chatType) {
         mutableStateOf<ChatDetailViewModel.MessageContent.Reply?>(null)
@@ -638,6 +639,12 @@ fun ChatDetailScreen(
                 onDismiss = { pendingCallRecordMode = null },
             )
         }
+        selectedTextContent?.let { text ->
+            MessageTextReaderScreen(
+                text = text,
+                onDismiss = { selectedTextContent = null },
+            )
+        }
         selectedActionMessage?.let { message ->
             val actionContext = remember(message, messages) {
                 val lastMsg = messages.lastOrNull()
@@ -656,6 +663,8 @@ fun ChatDetailScreen(
                     selectedActionMessage = null
                     when (action.id) {
                         "copy" -> copyMessageText(context, MessageActionResolver.copyableText(message))
+                        "read_text" -> selectedTextContent = MessageActionResolver.copyableText(message)
+                        "share_text" -> shareMessageText(context, MessageActionResolver.copyableText(message))
                         "view_media" -> message.firstLocalMediaFile()?.let { file ->
                             viewerMedia = ViewerMedia("${message.stableKey}:action", file, "图片")
                         } ?: Toast.makeText(context, "图片尚未缓存", Toast.LENGTH_SHORT).show()

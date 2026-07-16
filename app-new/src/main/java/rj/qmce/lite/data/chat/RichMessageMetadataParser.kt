@@ -1,10 +1,10 @@
 package rj.qmce.lite.data.chat
 
 import android.util.Xml
-import java.io.StringReader
 import org.json.JSONArray
 import org.json.JSONObject
 import org.xmlpull.v1.XmlPullParser
+import java.io.StringReader
 
 object RichMessageMetadataParser {
 
@@ -82,9 +82,11 @@ object RichMessageMetadataParser {
                     if (key.lowercase() in wanted && nested is String && nested.isNotBlank()) nested
                     else visit(nested, depth + 1)
                 }
+
                 is JSONArray -> (0 until value.length()).firstNotNullOfOrNull { index ->
                     visit(value.opt(index), depth + 1)
                 }
+
                 else -> null
             }
         }

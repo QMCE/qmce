@@ -7,7 +7,8 @@ object LoginPrefs {
     private const val PREFS_NAME = "qmce_login"
     private const val KEY_ACCOUNT = "account"
 
-    private fun prefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun loadAccount(context: Context): SimpleAccount? {
         val stored = prefs(context).getString(KEY_ACCOUNT, null) ?: return null

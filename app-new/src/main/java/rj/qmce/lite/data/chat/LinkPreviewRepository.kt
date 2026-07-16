@@ -78,7 +78,12 @@ object LinkPreviewRepository {
             val responseCode = connection.responseCode
             check(responseCode in 200..299) { "HTTP $responseCode" }
             val contentType = connection.contentType.orEmpty()
-            check(contentType.contains("text/html", ignoreCase = true) || contentType.contains("xhtml", ignoreCase = true)) {
+            check(
+                contentType.contains(
+                    "text/html",
+                    ignoreCase = true
+                ) || contentType.contains("xhtml", ignoreCase = true)
+            ) {
                 "非网页内容"
             }
             val html = connection.inputStream.use { input ->
@@ -88,7 +93,8 @@ object LinkPreviewRepository {
             val title = html.metaContent("og:title", "twitter:title")
                 ?: html.titleContent()
                 ?: finalUrl
-            val description = html.metaContent("og:description", "twitter:description", "description")
+            val description =
+                html.metaContent("og:description", "twitter:description", "description")
             val imageUrl = html.metaContent("og:image", "twitter:image")
                 ?.let { image -> runCatching { URL(URL(finalUrl), image).toString() }.getOrNull() }
             return LinkPreviewData(
@@ -120,7 +126,8 @@ object LinkPreviewRepository {
         return META_TAG_REGEX.findAll(this).firstNotNullOfOrNull { match ->
             val tag = match.value
             val name = tag.attribute("property") ?: tag.attribute("name")
-            if (name?.lowercase() in expected) tag.attribute("content")?.takeIf(String::isNotBlank) else null
+            if (name?.lowercase() in expected) tag.attribute("content")
+                ?.takeIf(String::isNotBlank) else null
         }
     }
 
@@ -150,12 +157,16 @@ object LinkPreviewRepository {
             .replace("&quot;", "\"")
             .replace("&#39;", "'")
 
-    private fun isSupportedUrl(url: String): Boolean = url.startsWith("https://") || url.startsWith("http://")
+    private fun isSupportedUrl(url: String): Boolean =
+        url.startsWith("https://") || url.startsWith("http://")
 
     private val URL_REGEX = Regex("https?://[^\\s<>\\\"]+")
     private val META_TAG_REGEX = Regex("<meta\\b[^>]*>", RegexOption.IGNORE_CASE)
     private const val ATTRIBUTE_TEMPLATE = "\\b%NAME%\\s*=\\s*([\\\"'])(.*?)\\1"
-    private val TITLE_REGEX = Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val TITLE_REGEX = Regex(
+        "<title[^>]*>(.*?)</title>",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    )
     private val HTML_TAG_REGEX = Regex("<[^>]+>")
     private val WHITESPACE_REGEX = Regex("\\s+")
     private const val MAX_TITLE_LENGTH = 120

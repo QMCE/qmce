@@ -5,11 +5,11 @@ import android.os.Looper
 import android.util.Log
 import com.tencent.qqnt.kernel.api.IProfileService
 import com.tencent.qqnt.kernel.api.impl.ProfileService
+import com.tencent.qqnt.kernel.nativeinterface.CoreInfo
 import com.tencent.qqnt.kernel.nativeinterface.IKernelProfileListener
 import com.tencent.qqnt.kernel.nativeinterface.StatusInfo
-import com.tencent.qqnt.kernel.nativeinterface.UserSimpleInfo
-import com.tencent.qqnt.kernel.nativeinterface.CoreInfo
 import com.tencent.qqnt.kernel.nativeinterface.UserDetailInfo
+import com.tencent.qqnt.kernel.nativeinterface.UserSimpleInfo
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -27,11 +27,18 @@ object OnlineStatus {
     private val observers = CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    @Volatile private var started = false
-    @Volatile private var selfUid: String = ""
+    @Volatile
+    private var started = false
+    @Volatile
+    private var selfUid: String = ""
 
-    fun addObserver(cb: () -> Unit) { if (cb !in observers) observers.add(cb) }
-    fun removeObserver(cb: () -> Unit) { observers.remove(cb) }
+    fun addObserver(cb: () -> Unit) {
+        if (cb !in observers) observers.add(cb)
+    }
+
+    fun removeObserver(cb: () -> Unit) {
+        observers.remove(cb)
+    }
 
     /** 已有缓存记录（区分"未初始化"和"离线"） */
     fun known(): Boolean = selfUid.isNotEmpty() && cache.containsKey(selfUid)
@@ -78,11 +85,15 @@ object OnlineStatus {
 
     private object Listener : IKernelProfileListener {
         override fun onStatusUpdate(map: HashMap<String, StatusInfo>?) {
-            if (!map.isNullOrEmpty()) { merge(map); notifyObservers() }
+            if (!map.isNullOrEmpty()) {
+                merge(map); notifyObservers()
+            }
         }
 
         override fun onStatusAsyncFieldUpdate(map: HashMap<String, StatusInfo>?) {
-            if (!map.isNullOrEmpty()) { merge(map); notifyObservers() }
+            if (!map.isNullOrEmpty()) {
+                merge(map); notifyObservers()
+            }
         }
 
         override fun onSelfStatusChanged(statusInfo: StatusInfo?) {

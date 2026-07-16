@@ -4,7 +4,8 @@ import com.tencent.watch.aio_impl.ui.cell.ptt.AIOPttAudioPlayerManager;
 import com.tencent.watch.aio_impl.ui.cell.ptt.AIOPttAudioPlayerStateListener;
 
 public final class OfficialPttPlayerBridge {
-    private OfficialPttPlayerBridge() {}
+    private OfficialPttPlayerBridge() {
+    }
 
     public static void register(long messageId, String path, AIOPttAudioPlayerStateListener listener) {
         AIOPttAudioPlayerManager.a.k().put(

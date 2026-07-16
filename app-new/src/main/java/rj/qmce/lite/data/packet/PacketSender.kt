@@ -6,7 +6,6 @@ import com.tencent.mobileqq.pb.ByteStringMicro
 import com.tencent.qphone.base.remote.ToServiceMsg
 import com.tencent.qqnt.kernel.nativeinterface.ArkElement
 import com.tencent.qqnt.kernel.nativeinterface.Contact
-import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import mqq.app.AppRuntime
 import rj.qmce.lite.QmceApplication
@@ -55,7 +54,10 @@ class PacketSender(
             message.addAttribute("req_pb_protocol_flag", true)
             message.extraData.putBoolean("req_pb_protocol_flag", true)
             app.sendToService(message)
-            Log.d(TAG, "packet: queued OIDB command=$normalizedCommand id=$commandId bytes=${body.size}")
+            Log.d(
+                TAG,
+                "packet: queued OIDB command=$normalizedCommand id=$commandId bytes=${body.size}"
+            )
             PacketResult.Queued("OIDB", body.size)
         }.getOrElse { error ->
             Log.w(TAG, "packet: send OIDB failed", error)
@@ -92,7 +94,10 @@ class PacketSender(
             ) {
                 error("消息服务不可用")
             }
-            Log.d(TAG, "packet: queued Ark target=${target.peerUid} bytes=${arkJson.toByteArray().size}")
+            Log.d(
+                TAG,
+                "packet: queued Ark target=${target.peerUid} bytes=${arkJson.toByteArray().size}"
+            )
             PacketResult.Queued("Ark", arkJson.toByteArray().size)
         }.getOrElse { error ->
             Log.w(TAG, "packet: send Ark failed", error)
