@@ -2,10 +2,11 @@ package rj.qmce.lite.viewmodel
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.Handler
+import android.os.Looper
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.util.Xml
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.tencent.qqnt.kernel.nativeinterface.Contact
@@ -25,20 +26,21 @@ import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.chat.OfficialPttPlayer
 import rj.qmce.lite.data.chat.ChatRepository
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.data.chat.LinkPreviewRepository
+import rj.qmce.lite.data.chat.LinkPreviewState
+import rj.qmce.lite.data.chat.LocalMediaResolver
 import rj.qmce.lite.data.chat.PttMediaRef
 import rj.qmce.lite.data.chat.RichMediaKey
+import rj.qmce.lite.data.chat.RichMediaRequestState
 import rj.qmce.lite.data.chat.RichMediaRepository
+import rj.qmce.lite.data.chat.RichMessageMetadataParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import mqq.app.AppRuntime
 import java.io.File
-import java.io.StringReader
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
-import org.json.JSONArray
-import org.json.JSONObject
-import org.xmlpull.v1.XmlPullParser
 
 class ChatDetailViewModel : ViewModel() {
 
@@ -46,6 +48,7 @@ class ChatDetailViewModel : ViewModel() {
         private const val TAG = "QMCE"
         private const val LOAD_COUNT = 30
         private const val HISTORY_PAGE_COUNT = 10
+        private const val REPLY_SOURCE_TIMEOUT_MS = 15_000L
     }
 
     sealed interface MessageContent {
@@ -59,6 +62,7 @@ class ChatDetailViewModel : ViewModel() {
             val height: Int,
             val transferStatus: Int?,
             val isLoading: Boolean,
+            val loadError: String?,
         ) : MessageContent
         data class Face(
             val text: String,
@@ -113,6 +117,8 @@ class ChatDetailViewModel : ViewModel() {
             val pictureHeight: Int?,
             val thumbnailPaths: List<String>,
             val videoDurationSeconds: Int?,
+            val isDownloading: Boolean,
+            val downloadError: String?,
         ) : MessageContent
         data class Reply(
             val senderName: String,
@@ -126,6 +132,7 @@ class ChatDetailViewModel : ViewModel() {
             val description: String,
             val tag: String?,
             val previewUrl: String?,
+            val actionUrl: String? = null,
         ) : MessageContent
         data class StructCard(
             val title: String,
@@ -170,6 +177,10 @@ class ChatDetailViewModel : ViewModel() {
             val unsupportTips: String?,
         )
         data class Markdown(val value: String) : MessageContent
+        data class LinkPreview(
+            val url: String,
+            val state: LinkPreviewState,
+        ) : MessageContent
         data class CallRecord(
             val text: String,
             val type: Int,
@@ -282,6 +293,8 @@ class ChatDetailViewModel : ViewModel() {
     val olderPageVersion: StateFlow<Long> = _olderPageVersion
     private val chatSession = java.util.concurrent.atomic.AtomicLong(0)
     private val forwardDetailRequest = java.util.concurrent.atomic.AtomicLong(0)
+    private val replySourceRequest = java.util.concurrent.atomic.AtomicLong(0)
+    private val replyTimeoutHandler = Handler(Looper.getMainLooper())
     private val forwardDetailBackStack = ArrayDeque<ForwardDetailState.Ready>()
     private val chatRepository = ChatRepository()
     private var contact: Contact? = null
@@ -299,11 +312,14 @@ class ChatDetailViewModel : ViewModel() {
 
     init {
         RichMediaRepository.setInvalidationListener { emitMessages() }
+        LinkPreviewRepository.setInvalidationListener { emitMessages() }
     }
 
     fun openChat(runtime: AppRuntime?, peerUid: String, peerUin: String, chatType: Int, name: String, myUin: String = "") {
         val session = chatSession.incrementAndGet()
         forwardDetailRequest.incrementAndGet()
+        replySourceRequest.incrementAndGet()
+        replyTimeoutHandler.removeCallbacksAndMessages(null)
         forwardDetailBackStack.clear()
         OfficialPttPlayer.stopAndRelease()
         chatRepository.close()
@@ -674,19 +690,15 @@ class ChatDetailViewModel : ViewModel() {
     private fun seventyPercent(): Int = 70
 
     fun requestFileDownload(message: UiMsg, content: MessageContent.File): Boolean {
-        if (content.invalidState != null && content.invalidState != 0) {
-            _statusText.value = "文件不可用"
-            return false
-        }
-        val requested = RichMediaRepository.requestFile(
-            messageId = message.msgId,
-            peerUid = message.peerUid,
-            chatType = message.chatType,
-            elementId = content.elementId,
-            filePath = content.path,
-        )
-        _statusText.value = if (requested) "正在下载：${content.name}" else "文件下载请求失败"
-        return requested
+        val unavailableReason = fileDownloadUnavailableReason(content) ?: return false
+        _statusText.value = unavailableReason
+        return false
+    }
+
+    fun fileDownloadUnavailableReason(content: MessageContent.File): String? = when {
+        content.invalidState != null && content.invalidState != 0 -> "文件不可用"
+        LocalMediaResolver.resolveFile(content.path) != null -> null
+        else -> RichMediaRepository.fileDownloadUnavailableReason()
     }
 
     private fun md5File(file: File): String {
@@ -1197,9 +1209,12 @@ class ChatDetailViewModel : ViewModel() {
     override fun onCleared() {
         chatSession.incrementAndGet()
         forwardDetailRequest.incrementAndGet()
+        replySourceRequest.incrementAndGet()
+        replyTimeoutHandler.removeCallbacksAndMessages(null)
         OfficialPttPlayer.stopAndRelease()
         chatRepository.close()
         RichMediaRepository.setInvalidationListener(null)
+        LinkPreviewRepository.setInvalidationListener(null)
         super.onCleared()
     }
 
@@ -1272,6 +1287,9 @@ class ChatDetailViewModel : ViewModel() {
                     )
                 } ?: MessageContent.Unsupported(element.elementType)
                 element.picElement != null -> element.picElement?.let { picture ->
+                    val requestState = RichMediaRepository.requestState(
+                        RichMediaKey(rec.msgId, element.elementId),
+                    )
                     MessageContent.Image(
                         sourcePath = picture.sourcePath?.takeIf { it.isNotBlank() },
                         elementId = element.elementId,
@@ -1287,7 +1305,8 @@ class ChatDetailViewModel : ViewModel() {
                         width = picture.picWidth,
                         height = picture.picHeight,
                         transferStatus = picture.transferStatus,
-                        isLoading = RichMediaRepository.isPending(RichMediaKey(rec.msgId, element.elementId)),
+                        isLoading = requestState is RichMediaRequestState.Loading,
+                        loadError = (requestState as? RichMediaRequestState.Failed)?.message,
                     )
                 } ?: MessageContent.Unsupported(element.elementType)
                 element.marketFaceElement != null -> element.marketFaceElement?.let { face ->
@@ -1315,6 +1334,9 @@ class ChatDetailViewModel : ViewModel() {
                     )
                 } ?: MessageContent.Unsupported(element.elementType)
                 element.fileElement != null -> element.fileElement?.let { file ->
+                    val requestState = RichMediaRepository.requestState(
+                        RichMediaKey(rec.msgId, element.elementId),
+                    )
                     MessageContent.File(
                         elementId = element.elementId,
                         name = file.fileName?.takeIf { it.isNotBlank() } ?: "未命名文件",
@@ -1335,6 +1357,8 @@ class ChatDetailViewModel : ViewModel() {
                         pictureHeight = file.picHeight,
                         thumbnailPaths = file.picThumbPath?.values?.filter { it.isNotBlank() }.orEmpty(),
                         videoDurationSeconds = file.videoDuration,
+                        isDownloading = requestState is RichMediaRequestState.Loading,
+                        downloadError = (requestState as? RichMediaRequestState.Failed)?.message,
                     )
                 } ?: MessageContent.Unsupported(element.elementType)
                 element.pttElement != null -> element.pttElement?.let { voice ->
@@ -1419,6 +1443,17 @@ class ChatDetailViewModel : ViewModel() {
             }
             if (content !is MessageContent.Text || content.value.isNotEmpty()) add(content)
         }
+        val previewUrl = asSequence()
+            .filterIsInstance<MessageContent.Text>()
+            .mapNotNull { content -> LinkPreviewRepository.firstSupportedUrl(content.value) }
+            .firstOrNull()
+            ?: asSequence()
+                .filterIsInstance<MessageContent.Markdown>()
+                .mapNotNull { content -> LinkPreviewRepository.firstSupportedUrl(content.value) }
+                .firstOrNull()
+        if (previewUrl != null) {
+            add(MessageContent.LinkPreview(previewUrl, LinkPreviewRepository.state(previewUrl)))
+        }
         if (isEmpty()) add(MessageContent.Unsupported(0))
     }
 
@@ -1442,29 +1477,26 @@ class ChatDetailViewModel : ViewModel() {
             is MessageContent.Calendar -> content.title
             is MessageContent.InlineKeyboard -> "[机器人消息]"
             is MessageContent.Markdown -> content.value
+            is MessageContent.LinkPreview -> ""
             is MessageContent.CallRecord -> content.text
             is MessageContent.Unsupported -> content.detail?.let { "[$it]" } ?: "[暂不支持的消息]"
         }
     }.ifEmpty { "..." }
 
     private fun extractArkCard(ark: com.tencent.qqnt.kernel.nativeinterface.ArkElement): MessageContent.Card {
-        val raw = ark.bytesData.orEmpty()
-        val json = runCatching { JSONObject(raw) }.getOrNull()
-        val title = json?.findFirstText("title", "prompt", "name", "app")
-            ?: "分享卡片"
-        val description = json?.findFirstText("desc", "description", "text", "content")
-            ?: ""
-        val tag = json?.findFirstText("tag", "app")
-        val previewUrl = json?.findFirstText("preview", "cover", "image", "thumb")
-            ?.takeIf { it.startsWith("http://") || it.startsWith("https://") }
-        return MessageContent.Card(title, description, tag, previewUrl)
+        val metadata = RichMessageMetadataParser.parseArkCard(ark.bytesData)
+        return MessageContent.Card(
+            title = metadata.title,
+            description = metadata.description,
+            tag = metadata.tag,
+            previewUrl = metadata.previewUrl,
+            actionUrl = metadata.actionUrl,
+        )
     }
 
     private fun extractStructCard(xmlContent: String): MessageContent.StructCard {
-        val fields = xmlContent.readXmlFields(setOf("title", "brief", "groupname", "groupcode"))
-        val title = fields["title"] ?: fields["groupname"] ?: "群邀请"
-        val description = fields["brief"].orEmpty()
-        return MessageContent.StructCard(title, description, fields["groupcode"])
+        val metadata = RichMessageMetadataParser.parseStructCard(xmlContent)
+        return MessageContent.StructCard(metadata.title, metadata.description, metadata.groupCode)
     }
 
     private fun extractWalletCard(
@@ -1628,16 +1660,10 @@ class ChatDetailViewModel : ViewModel() {
         rootMessageId: Long,
         rawMessageId: Long,
     ): MessageContent.Forward {
-        val fields = xmlContent.readXmlFields(setOf("title", "summary", "brief", "item"))
-        val title = fields["title"] ?: "聊天记录"
-        val preview = listOfNotNull(fields["summary"], fields["brief"], fields["item"])
-            .flatMap { it.lines() }
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-            .take(3)
+        val metadata = RichMessageMetadataParser.parseForward(xmlContent)
         return MessageContent.Forward(
-            title = title,
-            preview = preview,
+            title = metadata.title,
+            preview = metadata.preview,
             resourceId = resourceId?.takeIf { it.isNotBlank() },
             rootMessageId = rootMessageId,
             rawMessageId = rawMessageId,
@@ -1650,50 +1676,7 @@ class ChatDetailViewModel : ViewModel() {
             ?: gray.jsonGrayTipElement?.jsonStr
             ?: gray.xmlElement?.content
             ?: gray.localGrayTipElement?.extraJson
-        return direct
-            ?.let { raw ->
-                raw.readXmlFields(setOf("title", "brief", "summary"))["title"]
-                    ?: raw.readXmlFields(setOf("title", "brief", "summary"))["brief"]
-                    ?: raw.take(140).replace(Regex("\\s+"), " ")
-            }
-            ?.takeIf { it.isNotBlank() }
-            ?: "系统消息"
-    }
-
-    private fun JSONObject.findFirstText(vararg keys: String): String? {
-        val wanted = keys.map(String::lowercase).toSet()
-        fun visit(value: Any?, depth: Int): String? {
-            if (depth > 5 || value == null) return null
-            return when (value) {
-                is JSONObject -> value.keys().asSequence().firstNotNullOfOrNull { key ->
-                    val nested = value.opt(key)
-                    if (key.lowercase() in wanted && nested is String && nested.isNotBlank()) nested
-                    else visit(nested, depth + 1)
-                }
-                is JSONArray -> (0 until value.length()).firstNotNullOfOrNull { index ->
-                    visit(value.opt(index), depth + 1)
-                }
-                else -> null
-            }
-        }
-        return visit(this, 0)?.trim()?.take(180)
-    }
-
-    private fun String.readXmlFields(names: Set<String>): Map<String, String> {
-        if (isBlank() || !trimStart().startsWith("<")) return emptyMap()
-        return runCatching {
-            val fields = LinkedHashMap<String, String>()
-            val parser = Xml.newPullParser().apply { setInput(StringReader(this@readXmlFields)) }
-            var event = parser.eventType
-            while (event != XmlPullParser.END_DOCUMENT) {
-                if (event == XmlPullParser.START_TAG && parser.name in names) {
-                    val value = parser.nextText().trim()
-                    if (value.isNotEmpty()) fields.putIfAbsent(parser.name, value)
-                }
-                event = parser.next()
-            }
-            fields
-        }.getOrDefault(emptyMap())
+        return RichMessageMetadataParser.parseSystemTip(direct)
     }
 
     fun loadOlderMessages(): Boolean {
@@ -1734,9 +1717,7 @@ class ChatDetailViewModel : ViewModel() {
 
     fun ensureImageCached(message: UiMsg, image: MessageContent.Image) {
         val hasLocalFile = (image.localPaths + image.thumbnailPaths + listOfNotNull(image.sourcePath))
-            .asSequence()
-            .map { File(it.removePrefix("file://")) }
-            .any(File::isFile)
+            .let(LocalMediaResolver::hasAvailableFile)
         if (hasLocalFile || image.elementId <= 0L) return
         RichMediaRepository.requestImageThumbnail(
             messageId = message.msgId,
@@ -1802,6 +1783,17 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun loadReplySource(reply: MessageContent.Reply) {
+        val currentState = _replySourceState.value
+        if (
+            currentState is ReplySourceState.Loading &&
+                currentState.messageId == reply.targetMessageId &&
+                currentState.sequence == reply.targetSequence
+        ) {
+            return
+        }
+
+        val requestId = replySourceRequest.incrementAndGet()
+        replyTimeoutHandler.removeCallbacksAndMessages(null)
         val expectedContact = contact ?: run {
             _replySourceState.value = ReplySourceState.Error(
                 reply.targetMessageId,
@@ -1821,12 +1813,22 @@ class ChatDetailViewModel : ViewModel() {
 
         val session = chatSession.get()
         _replySourceState.value = ReplySourceState.Loading(reply.targetMessageId, reply.targetSequence)
+        replyTimeoutHandler.postDelayed({
+            if (isCurrentSession(session) && replySourceRequest.get() == requestId) {
+                _replySourceState.value = ReplySourceState.Error(
+                    reply.targetMessageId,
+                    reply.targetSequence,
+                    "原消息加载超时",
+                )
+            }
+        }, REPLY_SOURCE_TIMEOUT_MS)
         val requested = chatRepository.loadReplySource(
             contact = expectedContact,
             messageId = reply.targetMessageId,
             messageSequence = reply.targetSequence ?: 0L,
         ) { errorCode, errMsg, records ->
-            if (!isCurrentSession(session)) return@loadReplySource
+            if (!isCurrentSession(session) || replySourceRequest.get() != requestId) return@loadReplySource
+            replyTimeoutHandler.removeCallbacksAndMessages(null)
             val added = if (errorCode == 0 && records != null) {
                 mergeMessages(records, expectedContact)
             } else {
@@ -1843,7 +1845,8 @@ class ChatDetailViewModel : ViewModel() {
                 )
             }
         }
-        if (!requested && isCurrentSession(session)) {
+        if (!requested && isCurrentSession(session) && replySourceRequest.get() == requestId) {
+            replyTimeoutHandler.removeCallbacksAndMessages(null)
             _replySourceState.value = ReplySourceState.Error(
                 reply.targetMessageId,
                 reply.targetSequence,
@@ -1990,6 +1993,8 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun clearReplySourceState() {
+        replySourceRequest.incrementAndGet()
+        replyTimeoutHandler.removeCallbacksAndMessages(null)
         _replySourceState.value = ReplySourceState.Idle
     }
 

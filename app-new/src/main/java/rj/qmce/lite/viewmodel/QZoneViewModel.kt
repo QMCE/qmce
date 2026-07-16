@@ -1,31 +1,13 @@
 package rj.qmce.lite.viewmodel
 
 import android.content.Context
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.tencent.watch.qzone_impl.event.Event
-import com.tencent.watch.qzone_impl.event.EventCenter
-import com.tencent.watch.qzone_impl.event.EventSource
-import com.tencent.watch.qzone_impl.event.IObserver
-import com.tencent.watch.qzone_impl.common.QZoneBusinessLooper
-import com.tencent.watch.qzone_impl.common.task.QZoneTask
-import com.tencent.watch.qzone_impl.feed.ServiceCallbackWrapper
-import com.tencent.watch.qzone_impl.feed.QZoneFeedService
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
-import com.tencent.watch.qzone_impl.protocol.request.QZoneAddCommentRequest
-import com.tencent.watch.qzone_impl.publish.business.model.ImageInfo
-import com.tencent.watch.qzone_impl.publish.business.model.MediaWrapper
-import com.tencent.watch.qzone_impl.publish.business.model.QzoneShuoShuoParams
-import com.tencent.watch.qzone_impl.publish.business.publishqueue.QZonePublishQueue
-import com.tencent.watch.qzone_impl.publish.business.task.QZoneLikeFeedTask
-import com.tencent.watch.qzone_impl.publish.business.task.QZoneUploadShuoShuoTask
-import com.tencent.watch.qzone_impl.service.QZoneWriteOperationService
-import com.tencent.watch.qzone_impl.utils.UinUtils
+import rj.qmce.lite.data.qzone.QZoneFeedRepository
+import rj.qmce.lite.data.qzone.QZoneWriteRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,9 +16,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
-import com.tencent.mobileqq.activity.photo.LocalMediaInfo
-import java.io.File
-import java.lang.ref.WeakReference
 import java.util.UUID
 
 class QZoneViewModel : ViewModel() {
@@ -97,9 +76,6 @@ class QZoneViewModel : ViewModel() {
     private val feedLoadLock = Any()
     private var feedLoadGeneration = 0L
     private var activeFeedLoad: Job? = null
-    private var feedObserver: IObserver? = null
-    private var observedFeedService: QZoneFeedService? = null
-    private var svcRef: QZoneFeedService? = null
     private var loadingMore = false
     private var lastLoadMoreTime = 0L
     private var noMoreData = false
@@ -108,6 +84,8 @@ class QZoneViewModel : ViewModel() {
     private var loadMoreStartTime = 0L
     private val feedDataById = HashMap<String, BusinessFeedData>()
     private var lastSubmittedFingerprint = ""
+    private val qZoneFeedRepository = QZoneFeedRepository()
+    private val qZoneWriteRepository = QZoneWriteRepository()
 
     fun init(rt: AppRuntime?) {
         runtime = rt
@@ -127,10 +105,7 @@ class QZoneViewModel : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = "正在发表动态…"
-            runCatching {
-                val params = QzoneShuoShuoParams().apply { a = content }
-                QZoneWriteOperationService.h().i(params)
-            }.onSuccess {
+            qZoneWriteRepository.publishText(content).onSuccess {
                 _operationStatus.value = "动态已发送"
                 delay(1200)
                 loadFeeds(forceRefresh = true)
@@ -153,22 +128,7 @@ class QZoneViewModel : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = "正在准备图片…"
-            runCatching {
-                val files = uris.mapIndexed { index, uri -> copyUriToQZoneFile(context, uri, index) }
-                val params = QzoneShuoShuoParams().apply {
-                    a = content
-                    b = files.map { it.absolutePath }
-                    c = ArrayList(files.map { toLocalMediaInfo(it) })
-                    e = ArrayList(files.map {
-                        MediaWrapper(ImageInfo(it.absolutePath).apply { mDescription = content })
-                    })
-                }
-                val task = QZoneUploadShuoShuoTask(6, 1, params).apply {
-                    uploadEntrance = 0
-                    refer = null
-                }
-                QZonePublishQueue.e().b(task)
-            }.onSuccess {
+            qZoneWriteRepository.publishImages(context, content, uris).onSuccess {
                 _operationStatus.value = "动态已发送"
                 delay(2500)
                 loadFeeds(forceRefresh = true)
@@ -192,27 +152,7 @@ class QZoneViewModel : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = "正在发送评论…"
-            runCatching {
-                val feedCommInfo = data.feedCommInfo
-                val ownerUin = runCatching { data.user?.uin }.getOrNull() ?: data.owner_uin
-                val cellId = runCatching { data.idInfo?.cellId }.getOrNull().orEmpty()
-                val busiParam = runCatching { data.operationInfo?.busiParam }.getOrNull()
-                val request = QZoneAddCommentRequest(
-                    feedCommInfo.appid,
-                    ownerUin,
-                    cellId,
-                    content,
-                    null,
-                    false,
-                    busiParam,
-                )
-                val task = QZoneTask(request, null, QZoneWriteOperationService.h(), 0)
-                task.addParameter("ugckey", feedCommInfo.ugckey)
-                task.addParameter("feedkey", feedCommInfo.feedskey)
-                task.addParameter("uniKey", UUID.randomUUID().toString())
-                task.addParameter("clickScene", 0)
-                QZoneBusinessLooper.a().c(task)
-            }.onSuccess {
+            qZoneWriteRepository.comment(data, content).onSuccess {
                 _feeds.value = _feeds.value.map { item ->
                     if (item.feedId == feedId) {
                         item.copy(
@@ -252,23 +192,7 @@ class QZoneViewModel : ViewModel() {
         }
         viewModelScope.launch(Dispatchers.IO) {
             _operationStatus.value = if (newLiked) "正在点赞…" else "正在取消点赞…"
-            runCatching {
-                val feedCommInfo = data.feedCommInfo
-                val params = QZoneWriteOperationService.LikeParams().apply {
-                    a = feedCommInfo.ugckey
-                    b = feedCommInfo.curlikekey
-                    c = feedCommInfo.orglikekey
-                    d = newLiked
-                    e = feedCommInfo.appid
-                    f = data.operationInfo?.busiParam?.let { HashMap(it) }
-                    g = -1
-                    h = data
-                    i = data.feedType
-                }
-                val task = QZoneLikeFeedTask(null, params, 1)
-                runCatching { task.javaClass.getField("clientKey").set(task, feedCommInfo.clientkey) }
-                QZonePublishQueue.e().b(task)
-            }.onSuccess {
+            qZoneWriteRepository.updateLike(data, newLiked).onSuccess {
                 _operationStatus.value = if (newLiked) "已点赞" else "已取消点赞"
             }.onFailure { error ->
                 like.isLiked = oldLiked
@@ -282,36 +206,9 @@ class QZoneViewModel : ViewModel() {
         }
     }
 
-    private fun copyUriToQZoneFile(context: Context, uri: Uri, index: Int): File {
-        val directory = File(
-            context.getExternalFilesDir("qzone_photo") ?: context.cacheDir,
-            "publish",
-        ).apply { mkdirs() }
-        val target = File(directory, "qzone_${System.currentTimeMillis()}_${index}.jpg")
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            target.outputStream().use { output -> input.copyTo(output) }
-        } ?: error("无法读取图片")
-        if (!target.isFile || target.length() == 0L) error("图片为空")
-        return target
-    }
-
-    private fun toLocalMediaInfo(file: File): LocalMediaInfo = LocalMediaInfo().apply {
-        c = file.absolutePath
-        C = 0
-        runCatching {
-            BitmapFactory.Options().also { options ->
-                options.inJustDecodeBounds = true
-                BitmapFactory.decodeFile(file.absolutePath, options)
-                E = options.outWidth
-                F = options.outHeight
-            }
-        }
-    }
-
     fun loadMore() {
         if (loadingMore || noMoreData) return
         if (System.currentTimeMillis() - lastLoadMoreTime < 3000) return
-        val svc = svcRef ?: return
         loadingMore = true
         _loadingMore.value = true
         lastLoadMoreTime = System.currentTimeMillis()
@@ -320,29 +217,16 @@ class QZoneViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val prevSize = _feeds.value.size
-                svc.n(Handler(Looper.getMainLooper()))
-                var fresh: List<BusinessFeedData>? = null
-                var lastFingerprint = feedFingerprint(svc.h?.n().orEmpty())
-                for (attempt in 0 until 30) {
-                    delay(400)
-                    val candidate = svc.h?.n()
-                    if (!candidate.isNullOrEmpty()) {
-                        fresh = candidate
-                        val fingerprint = feedFingerprint(candidate)
-                        if (fingerprint != lastFingerprint || candidate.size > prevSize) {
-                            processFeeds(candidate)
-                            lastFingerprint = fingerprint
-                            if (candidate.size > prevSize) break
-                        }
-                    }
+                val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds) ?: run {
+                    Log.w(TAG, "loadMore ignored: feed service unavailable")
+                    return@launch
                 }
-                val newSize = fresh?.size ?: 0
                 val elapsed = System.currentTimeMillis() - loadMoreStartTime
                 if (elapsed < 500) Thread.sleep(500 - elapsed)
                 loadingMore = false
                 _loadingMore.value = false
                 Log.d(TAG, "loadMore done: prev=$prevSize, now=$newSize")
-                if (!fresh.isNullOrEmpty() && newSize > prevSize) {
+                if (newSize > prevSize) {
                     noMoreData = false
                     Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
                 } else {
@@ -374,55 +258,16 @@ class QZoneViewModel : ViewModel() {
 
         val job = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val svc = QZoneFeedService.h()
-                svcRef = svc
-                if (svc == null) {
-                    _statusText.value = "QZoneFeedService 不可用"
-                    finishFeedLoad(generation, false)
-                    return@launch
-                }
-
-                // 初始化 UIN
-                val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
-                svc.m(uin, uin)
-                Log.d(TAG, "QZoneFeedService init OK, uin=$uin")
-
-                // 注册事件监听
-                registerFeedObserver(svc)
-
-                // 先检查缓存
-                val feedMgr = svc.h
-                if (feedMgr != null) {
-                    val cached = feedMgr.n()
-                    if (!cached.isNullOrEmpty()) {
-                        Log.d(TAG, "got ${cached.size} cached feeds")
-                        processFeeds(cached, finishLoading = false)
+                when (val result = qZoneFeedRepository.refresh(
+                    isCurrent = { isCurrentFeedLoad(generation) },
+                    onFeeds = ::processFeeds,
+                )) {
+                    QZoneFeedRepository.RefreshResult.Success -> finishFeedLoad(generation, true)
+                    QZoneFeedRepository.RefreshResult.Cancelled -> Unit
+                    is QZoneFeedRepository.RefreshResult.Unavailable -> {
+                        _statusText.value = result.reason
+                        finishFeedLoad(generation, false)
                     }
-
-                    // 触发网络加载
-                    val wrapper = ServiceCallbackWrapper()
-                    wrapper.a = WeakReference(Handler(Looper.getMainLooper()))
-                    feedMgr.b(0, wrapper, false)
-                    Log.d(TAG, "triggered feed load")
-
-                    var lastFingerprint = feedFingerprint(cached.orEmpty())
-                    repeat(30) {
-                        delay(400)
-                        if (!isCurrentFeedLoad(generation)) return@launch
-                        val fresh = feedMgr.n()
-                        if (!fresh.isNullOrEmpty()) {
-                            val fingerprint = feedFingerprint(fresh)
-                            if (fingerprint != lastFingerprint) {
-                                processFeeds(fresh)
-                                lastFingerprint = fingerprint
-                            }
-                        }
-                    }
-                    finishFeedLoad(generation, true)
-                } else {
-                    Log.w(TAG, "IFeedManager is null")
-                    _statusText.value = "FeedManager 不可用"
-                    finishFeedLoad(generation, false)
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -437,33 +282,6 @@ class QZoneViewModel : ViewModel() {
         }
         synchronized(feedLoadLock) {
             if (feedLoadGeneration == generation) activeFeedLoad = job
-        }
-    }
-
-    private fun registerFeedObserver(svc: QZoneFeedService) {
-        if (feedObserver != null && observedFeedService === svc) return
-        try {
-            feedObserver?.let { oldObserver ->
-                runCatching { EventCenter.b().g(oldObserver) }
-            }
-            val observer = object : IObserver.main {
-                override fun s(event: Event) {
-                    Log.d(TAG, "feed event: type=${event.a}")
-                    if (event.a == 1 || event.a == 4) {
-                        val feedMgr = svc.h ?: return
-                        val list = feedMgr.n()
-                        if (!list.isNullOrEmpty()) processFeeds(list)
-                    }
-                }
-            }
-            feedObserver = observer
-            observedFeedService = svc
-            val ec = EventCenter.b()
-            val src = EventSource("Feed", null)
-            ec.a(observer, 0, src, 1, 4)
-            Log.d(TAG, "registered feed observer")
-        } catch (e: Exception) {
-            Log.e(TAG, "registerFeedObserver error", e)
         }
     }
 
@@ -641,9 +459,7 @@ class QZoneViewModel : ViewModel() {
     fun avatarUrl(uin: String): String = "$AVATAR_BASE$uin"
 
     override fun onCleared() {
+        qZoneFeedRepository.close()
         super.onCleared()
-        feedObserver?.let {
-            runCatching { EventCenter.b().g(it) }
-        }
     }
 }

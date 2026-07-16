@@ -5,6 +5,14 @@ data class RichMediaKey(
     val elementId: Long,
 )
 
+sealed interface RichMediaRequestState {
+    data object Idle : RichMediaRequestState
+
+    data object Loading : RichMediaRequestState
+
+    data class Failed(val message: String) : RichMediaRequestState
+}
+
 data class PttMediaRef(
     val messageId: Long,
     val elementId: Long,

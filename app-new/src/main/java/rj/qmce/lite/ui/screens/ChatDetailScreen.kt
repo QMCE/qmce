@@ -5,6 +5,7 @@ package rj.qmce.lite.ui.screens
 import android.content.pm.PackageManager
 import android.text.format.Formatter
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -15,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -76,7 +78,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
@@ -108,6 +112,9 @@ import rj.qmce.lite.data.call.CallStartResult
 import rj.qmce.lite.data.call.QmceCallController
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
+import rj.qmce.lite.data.chat.LinkPreviewRepository
+import rj.qmce.lite.data.chat.LinkPreviewState
+import rj.qmce.lite.data.chat.LocalMediaResolver
 import rj.qmce.lite.ui.components.CurvedCard
 import rj.qmce.lite.ui.components.curvedCompactButton
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -199,6 +206,7 @@ fun ChatDetailScreen(
     var videoPlayer by remember(peerUid, chatType) { mutableStateOf<VideoPlayback?>(null) }
     var selectedActionMessage by remember(peerUid, chatType) { mutableStateOf<ChatDetailViewModel.UiMsg?>(null) }
     var selectedFile by remember(peerUid, chatType) { mutableStateOf<FileDetailTarget?>(null) }
+    var pendingCallRecordMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     var pendingReplyNavigation by remember(peerUid, chatType) {
         mutableStateOf<ChatDetailViewModel.MessageContent.Reply?>(null)
     }
@@ -415,14 +423,10 @@ fun ChatDetailScreen(
         pageCount = { if (showCallPage) 3 else 2 },
     )
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            ChatHeader(
-                onSearch = { showMessageSearch = true },
-            )
-            androidx.wear.compose.foundation.pager.HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.weight(1f),
-            ) { page ->
+        androidx.wear.compose.foundation.pager.HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { page ->
                 when (page) {
                     0 -> {
                         Column(modifier = Modifier.fillMaxSize()) {
@@ -490,6 +494,11 @@ fun ChatDetailScreen(
                                                         pttPlaybackStates[voice.media.messageId]
                                                     },
                                                     onToggleVoice = vm::toggleVoicePlayback,
+                                                    onRequestCall = if (chatType == 1) {
+                                                        { mode -> pendingCallRecordMode = mode }
+                                                    } else {
+                                                        null
+                                                    },
                                                 )
                                                 if (multiSelectMode && isSelected) {
                                                     Box(
@@ -547,36 +556,39 @@ fun ChatDetailScreen(
                         onOpenSettings = onOpenChatSettings,
                     )
                 }
-            }
         }
-        if (multiSelectMode) {
-            MultiSelectBottomBar(
-                selectedCount = selectedMsgIds.size,
-                onExit = { vm.exitMultiSelect() },
-                onCopy = {
-                    val text = vm.batchCopySelected()
-                    if (text.isNotBlank()) copyMessageText(context, text)
-                    else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
-                },
-                onForward = Toast.makeText(context, "批量转发开发中", Toast.LENGTH_SHORT).show().let { {} },
-                onDelete = {
-                    if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
-                },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        } else if (pagerState.currentPage == 0) {
-            AnimatedVisibility(
-                visible = composerActionsVisible,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp),
-                enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                    slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-                exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                    slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-            ) {
-                ChatComposerActions(
-                    onOpenInput = onOpenInput,
-                    onOpenVoiceRecorder = onOpenVoiceRecorder,
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            if (multiSelectMode) {
+                MultiSelectBottomBar(
+                    selectedCount = selectedMsgIds.size,
+                    onExit = { vm.exitMultiSelect() },
+                    onCopy = {
+                        val text = vm.batchCopySelected()
+                        if (text.isNotBlank()) copyMessageText(context, text)
+                        else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
+                    },
+                    onForward = Toast.makeText(context, "批量转发开发中", Toast.LENGTH_SHORT).show().let { {} },
+                    onDelete = {
+                        if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
+                    },
                 )
+            } else if (pagerState.currentPage == 0) {
+                AnimatedVisibility(
+                    visible = composerActionsVisible,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                    enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                        slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+                    exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
+                        slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
+                ) {
+                    ChatComposerActions(
+                        onOpenInput = onOpenInput,
+                        onOpenVoiceRecorder = onOpenVoiceRecorder,
+                    )
+                }
             }
         }
         if (forwardDetailState !is ChatDetailViewModel.ForwardDetailState.Idle) {
@@ -612,7 +624,18 @@ fun ChatDetailScreen(
                 content = currentFile,
                 onOpenLocalFile = { file -> openLocalFile(context, file) },
                 onDownloadFile = { vm.requestFileDownload(currentMessage, currentFile) },
+                downloadUnavailableReason = vm.fileDownloadUnavailableReason(currentFile),
                 onDismiss = { selectedFile = null },
+            )
+        }
+        pendingCallRecordMode?.let { mode ->
+            CallRecordConfirmationScreen(
+                mode = mode,
+                onConfirm = {
+                    pendingCallRecordMode = null
+                    requestCall(mode)
+                },
+                onDismiss = { pendingCallRecordMode = null },
             )
         }
         selectedActionMessage?.let { message ->
@@ -679,26 +702,6 @@ private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimeline
             previousDayKey = dayKey
         }
         add(ChatTimelineItem.Message(message))
-    }
-}
-
-@Composable
-private fun ChatHeader(onSearch: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        // 没做完 藏起来
-        /*
-        IconButton(
-            onClick = onSearch,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.SmallButtonSize),
-        ) {
-            Icon(Icons.Default.Search, contentDescription = "搜索消息", modifier = Modifier.size(16.dp))
-        }
-         */
     }
 }
 
@@ -792,6 +795,7 @@ internal fun MessageBubble(
     onClickInlineKeyboard: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit = { _, _, _ -> },
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState? = { null },
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit = {},
+    onRequestCall: ((CallMode) -> Unit)? = null,
 ) {
     val systemTip = message.contents.singleOrNull() as? ChatDetailViewModel.MessageContent.SystemTip
     if (systemTip != null) {
@@ -860,6 +864,7 @@ internal fun MessageBubble(
                         },
                         voicePlaybackState = voicePlaybackState,
                         onToggleVoice = onToggleVoice,
+                        onRequestCall = onRequestCall,
                     )
                 }
             }
@@ -889,6 +894,7 @@ private fun MessageContentItem(
     onClickInlineKeyboard: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState?,
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit,
+    onRequestCall: ((CallMode) -> Unit)?,
 ) {
     when (content) {
         is ChatDetailViewModel.MessageContent.Text -> {
@@ -925,6 +931,7 @@ private fun MessageContentItem(
             description = content.description,
             tag = content.tag,
             previewUrl = content.previewUrl,
+            actionUrl = content.actionUrl,
         )
         is ChatDetailViewModel.MessageContent.StructCard -> StructuredCardContent(
             title = content.title,
@@ -934,6 +941,7 @@ private fun MessageContentItem(
             ).joinToString("\n"),
             tag = "群邀请",
             previewUrl = null,
+            actionUrl = null,
         )
         is ChatDetailViewModel.MessageContent.Forward -> ForwardMessageContent(content, onOpenForward)
         is ChatDetailViewModel.MessageContent.SystemTip -> SystemTipLine(content.text)
@@ -947,7 +955,8 @@ private fun MessageContentItem(
             onClick = onClickInlineKeyboard,
         )
         is ChatDetailViewModel.MessageContent.Markdown -> MarkdownMessageContent(content.value, onLongClick)
-        is ChatDetailViewModel.MessageContent.CallRecord -> CallRecordMessageContent(content)
+        is ChatDetailViewModel.MessageContent.LinkPreview -> LinkPreviewMessageContent(content)
+        is ChatDetailViewModel.MessageContent.CallRecord -> CallRecordMessageContent(content, onRequestCall)
         is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback(
             content.detail?.let { "[$it · 类型 ${content.elementType}]" } ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
         )
@@ -961,18 +970,21 @@ private fun LocalMessageImage(
     onOpen: (File) -> Unit,
 ) {
     val localFile = remember(content.localPaths, content.thumbnailPaths, content.sourcePath) {
-        (content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath)).asSequence()
-            .filterNotNull()
-            .map { File(it.removePrefix("file://")) }
-            .firstOrNull(File::isFile)
+        LocalMediaResolver.firstAvailable(content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
     }
     val size = mediaSize(content.width, content.height)
     if (localFile == null) {
-        LaunchedEffect(content.elementId) { ensureCached() }
+        LaunchedEffect(content.elementId, content.isLoading, content.loadError) {
+            if (!content.isLoading && content.loadError == null) ensureCached()
+        }
         MediaPlaceholder(
             size = size,
-            label = if (content.isLoading) "图片加载中" else "点击重试",
-            onClick = ensureCached,
+            label = when {
+                content.isLoading -> "图片加载中"
+                content.loadError != null -> "图片加载失败，点击重试"
+                else -> "点击加载图片"
+            },
+            onClick = if (content.isLoading) null else ensureCached,
         )
     } else {
         Card(
@@ -996,10 +1008,7 @@ private fun LocalMessageImage(
 @Composable
 private fun LocalMarketFace(content: ChatDetailViewModel.MessageContent.MarketFace, onOpen: (File) -> Unit) {
     val localFile = remember(content.staticPath, content.dynamicPath) {
-        sequenceOf(content.dynamicPath, content.staticPath)
-            .filterNotNull()
-            .map { File(it.removePrefix("file://")) }
-            .firstOrNull(File::isFile)
+        LocalMediaResolver.firstAvailable(listOf(content.dynamicPath, content.staticPath))
     }
     val size = mediaSize(content.width, content.height)
     if (localFile == null) {
@@ -1060,84 +1069,249 @@ private fun MessageFallback(label: String) {
 
 @Composable
 private fun MarkdownMessageContent(value: String, onLongClick: () -> Unit) {
-    val lines: List<Pair<Boolean, String>> = remember(value) {
-        value.replace("\r\n", "\n")
-            .split('\n')
-            .map { line ->
-                val code = line.trimStart().startsWith("```")
-                val rendered = line
-                    .replace(Regex("^\\s{0,3}#{1,6}\\s+"), "")
-                    .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
-                    .replace(Regex("__(.+?)__"), "$1")
-                    .replace(Regex("`([^`]+)`"), "$1")
-                    .replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
-                    .replace(Regex("\\[([^]]+)]\\(([^)]+)\\)"), "$1 ($2)")
-                code to rendered
-            }
-            .filterNot { (code, text) -> code && text.trimStart().startsWith("```") }
-    }
+    val blocks = remember(value) { parseMarkdownBlocks(value) }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        lines.forEach { (code, text) ->
-            if (code) {
-                Text(
-                    text = text,
-                    color = LocalContentColor.current,
-                    style = MaterialTheme.typography.bodyLarge,
+        blocks.forEach { block ->
+            when (block) {
+                is MarkdownBlock.Code -> RichMessageText(
+                    value = block.value,
+                    onLongClick = onLongClick,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(5.dp))
                         .padding(horizontal = 7.dp, vertical = 4.dp),
                 )
-            } else if (text.isNotBlank()) {
-                RichMessageText(text, onLongClick)
+                is MarkdownBlock.Heading -> RichMessageText(
+                    value = block.value,
+                    onLongClick = onLongClick,
+                    style = when (block.level) {
+                        1 -> MaterialTheme.typography.titleLarge
+                        2 -> MaterialTheme.typography.titleMedium
+                        else -> MaterialTheme.typography.titleSmall
+                    },
+                )
+                is MarkdownBlock.Paragraph -> RichMessageText(block.value, onLongClick)
+            }
+        }
+    }
+}
+
+private sealed interface MarkdownBlock {
+    data class Heading(val value: String, val level: Int) : MarkdownBlock
+    data class Paragraph(val value: String) : MarkdownBlock
+    data class Code(val value: String) : MarkdownBlock
+}
+
+private val markdownHeadingRegex = Regex("^\\s{0,3}(#{1,6})\\s+(.+)$")
+private val markdownImageRegex = Regex("!\\[([^]]*)]\\([^)]*\\)")
+private val markdownLinkRegex = Regex("\\[([^]]+)]\\((https?://[^\\s)]+)\\)")
+private val markdownBulletRegex = Regex("^\\s*[-*+]\\s+")
+
+private fun parseMarkdownBlocks(value: String): List<MarkdownBlock> {
+    val blocks = mutableListOf<MarkdownBlock>()
+    val codeLines = mutableListOf<String>()
+    var inCodeBlock = false
+    value.replace("\r\n", "\n").lineSequence().forEach { line ->
+        if (line.trimStart().startsWith("```")) {
+            if (inCodeBlock) {
+                blocks += MarkdownBlock.Code(codeLines.joinToString("\n"))
+                codeLines.clear()
+            }
+            inCodeBlock = !inCodeBlock
+            return@forEach
+        }
+        if (inCodeBlock) {
+            codeLines += line
+            return@forEach
+        }
+
+        if (line.isBlank()) return@forEach
+        val heading = markdownHeadingRegex.matchEntire(line)
+        if (heading != null) {
+            blocks += MarkdownBlock.Heading(
+                value = heading.groupValues[2].toMarkdownDisplayText(),
+                level = heading.groupValues[1].length,
+            )
+        } else {
+            blocks += MarkdownBlock.Paragraph(line.toMarkdownDisplayText())
+        }
+    }
+    if (inCodeBlock) blocks += MarkdownBlock.Code(codeLines.joinToString("\n"))
+    return blocks.ifEmpty { listOf(MarkdownBlock.Paragraph(value)) }
+}
+
+private fun String.toMarkdownDisplayText(): String = this
+    .replace(markdownImageRegex, "$1")
+    .replace(markdownLinkRegex, "$1 ($2)")
+    .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")
+    .replace(Regex("__(.+?)__"), "$1")
+    .replace(Regex("`([^`]+)`"), "$1")
+    .replace(markdownBulletRegex, "• ")
+
+@Composable
+private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageContent.LinkPreview) {
+    val context = LocalContext.current
+    LaunchedEffect(content.url, content.state) {
+        if (content.state is LinkPreviewState.Idle) LinkPreviewRepository.request(content.url)
+    }
+    when (val state = content.state) {
+        LinkPreviewState.Idle,
+        LinkPreviewState.Loading,
+        -> Text(
+            text = "正在解析链接…",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+        )
+        is LinkPreviewState.Ready -> {
+            val preview = state.preview
+            Card(
+                onClick = { openHttpLink(context, preview.url) },
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                ),
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (preview.imageUrl != null) {
+                        AsyncImage(
+                            model = preview.imageUrl,
+                            contentDescription = null,
+                            modifier = Modifier.size(38.dp).clip(RoundedCornerShape(6.dp)),
+                            contentScale = ContentScale.Crop,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            preview.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        preview.description?.takeIf(String::isNotBlank)?.let { description ->
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                description,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        LinkPreviewState.Failed -> Unit
+    }
+}
+
+@Composable
+private fun CallRecordMessageContent(
+    content: ChatDetailViewModel.MessageContent.CallRecord,
+    onRequestCall: ((CallMode) -> Unit)?,
+) {
+    val isVideo = content.type == 2 || content.text.contains("视频")
+    Card(
+        onClick = { onRequestCall?.invoke(if (isVideo) CallMode.Video else CallMode.Voice) },
+        enabled = onRequestCall != null,
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Call,
+                contentDescription = if (isVideo) "视频通话" else "语音通话",
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(7.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = content.text,
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = when {
+                        onRequestCall != null -> "点击回拨"
+                        content.hasRead -> "通话记录"
+                        else -> "未读通话记录"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CallRecordMessageContent(content: ChatDetailViewModel.MessageContent.CallRecord) {
-    val isVideo = content.type == 2 || content.text.contains("视频")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-            .padding(horizontal = 9.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun CallRecordConfirmationScreen(
+    mode: CallMode,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = if (isVideo) Icons.Default.Videocam else Icons.Default.Call,
-            contentDescription = if (isVideo) "视频通话" else "语音通话",
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(Modifier.width(7.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = content.text,
-                color = LocalContentColor.current,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = if (mode == CallMode.Video) Icons.Default.Videocam else Icons.Default.Call,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
             )
             Text(
-                text = if (content.hasRead) "通话记录" else "未读通话记录",
+                text = if (mode == CallMode.Video) "发起视频通话？" else "发起语音通话？",
+                style = MaterialTheme.typography.titleSmall,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = "将使用 QMCE 的通话服务",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
             )
+            Button(onClick = onConfirm, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                Text("继续")
+            }
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                Text("取消")
+            }
         }
     }
 }
 
 @Composable
-private fun RichMessageText(value: String, onLongClick: () -> Unit) {
+private fun RichMessageText(
+    value: String,
+    onLongClick: () -> Unit,
+    style: TextStyle = MaterialTheme.typography.bodyLarge,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val linkColor = MaterialTheme.colorScheme.primary
     val annotated = remember(value, linkColor) { value.toLinkedAnnotatedString(linkColor) }
     var layoutResult by remember(value) { mutableStateOf<TextLayoutResult?>(null) }
     Text(
         text = annotated,
-        modifier = Modifier.pointerInput(annotated) {
+        modifier = modifier.pointerInput(annotated) {
             detectTapGestures(
                 onLongPress = { onLongClick() },
                 onTap = { offset ->
@@ -1154,7 +1328,7 @@ private fun RichMessageText(value: String, onLongClick: () -> Unit) {
             )
         },
         color = LocalContentColor.current,
-        style = MaterialTheme.typography.bodyLarge,
+        style = style,
         onTextLayout = { layoutResult = it },
     )
 }
@@ -1198,10 +1372,7 @@ private fun FileMessageContent(
 ) {
     val context = LocalContext.current
     val localFile = remember(content.path) {
-        content.path
-            ?.removePrefix("file://")
-            ?.let(::File)
-            ?.takeIf(File::isFile)
+        LocalMediaResolver.resolveFile(content.path)
     }
     Card(
         onClick = onOpenFile,
@@ -1312,13 +1483,10 @@ private fun VideoMessageContent(
     onOpenVideo: (VideoPlayback) -> Unit,
 ) {
     val localFile = remember(content.filePath) {
-        content.filePath
-            ?.removePrefix("file://")
-            ?.let(::File)
-            ?.takeIf(File::isFile)
+        LocalMediaResolver.resolveFile(content.filePath)
     }
     val thumbnail = remember(content.thumbnailPaths) {
-        content.thumbnailPaths.asSequence().map { File(it.removePrefix("file://")) }.firstOrNull(File::isFile)
+        LocalMediaResolver.firstAvailable(content.thumbnailPaths)
     }
     Card(
         onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
@@ -1375,10 +1543,15 @@ private fun StructuredCardContent(
     description: String,
     tag: String?,
     previewUrl: String?,
+    actionUrl: String?,
 ) {
+    val context = LocalContext.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                actionUrl?.let { url -> Modifier.clickable { openHttpLink(context, url) } } ?: Modifier,
+            )
             .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
             .padding(9.dp),
     ) {

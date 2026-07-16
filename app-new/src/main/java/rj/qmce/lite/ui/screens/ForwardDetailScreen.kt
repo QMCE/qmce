@@ -1,11 +1,9 @@
 package rj.qmce.lite.ui.screens
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,24 +15,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 @Composable
 internal fun ForwardDetailScreen(
@@ -57,23 +48,39 @@ internal fun ForwardDetailScreen(
         is ChatDetailViewModel.ForwardDetailState.Error -> state.title
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        ForwardDetailHeader(title, onDismiss)
+    ScreenScaffold(scrollState = listState) { contentPadding ->
         when (state) {
-            ChatDetailViewModel.ForwardDetailState.Idle -> Unit
+            ChatDetailViewModel.ForwardDetailState.Idle -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(contentPadding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                }
+            }
             is ChatDetailViewModel.ForwardDetailState.Loading -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.size(32.dp), strokeWidth = 3.dp)
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(contentPadding),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    CircularProgressIndicator(
+                        modifier = Modifier.padding(top = 12.dp).size(32.dp),
+                        strokeWidth = 3.dp,
+                    )
                 }
             }
             is ChatDetailViewModel.ForwardDetailState.Error -> {
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                    modifier = Modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
                     Text(
                         text = state.message,
+                        modifier = Modifier.padding(top = 8.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                         textAlign = TextAlign.Center,
@@ -91,12 +98,22 @@ internal fun ForwardDetailScreen(
                 }
             }
             is ChatDetailViewModel.ForwardDetailState.Ready -> {
-                ScreenScaffold(scrollState = listState) { contentPadding ->
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        state = listState,
-                        contentPadding = contentPadding,
-                    ) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    state = listState,
+                    contentPadding = contentPadding,
+                ) {
+                    item(key = "forward-detail-title") {
+                        Text(
+                            text = title,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface,
+                            style = MaterialTheme.typography.titleSmall,
+                            textAlign = TextAlign.Center,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     itemsIndexed(
                         items = state.messages,
                         key = { index, message -> "forward:${message.stableKey}:$index" },
@@ -120,31 +137,8 @@ internal fun ForwardDetailScreen(
                             onOpenFile = onOpenFile,
                         )
                     }
-                    }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun ForwardDetailHeader(title: String, onDismiss: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 10.dp, top = 7.dp, bottom = 4.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier.align(Alignment.CenterStart),
-        ) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") }
-        Text(
-            text = title,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 29.dp),
-            color = Color.White,
-            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
     }
 }

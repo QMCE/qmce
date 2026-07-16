@@ -9,7 +9,6 @@ import com.tencent.qqnt.kernel.nativeinterface.RichMediaElementGetReq
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.watch.aio_impl.ext.AIOPicDownloader
 import rj.qmce.lite.kernel.KernelBridge
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -20,6 +19,7 @@ object RichMediaRepository {
     private const val REQUEST_TIMEOUT_SECONDS = 20L
     private val pendingRequests = ConcurrentHashMap.newKeySet<RichMediaKey>()
     private val pendingTimeouts = ConcurrentHashMap<RichMediaKey, ScheduledFuture<*>>()
+    private val requestStates = ConcurrentHashMap<RichMediaKey, RichMediaRequestState>()
     private val timeoutExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "QMCE-RichMediaTimeout").apply { isDaemon = true }
     }
@@ -40,7 +40,12 @@ object RichMediaRepository {
         invalidationListener = listener
     }
 
-    fun isPending(key: RichMediaKey): Boolean = key in pendingRequests
+    fun requestState(key: RichMediaKey): RichMediaRequestState =
+        requestStates[key] ?: RichMediaRequestState.Idle
+
+    fun isPending(key: RichMediaKey): Boolean = requestState(key) is RichMediaRequestState.Loading
+
+    fun fileDownloadUnavailableReason(): String = "不支持文件下载"
 
     fun requestImageThumbnail(
         messageId: Long,
@@ -50,12 +55,11 @@ object RichMediaRepository {
     ): Boolean {
         if (messageId <= 0L || elementId <= 0L || peerUid.isBlank()) return false
         val key = RichMediaKey(messageId, elementId)
-        if (!pendingRequests.add(key)) return true
-        scheduleTimeout(key)
+        if (!beginRequest(key)) return true
 
         val service = activeMessageService ?: KernelBridge.getMsgService()
         if (service == null) {
-            clearPending(key)
+            finishRequest(key, RichMediaRequestState.Failed("消息服务不可用"))
             return false
         }
 
@@ -75,7 +79,7 @@ object RichMediaRepository {
             Log.d(TAG, "richMedia: request image thumbnail msg=$messageId, element=$elementId")
             true
         }.getOrElse {
-            clearPending(key)
+            finishRequest(key, RichMediaRequestState.Failed("图片请求失败"))
             Log.w(TAG, "richMedia: request image thumbnail failed", it)
             false
         }
@@ -90,42 +94,20 @@ object RichMediaRepository {
     ): Boolean {
         if (messageId <= 0L || elementId <= 0L || peerUid.isBlank()) return false
         val key = RichMediaKey(messageId, elementId)
-        if (!pendingRequests.add(key)) return true
-        scheduleTimeout(key)
-
-        val service = activeMessageService ?: KernelBridge.getMsgService()
-        if (service == null) {
-            clearPending(key)
-            return false
-        }
-
-        return runCatching {
-            service.getRichMediaElement(
-                RichMediaElementGetReq().apply {
-                    msgId = messageId
-                    this.peerUid = peerUid
-                    this.chatType = chatType
-                    this.elementId = elementId
-                    downloadType = 1
-                    this.filePath = filePath.orEmpty()
-                    fileModelId = 0L
-                    downSourceType = 1
-                    triggerType = 0
-                },
-            )
-            Log.d(TAG, "richMedia: request file msg=$messageId, element=$elementId")
-            true
-        }.getOrElse {
-            clearPending(key)
-            Log.w(TAG, "richMedia: request file failed", it)
-            false
-        }
+        requestStates[key] = RichMediaRequestState.Failed(fileDownloadUnavailableReason())
+        invalidationListener?.invoke()
+        return false
     }
 
     fun consumeDownloadCompletion(notify: FileTransNotifyInfo): Boolean {
         val key = RichMediaKey(notify.msgId, notify.msgElementId)
         if (!pendingRequests.contains(key)) return false
-        clearPending(key)
+        val state = if (notify.fileErrCode == 0L) {
+            RichMediaRequestState.Idle
+        } else {
+            RichMediaRequestState.Failed("下载失败 (${notify.fileErrCode})")
+        }
+        finishRequest(key, state)
         Log.d(
             TAG,
             "richMedia: complete msg=${notify.msgId}, element=${notify.msgElementId}, " +
@@ -138,23 +120,30 @@ object RichMediaRepository {
         pendingTimeouts[key] = timeoutExecutor.schedule({
             if (pendingRequests.remove(key)) {
                 pendingTimeouts.remove(key)
+                requestStates[key] = RichMediaRequestState.Failed("加载超时")
                 Log.w(TAG, "richMedia: request timed out msg=${key.messageId}, element=${key.elementId}")
                 invalidationListener?.invoke()
             }
         }, REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
     }
 
-    private fun clearPending(key: RichMediaKey) {
+    private fun beginRequest(key: RichMediaKey): Boolean {
+        if (!pendingRequests.add(key)) return false
+        requestStates[key] = RichMediaRequestState.Loading
+        scheduleTimeout(key)
+        invalidationListener?.invoke()
+        return true
+    }
+
+    private fun finishRequest(key: RichMediaKey, state: RichMediaRequestState) {
         pendingRequests.remove(key)
         pendingTimeouts.remove(key)?.cancel(false)
+        if (state is RichMediaRequestState.Idle) requestStates.remove(key) else requestStates[key] = state
         invalidationListener?.invoke()
     }
 
     fun resolvePttPath(media: PttMediaRef): String? {
-        media.filePath
-            ?.removePrefix("file://")
-            ?.takeIf(String::isNotBlank)
-            ?.let { return it }
+        LocalMediaResolver.resolveFile(media.filePath)?.let { return it.absolutePath }
 
         val service = activeMessageService ?: KernelBridge.getMsgService() ?: return null
         val resolved = runCatching {
@@ -175,9 +164,7 @@ object RichMediaRepository {
             Log.w(TAG, "richMedia: resolve PTT path failed msg=${media.messageId}", it)
         }.getOrNull()
 
-        return resolved
-            ?.removePrefix("file://")
-            ?.takeIf(String::isNotBlank)
+        return LocalMediaResolver.resolveFile(resolved)?.absolutePath
     }
 
     fun resolveLocalPicturePaths(element: MsgElement): List<String> =
@@ -186,6 +173,7 @@ object RichMediaRepository {
                 val downloader = AIOPicDownloader::class.java.getField("a").get(null) as AIOPicDownloader
                 downloader.d(element, size)
             }.getOrNull()
-                ?.takeIf { path -> path.isNotBlank() && File(path).isFile }
+                ?.let(LocalMediaResolver::resolveFile)
+                ?.absolutePath
         }.distinct()
 }

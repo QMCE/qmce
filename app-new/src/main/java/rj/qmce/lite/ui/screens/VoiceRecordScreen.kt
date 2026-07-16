@@ -45,7 +45,6 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
@@ -314,18 +313,6 @@ fun VoiceRecordScreen(
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        CompactButton(
-            onClick = {
-                if (recordState is VoiceRecordState.Recording) stopRecording(discard = true)
-                onBack()
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-            icon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回") },
-        )
     }
 }
 
