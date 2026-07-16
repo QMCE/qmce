@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.Application
+import android.app.ActivityOptions
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -104,31 +107,61 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     loginRestartScheduled.set(false)
                     return false
                 }
-            val pendingFlags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                    android.app.PendingIntent.FLAG_IMMUTABLE
-            val pendingIntent = android.app.PendingIntent.getActivity(
+            val pendingOptions = if (Build.VERSION.SDK_INT >= 34) {
+                ActivityOptions.makeBasic().apply {
+                    setPendingIntentCreatorBackgroundActivityStartMode(
+                        if (Build.VERSION.SDK_INT >= 35) {
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
+                        } else {
+                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
+                        },
+                    )
+                }.toBundle()
+            } else {
+                null
+            }
+            val pendingIntent = PendingIntent.getActivity(
                 context,
                 0x514D,
                 launchIntent,
-                pendingFlags,
+                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                pendingOptions,
             )
-            val alarmManager =
-                context.getSystemService(Context.ALARM_SERVICE) as? android.app.AlarmManager
-            if (alarmManager == null) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+                ?: run {
+                    loginRestartScheduled.set(false)
+                    return false
+                }
+            val triggerAt = SystemClock.elapsedRealtime() + 1_500L
+            val scheduled = runCatching {
+                if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent,
+                    )
+                } else {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent,
+                    )
+                }
+            }.isSuccess
+            if (!scheduled) {
                 loginRestartScheduled.set(false)
+                Log.e("QMCE", "login restart: failed to schedule alarm")
                 return false
             }
-            alarmManager.set(
-                android.app.AlarmManager.ELAPSED_REALTIME,
-                SystemClock.elapsedRealtime() + 450L,
-                pendingIntent,
+            Log.i(
+                "QMCE",
+                "login restart: scheduled ${triggerAt - SystemClock.elapsedRealtime()}ms " +
+                        "component=${launchIntent.component}",
             )
             Handler(Looper.getMainLooper()).postDelayed({
-                runCatching {
-                    (context as? android.app.Activity)?.finishAndRemoveTask()
-                }
+                runCatching { (context as? Activity)?.finishAndRemoveTask() }
                 Process.killProcess(Process.myPid())
-            }, 250L)
+            }, 700L)
             return true
         }
 

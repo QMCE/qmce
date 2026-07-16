@@ -49,10 +49,25 @@ class QZoneViewModel : ViewModel() {
 
     data class FeedComment(
         val id: String,
+        val authorUin: String,
         val author: String,
         val text: String,
         val replies: List<FeedReply> = emptyList(),
     )
+
+    data class CommentReplyTarget(
+        val feedId: String,
+        val commentId: String,
+        val targetUin: String,
+        val targetName: String,
+    )
+
+    sealed interface CommentSendState {
+        data object Idle : CommentSendState
+        data object Sending : CommentSendState
+        data object Succeeded : CommentSendState
+        data class Failed(val message: String) : CommentSendState
+    }
 
     data class FeedReply(
         val author: String,
@@ -67,6 +82,10 @@ class QZoneViewModel : ViewModel() {
 
     private val _operationStatus = MutableStateFlow("")
     val operationStatus: StateFlow<String> = _operationStatus
+    private val _commentReplyTarget = MutableStateFlow<CommentReplyTarget?>(null)
+    val commentReplyTarget: StateFlow<CommentReplyTarget?> = _commentReplyTarget
+    private val _commentSendState = MutableStateFlow<CommentSendState>(CommentSendState.Idle)
+    val commentSendState: StateFlow<CommentSendState> = _commentSendState
 
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
@@ -141,38 +160,87 @@ class QZoneViewModel : ViewModel() {
         }
     }
 
-    fun comment(feedId: String, text: String) {
+    fun prepareCommentReply(feedId: String, comment: FeedComment): Boolean {
+        if (comment.id.isBlank() || comment.authorUin.toLongOrNull() == null) {
+            _operationStatus.value = "这条评论暂时无法回复"
+            return false
+        }
+        _commentReplyTarget.value = CommentReplyTarget(
+            feedId = feedId,
+            commentId = comment.id,
+            targetUin = comment.authorUin,
+            targetName = comment.author,
+        )
+        return true
+    }
+
+    fun clearCommentReplyTarget() {
+        _commentReplyTarget.value = null
+    }
+
+    fun clearCommentSendState() {
+        _commentSendState.value = CommentSendState.Idle
+    }
+
+    fun comment(feedId: String, text: String, replyTarget: CommentReplyTarget? = null) {
+        if (_commentSendState.value is CommentSendState.Sending) return
         val content = text.trim()
         if (content.isBlank()) {
             _operationStatus.value = "评论内容不能为空"
+            _commentSendState.value = CommentSendState.Failed("评论内容不能为空")
             return
         }
         val data = synchronized(feedDataById) { feedDataById[feedId] }
         if (data == null) {
             _operationStatus.value = "动态数据尚未准备好，请稍后重试"
+            _commentSendState.value = CommentSendState.Failed("动态数据尚未准备好，请稍后重试")
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
-            _operationStatus.value = "正在发送评论…"
-            qZoneWriteRepository.comment(data, content).onSuccess {
+            val target = replyTarget?.takeIf { it.feedId == feedId }
+            _operationStatus.value = if (target == null) "正在发送评论…" else "正在回复 ${target.targetName}…"
+            _commentSendState.value = CommentSendState.Sending
+            val result = if (target == null) {
+                qZoneWriteRepository.comment(data, content)
+            } else {
+                qZoneWriteRepository.reply(
+                    data = data,
+                    commentId = target.commentId,
+                    targetUin = target.targetUin.toLongOrNull() ?: 0L,
+                    targetNick = target.targetName,
+                    content = content,
+                )
+            }
+            result.onSuccess {
                 _feeds.value = _feeds.value.map { item ->
                     if (item.feedId == feedId) {
-                        item.copy(
+                        if (target == null) item.copy(
                             commentCount = item.commentCount + 1,
                             comments = item.comments + FeedComment(
                                 id = "local:${UUID.randomUUID()}",
+                                authorUin = "",
                                 author = "我",
                                 text = content,
                             ),
+                        ) else item.copy(
+                            commentCount = item.commentCount + 1,
+                            comments = item.comments.map { comment ->
+                                if (comment.id == target.commentId) {
+                                    comment.copy(replies = comment.replies + FeedReply("我", content))
+                                } else comment
+                            },
                         )
                     } else item
                 }
-                _operationStatus.value = "评论已发送"
+                _commentReplyTarget.value = null
+                _operationStatus.value = if (target == null) "评论已发送" else "回复已发送"
+                _commentSendState.value = CommentSendState.Succeeded
                 delay(1200)
                 loadFeeds(forceRefresh = true)
             }.onFailure { error ->
                 Log.e(TAG, "comment failed", error)
                 _operationStatus.value = "评论失败：${error.message ?: "未知错误"}"
+                _commentSendState.value = CommentSendState.Failed(error.message ?: "未知错误")
             }
         }
     }
@@ -373,6 +441,7 @@ class QZoneViewModel : ViewModel() {
                     comments = comments?.c.orEmpty().map { comment ->
                         FeedComment(
                             id = comment.commentid.orEmpty(),
+                            authorUin = comment.user?.uin?.toString().orEmpty(),
                             author = comment.user?.nickName?.takeIf { it.isNotBlank() } ?: "QQ用户",
                             text = comment.comment.orEmpty(),
                             replies = comment.replies.orEmpty().map { reply ->

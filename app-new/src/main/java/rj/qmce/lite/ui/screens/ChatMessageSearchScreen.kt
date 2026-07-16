@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,12 +22,17 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
+import androidx.compose.material3.TextField as MaterialTextField
+import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
 @Composable
 fun ChatMessageSearchScreen(
     query: String,
     matches: List<ChatDetailViewModel.UiMsg>,
+    isLoadingOlder: Boolean,
+    canLoadOlder: Boolean,
     onQueryChange: (String) -> Unit,
+    onLoadOlder: () -> Unit,
     onSelect: (ChatDetailViewModel.UiMsg) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -46,12 +49,11 @@ fun ChatMessageSearchScreen(
             contentPadding = contentPadding,
         ) {
             item(key = "message-search-input") {
-                BasicTextField(
+                MaterialTextField(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
-                    cursorBrush = SolidColor(scheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
@@ -61,25 +63,37 @@ fun ChatMessageSearchScreen(
                                 applyContentTransformation()
                             }
                         }
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .background(scheme.surfaceContainerHigh, CircleShape)
-                        .padding(horizontal = 12.dp, vertical = 9.dp),
-                    decorationBox = { inner ->
-                        if (query.isBlank()) {
-                            Text(
-                                "搜索当前已加载消息",
-                                color = scheme.outline,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        inner()
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                    placeholder = {
+                        Text(
+                            "搜索当前已加载消息",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     },
+                    shape = CircleShape,
+                    colors = MaterialTextFieldDefaults.colors(
+                        focusedContainerColor = scheme.surfaceContainerHigh,
+                        unfocusedContainerColor = scheme.surfaceContainerHigh,
+                        focusedTextColor = scheme.onSurface,
+                        unfocusedTextColor = scheme.onSurface,
+                        cursorColor = scheme.primary,
+                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    ),
                 )
+            }
+            if (query.isBlank()) {
+                item(key = "message-search-hint") {
+                    ChatMessageSearchHint(
+                        text = "输入关键词后，可继续加载更早消息",
+                        transformationSpec = transformationSpec,
+                    )
+                }
             }
             if (query.isNotBlank() && matches.isEmpty()) {
                 item(key = "message-search-empty") {
                     ChatMessageSearchHint(
-                        text = "没有匹配消息；可先向上滑动加载漫游消息",
+                        text = if (canLoadOlder) "当前已加载消息中没有匹配" else "没有匹配消息",
                         transformationSpec = transformationSpec,
                     )
                 }
@@ -112,6 +126,21 @@ fun ChatMessageSearchScreen(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                }
+            }
+            if (canLoadOlder) {
+                item(key = "message-search-load-older") {
+                    Button(
+                        onClick = onLoadOlder,
+                        enabled = !isLoadingOlder,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    ) {
+                        Text(if (isLoadingOlder) "正在加载…" else "加载更早消息")
                     }
                 }
             }

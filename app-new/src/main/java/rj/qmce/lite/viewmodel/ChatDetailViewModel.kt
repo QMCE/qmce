@@ -41,6 +41,8 @@ import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class ChatDetailViewModel : ViewModel() {
 
@@ -249,6 +251,13 @@ class ChatDetailViewModel : ViewModel() {
         ) : ForwardDetailState
     }
 
+    sealed interface EditSendState {
+        data object Idle : EditSendState
+        data object Sending : EditSendState
+        data object Succeeded : EditSendState
+        data class Failed(val message: String) : EditSendState
+    }
+
     sealed interface ReplySourceState {
         data object Idle : ReplySourceState
         data class Loading(
@@ -281,8 +290,7 @@ class ChatDetailViewModel : ViewModel() {
     private val _replySourceState = MutableStateFlow<ReplySourceState>(ReplySourceState.Idle)
     val replySourceState: StateFlow<ReplySourceState> = _replySourceState
 
-    private val _pendingForwardMessage = MutableStateFlow<UiMsg?>(null)
-    val pendingForwardMessage: StateFlow<UiMsg?> = _pendingForwardMessage
+    private val _pendingForwardMessages = MutableStateFlow<List<UiMsg>>(emptyList())
     private val _pendingReplyTarget = MutableStateFlow<ReplyTarget?>(null)
     val pendingReplyTarget: StateFlow<ReplyTarget?> = _pendingReplyTarget
 
@@ -295,6 +303,8 @@ class ChatDetailViewModel : ViewModel() {
     val editingMsgId: StateFlow<Long> = _editingMsgId
     private val _editingText = MutableStateFlow("")
     val editingText: StateFlow<String> = _editingText
+    private val _editSendState = MutableStateFlow<EditSendState>(EditSendState.Idle)
+    val editSendState: StateFlow<EditSendState> = _editSendState
 
     private val _groupMembers = MutableStateFlow<List<GroupMemberRepository.Member>>(emptyList())
     val groupMembers: StateFlow<List<GroupMemberRepository.Member>> = _groupMembers
@@ -2094,26 +2104,81 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun forwardMessage(targetChatType: Int, targetPeerUid: String, message: UiMsg) {
+        forwardMessages(targetChatType, targetPeerUid, listOf(message))
+    }
+
+    private fun forwardMessages(
+        targetChatType: Int,
+        targetPeerUid: String,
+        messages: List<UiMsg>,
+    ) {
         if (!chatRepository.isConnected()) {
             _statusText.value = "消息服务不可用"
             return
         }
-        val target = Contact(targetChatType, targetPeerUid, "")
-        val elements = rebuildElementsForForward(message)
-        if (elements.isEmpty()) {
-            _statusText.value = "暂不支持转发此类型消息"
+        if (messages.isEmpty()) {
+            _statusText.value = "没有可转发的消息"
             return
         }
+        val target = Contact(targetChatType, targetPeerUid, "")
+        _statusText.value = if (messages.size == 1) "正在转发" else "正在转发 ${messages.size} 条消息"
         Thread {
-            val sent = chatRepository.sendMessage(target, elements) { code, errMsg ->
-                Log.d(TAG, "forwardMessage: code=$code, errMsg=$errMsg")
-                if (code == 0) {
-                    _statusText.value = "已转发"
-                } else {
-                    _statusText.value = "转发失败: ${errMsg ?: "未知错误"}"
+            val prepared = messages.mapNotNull { message ->
+                rebuildElementsForForward(message)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { elements -> message to elements }
+            }
+            val skippedCount = messages.size - prepared.size
+            if (prepared.isEmpty()) {
+                _statusText.value = "没有可转发的已缓存内容"
+                return@Thread
+            }
+
+            val completedCount = AtomicInteger(0)
+            val successCount = AtomicInteger(0)
+            val failureCount = AtomicInteger(0)
+            val lastFailure = AtomicReference<String?>(null)
+
+            fun reportResult() {
+                if (completedCount.incrementAndGet() != prepared.size) return
+                val succeeded = successCount.get()
+                val failed = failureCount.get()
+                _statusText.value = when {
+                    failed == 0 && skippedCount == 0 -> {
+                        if (succeeded == 1) "已转发" else "已转发 $succeeded 条消息"
+                    }
+
+                    succeeded > 0 -> {
+                        buildString {
+                            append("已转发 $succeeded 条")
+                            if (failed > 0) append("，$failed 条失败")
+                            if (skippedCount > 0) append("，$skippedCount 条内容不可用")
+                        }
+                    }
+
+                    else -> {
+                        lastFailure.get()?.let { "转发失败：$it" }
+                            ?: "转发失败"
+                    }
                 }
             }
-            if (!sent) _statusText.value = "消息服务不可用"
+            prepared.forEach { (_, elements) ->
+                val callbackReported = AtomicBoolean(false)
+                fun complete(success: Boolean, error: String? = null) {
+                    if (!callbackReported.compareAndSet(false, true)) return
+                    if (success) successCount.incrementAndGet()
+                    else {
+                        failureCount.incrementAndGet()
+                        error?.takeIf(String::isNotBlank)?.let(lastFailure::set)
+                    }
+                    reportResult()
+                }
+                val sent = chatRepository.sendMessage(target, elements) { code, errMsg ->
+                    Log.d(TAG, "forwardMessage: code=$code, errMsg=$errMsg")
+                    complete(code == 0, errMsg)
+                }
+                if (!sent) complete(false, "消息服务不可用")
+            }
         }.apply { isDaemon = true; start() }
     }
 
@@ -2187,17 +2252,18 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun setPendingForward(message: UiMsg) {
-        _pendingForwardMessage.value = message
+        _pendingForwardMessages.value = listOf(message)
     }
 
     fun consumePendingForward(targetChatType: Int, targetPeerUid: String) {
-        val msg = _pendingForwardMessage.value ?: return
-        _pendingForwardMessage.value = null
-        forwardMessage(targetChatType, targetPeerUid, msg)
+        val messages = _pendingForwardMessages.value
+        if (messages.isEmpty()) return
+        _pendingForwardMessages.value = emptyList()
+        forwardMessages(targetChatType, targetPeerUid, messages)
     }
 
     fun clearPendingForward() {
-        _pendingForwardMessage.value = null
+        _pendingForwardMessages.value = emptyList()
     }
 
     fun enterMultiSelect(seedMsgId: Long) {
@@ -2218,16 +2284,32 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun batchCopySelected(): String {
-        val ids = _selectedMsgIds.value
-        val allMessages = _messages.value
-        return ids.mapNotNull { id -> allMessages.firstOrNull { it.msgId == id } }
-            .mapNotNull { msg ->
-                val text = msg.contents
-                    .filterIsInstance<MessageContent.Text>()
-                    .joinToString("") { it.value }
-                text.takeIf { it.isNotBlank() }
+        return selectedMessages()
+            .mapNotNull { message ->
+                message.text.takeIf { it.isNotBlank() }?.let { text ->
+                    val sender = message.senderNick.ifBlank {
+                        if (message.isSelf) "我" else "对方"
+                    }
+                    "$sender: $text"
+                }
             }
             .joinToString("\n\n")
+    }
+
+    fun prepareBatchForward(): Boolean {
+        val selected = selectedMessages()
+        if (selected.isEmpty()) {
+            _statusText.value = "没有可转发的消息"
+            return false
+        }
+        _pendingForwardMessages.value = selected
+        exitMultiSelect()
+        return true
+    }
+
+    private fun selectedMessages(): List<UiMsg> {
+        val ids = _selectedMsgIds.value
+        return _messages.value.filter { it.msgId in ids }
     }
 
     fun batchDeleteSelected() {
@@ -2240,35 +2322,95 @@ class ChatDetailViewModel : ViewModel() {
     fun beginEdit(msgId: Long, text: String) {
         _editingMsgId.value = msgId
         _editingText.value = text
+        _editSendState.value = EditSendState.Idle
     }
 
     fun cancelEdit() {
         _editingMsgId.value = 0L
         _editingText.value = ""
+        _editSendState.value = EditSendState.Idle
+    }
+
+    fun completeEditedSend() {
+        _editingMsgId.value = 0L
+        _editingText.value = ""
+        _editSendState.value = EditSendState.Idle
     }
 
     fun sendEditedText(newText: String) {
+        if (_editSendState.value is EditSendState.Sending) return
         val editId = _editingMsgId.value
         if (editId == 0L) {
             sendText(newText)
             return
         }
-        cancelEdit()
-        val c = contact ?: return
-        if (!chatRepository.isConnected()) {
-            _statusText.value = "消息服务不可用"
+        val c = contact
+        if (c == null) {
+            failEditedSend(newText, "当前会话不可用")
             return
         }
-        // 先撤回原消息，再发送新内容
-        chatRepository.recallMessage(c, editId) { code, errMsg ->
-            Log.d(TAG, "editRecall: code=$code, errMsg=$errMsg")
-            if (code == 0) {
-                synchronized(messageLock) { msgList.removeAll { it.msgId == editId } }
-                emitMessages()
-            }
-            // 无论撤回是否成功都发送新消息
-            sendText(newText)
+        if (!chatRepository.isConnected()) {
+            failEditedSend(newText, "消息服务不可用")
+            return
         }
+        _editingText.value = newText
+        _editSendState.value = EditSendState.Sending
+        val recallStarted = chatRepository.recallMessage(c, editId) { code, errMsg ->
+            Log.d(TAG, "editRecall: code=$code, errMsg=$errMsg")
+            if (code != 0) {
+                failEditedSend(newText, "撤回失败：${errMsg ?: "未知错误"}")
+                return@recallMessage
+            }
+            synchronized(messageLock) { msgList.removeAll { it.msgId == editId } }
+            emitMessages()
+            sendEditedReplacement(c, newText)
+        }
+        if (!recallStarted) failEditedSend(newText, "消息服务不可用")
+    }
+
+    private fun sendEditedReplacement(contact: Contact, text: String) {
+        val elements = arrayListOf(
+            MsgElement().apply {
+                elementType = 1
+                elementId = 0
+                textElement = TextElement().apply {
+                    content = text
+                    atType = 0
+                    atUid = 0L
+                    atNtUid = ""
+                }
+            },
+        )
+        val sent = chatRepository.sendMessage(contact, elements) { code, errMsg ->
+            Log.d(TAG, "sendEditedReplacement: code=$code, errMsg=$errMsg")
+            if (code != 0) {
+                failEditedSend(text, "发送失败：${errMsg ?: "未知错误"}")
+                return@sendMessage
+            }
+            val record = MsgRecord().apply {
+                peerUid = contact.peerUid
+                chatType = contact.chatType
+                msgTime = System.currentTimeMillis() / 1000
+                senderUin = selfUin
+                sendNickName = ""
+                sendStatus = 2
+            }
+            runCatching {
+                val field = MsgRecord::class.java.getDeclaredField("elements")
+                field.isAccessible = true
+                field.set(record, elements)
+            }
+            RecentMessageStore.put(peerId, record)
+            _statusText.value = ""
+            _editSendState.value = EditSendState.Succeeded
+        }
+        if (!sent) failEditedSend(text, "消息服务不可用")
+    }
+
+    private fun failEditedSend(text: String, message: String) {
+        _editingText.value = text
+        _statusText.value = "编辑失败：$message"
+        _editSendState.value = EditSendState.Failed(message)
     }
 
 }

@@ -115,6 +115,8 @@ fun ChatInputScreen(
     val imageSlots = remember { mutableStateListOf<ImageSlot>() }
     var imagePickerSelection by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val atSlots = remember { mutableStateListOf<AtMention>() }
+    val editSendState by vm.editSendState.collectAsState()
+    val isEditSending = editSendState is ChatDetailViewModel.EditSendState.Sending
     var activeReplyTarget by remember(peerUid, chatType) {
         mutableStateOf<ChatDetailViewModel.ReplyTarget?>(null)
     }
@@ -184,6 +186,26 @@ fun ChatInputScreen(
             addAtMention(target.senderUid, target.senderName)
         }
         onConsumeReplyTarget()
+    }
+
+    LaunchedEffect(editSendState) {
+        when (val state = editSendState) {
+            ChatDetailViewModel.EditSendState.Succeeded -> if (isEditing) {
+                textFieldValue = TextFieldValue("")
+                imageSlots.clear()
+                atSlots.clear()
+                if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
+                vm.completeEditedSend()
+                onBack()
+            }
+
+            is ChatDetailViewModel.EditSendState.Failed -> pickerNotice = "编辑失败：${state.message}"
+            else -> Unit
+        }
+    }
+
+    BackHandler(enabled = isEditSending) {
+        pickerNotice = "正在保存修改"
     }
 
     // Auto-save draft on text changes (only when not editing)
@@ -413,6 +435,11 @@ fun ChatInputScreen(
 
                     if (!hasText && !hasImages && !hasMentions) return@EdgeButton
 
+                    if (isEditing) {
+                        onSendEdited(text)
+                        return@EdgeButton
+                    }
+
                     if (hasImages || hasMentions) {
                         val uriMap = imageSlots.associate { it.id to it.uri }
                         val atMap =
@@ -439,8 +466,6 @@ fun ChatInputScreen(
                             }
                         }
                         onSendMixed(mappedText, uriMap, atMap, activeReplyTarget)
-                    } else if (isEditing) {
-                        onSendEdited(text)
                     } else {
                         onSend(text, activeReplyTarget)
                     }
@@ -451,7 +476,7 @@ fun ChatInputScreen(
                     if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
                     onBack()
                 },
-                enabled = canSend,
+                enabled = canSend && !isEditSending,
                 buttonSize = EdgeButtonSize.Medium,
             ) {
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
@@ -481,10 +506,13 @@ fun ChatInputScreen(
                             .background(scheme.primaryContainer, RoundedCornerShape(8.dp)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TextButton(onClick = {
-                            vm.cancelEdit()
-                            onBack()
-                        }) {
+                        TextButton(
+                            onClick = {
+                                vm.cancelEdit()
+                                onBack()
+                            },
+                            enabled = !isEditSending,
+                        ) {
                             Text("取消", color = scheme.onPrimaryContainer)
                         }
                     }

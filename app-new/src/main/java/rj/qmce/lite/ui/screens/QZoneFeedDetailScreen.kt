@@ -17,9 +17,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,11 +32,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.EdgeButton
@@ -57,6 +61,14 @@ fun QZoneFeedDetailScreen(
     BackHandler(onBack = onBack)
     val feeds by vm.feeds.collectAsState()
     val feed = feeds.firstOrNull { it.feedId == feedId } ?: initialFeed
+    val context = LocalContext.current
+    val shareText = buildString {
+        append(feed.nick.ifBlank { "QQ用户" })
+        if (feed.content.isNotBlank()) append(": ").append(feed.content)
+        feed.forward?.content?.takeIf { it.isNotBlank() }?.let {
+            append("\n\n转发内容：").append(it)
+        }
+    }
     var gallery by remember(feed.feedId) { mutableStateOf<List<ViewerMedia>>(emptyList()) }
     var videoUrl by remember(feed.feedId) { mutableStateOf<String?>(null) }
     val listState = rememberTransformingLazyColumnState()
@@ -131,6 +143,26 @@ fun QZoneFeedDetailScreen(
                         forward = forward,
                         hasMedia = feed.picUrls.isNotEmpty(),
                     )
+                }
+            }
+            if (shareText.isNotBlank()) {
+                item(key = "feed-detail-copy:${feed.feedId}") {
+                    Button(
+                        onClick = { copyMessageText(context, shareText) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        icon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    ) { Text("复制动态") }
+                }
+                item(key = "feed-detail-share:${feed.feedId}") {
+                    Button(
+                        onClick = { shareMessageText(context, shareText) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        icon = { Icon(Icons.Default.Share, contentDescription = null) },
+                    ) { Text("系统分享") }
                 }
             }
             if (feed.picUrls.isNotEmpty()) {

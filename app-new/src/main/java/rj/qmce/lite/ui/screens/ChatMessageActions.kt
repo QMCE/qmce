@@ -104,7 +104,8 @@ object MessageActionResolver {
         }
 
         // 多选
-        add(MessageAction("multi_select", "多选"))
+        // TODO: 改进到能用
+        // add(MessageAction("multi_select", "多选"))
 
         // 删除
         add(MessageAction("delete", "删除", destructive = true))
@@ -308,6 +309,50 @@ fun shareLocalMedia(context: Context, file: File) {
     }.start()
 }
 
+fun shareMessageBatch(context: Context, text: String, files: List<File>) {
+    val sourceFiles = files.filter { file -> file.isFile }.distinctBy { file -> file.absolutePath }
+    if (sourceFiles.isEmpty()) {
+        shareMessageText(context, text)
+        return
+    }
+    Thread {
+        val sharedUris = sourceFiles.mapNotNull { source ->
+            runCatching {
+                val sharedFile = copyForExternalAccess(context, source)
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    sharedFile,
+                )
+            }.getOrNull()
+        }
+        postOnMain {
+            if (sharedUris.isEmpty()) {
+                if (text.isNotBlank()) shareMessageText(context, text)
+                else Toast.makeText(context, "没有可分享的已缓存媒体", Toast.LENGTH_SHORT).show()
+                return@postOnMain
+            }
+            runCatching {
+                context.startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND_MULTIPLE)
+                            .setType("*/*")
+                            .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(sharedUris))
+                            .putExtra(Intent.EXTRA_TEXT, text.takeIf(String::isNotBlank))
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                        "分享消息",
+                    ).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
+                )
+            }.onFailure {
+                Toast.makeText(context, "没有可用的分享应用", Toast.LENGTH_SHORT).show()
+            }
+            if (sharedUris.size != sourceFiles.size) {
+                Toast.makeText(context, "部分媒体尚未缓存，已跳过", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }.start()
+}
+
 fun openLocalFile(context: Context, file: File) {
     if (!file.isFile) return
     Thread {
@@ -347,23 +392,24 @@ private fun contentTypeFor(file: File): String =
     URLConnection.guessContentTypeFromName(file.name) ?: "application/octet-stream"
 
 fun ChatDetailViewModel.UiMsg.firstLocalMediaFile(): File? =
-    contents.firstNotNullOfOrNull { content ->
+    localMediaFiles().firstOrNull()
+
+fun ChatDetailViewModel.UiMsg.localMediaFiles(): List<File> =
+    contents.flatMap { content ->
         when (content) {
             is ChatDetailViewModel.MessageContent.Image -> {
                 (content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
-                    .asSequence()
                     .map { File(it.removePrefix("file://")) }
-                    .firstOrNull(File::isFile)
+                    .filter(File::isFile)
             }
 
-            is ChatDetailViewModel.MessageContent.MarketFace -> sequenceOf(
+            is ChatDetailViewModel.MessageContent.MarketFace -> listOfNotNull(
                 content.dynamicPath,
-                content.staticPath
+                content.staticPath,
             )
-                .filterNotNull()
                 .map { File(it.removePrefix("file://")) }
-                .firstOrNull(File::isFile)
+                .filter(File::isFile)
 
-            else -> null
+            else -> emptyList()
         }
-    }
+    }.distinctBy { file -> file.absolutePath }

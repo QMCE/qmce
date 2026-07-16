@@ -8,6 +8,7 @@ import com.tencent.watch.qzone_impl.common.QZoneBusinessLooper
 import com.tencent.watch.qzone_impl.common.task.QZoneTask
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
 import com.tencent.watch.qzone_impl.protocol.request.QZoneAddCommentRequest
+import com.tencent.watch.qzone_impl.protocol.request.QZoneAddReplyRequest
 import com.tencent.watch.qzone_impl.publish.business.model.ImageInfo
 import com.tencent.watch.qzone_impl.publish.business.model.MediaWrapper
 import com.tencent.watch.qzone_impl.publish.business.model.QzoneShuoShuoParams
@@ -15,6 +16,7 @@ import com.tencent.watch.qzone_impl.publish.business.publishqueue.QZonePublishQu
 import com.tencent.watch.qzone_impl.publish.business.task.QZoneLikeFeedTask
 import com.tencent.watch.qzone_impl.publish.business.task.QZoneUploadShuoShuoTask
 import com.tencent.watch.qzone_impl.service.QZoneWriteOperationService
+import com.tencent.watch.qzone_impl.utils.UinUtils
 import java.io.File
 import java.util.UUID
 
@@ -59,6 +61,42 @@ class QZoneWriteRepository {
             null,
             false,
             busiParam,
+        )
+        val task = QZoneTask(request, null, QZoneWriteOperationService.h(), 0)
+        task.addParameter("ugckey", feedCommInfo.ugckey)
+        task.addParameter("feedkey", feedCommInfo.feedskey)
+        task.addParameter("uniKey", UUID.randomUUID().toString())
+        task.addParameter("clickScene", 0)
+        QZoneBusinessLooper.a().c(task)
+    }
+
+    suspend fun reply(
+        data: BusinessFeedData,
+        commentId: String,
+        targetUin: Long,
+        targetNick: String,
+        content: String,
+    ): Result<Unit> = runCatching {
+        require(commentId.isNotBlank()) { "评论标识不可用" }
+        require(targetUin > 0L) { "评论用户不可用" }
+        val feedCommInfo = data.feedCommInfo
+        val cellId = runCatching { data.idInfo?.cellId }.getOrNull().orEmpty()
+        val busiParam = runCatching { data.operationInfo?.busiParam }.getOrNull()
+        val encodedNick = targetNick.replace("%", "%25").replace(",", "%2C")
+            .replace("{", "%7B").replace("}", "%7D").replace(":", "%3A")
+        val body = "@{uin:$targetUin,nick:$encodedNick,who:1,auto:1}$content"
+        val request = QZoneAddReplyRequest(
+            feedCommInfo.appid,
+            UinUtils.b(),
+            targetUin,
+            cellId,
+            commentId,
+            body,
+            null,
+            0,
+            busiParam,
+            "",
+            HashMap(),
         )
         val task = QZoneTask(request, null, QZoneWriteOperationService.h(), 0)
         task.addParameter("ugckey", feedCommInfo.ugckey)

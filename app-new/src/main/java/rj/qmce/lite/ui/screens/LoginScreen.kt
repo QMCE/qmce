@@ -246,13 +246,6 @@ private fun AgreementGuide(
     val transformationSpec = rememberTransformationSpec()
     val scheme = MaterialTheme.colorScheme
     GuideScrollColumn {
-        item(key = "back") {
-            GuideBackButton(
-                onBack = onBack,
-                modifier = Modifier.transformedHeight(this, transformationSpec),
-                transformation = SurfaceTransformation(transformationSpec),
-            )
-        }
         item(key = "agreement-content") {
             Column(
                 modifier = Modifier
@@ -308,13 +301,6 @@ private fun QrLoginGuide(
 ) {
     val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
-        item(key = "back") {
-            GuideBackButton(
-                onBack = onBack,
-                modifier = Modifier.transformedHeight(this, transformationSpec),
-                transformation = SurfaceTransformation(transformationSpec),
-            )
-        }
         item(key = "qr-content") {
             Column(
                 modifier = Modifier
@@ -535,14 +521,6 @@ private fun QQLogo(size: androidx.compose.ui.unit.Dp) {
             contentScale = ContentScale.Fit,
         )
     }
-}
-
-@Composable
-private fun GuideBackButton(
-    onBack: () -> Unit,
-    modifier: Modifier,
-    transformation: SurfaceTransformation,
-) {
 }
 
 @Composable

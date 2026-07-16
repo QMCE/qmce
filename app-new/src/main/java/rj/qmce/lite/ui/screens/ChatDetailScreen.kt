@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +40,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
@@ -51,6 +53,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.runtime.Composable
@@ -179,6 +182,7 @@ fun ChatDetailScreen(
     val statusText by vm.statusText.collectAsState()
     val name by vm.peerName.collectAsState()
     val isLoadingOlder by vm.isLoadingOlder.collectAsState()
+    val hasOlderMessages by vm.hasOlderMessages.collectAsState()
     val olderPageVersion by vm.olderPageVersion.collectAsState()
     val forwardDetailState by vm.forwardDetailState.collectAsState()
     val replySourceState by vm.replySourceState.collectAsState()
@@ -211,6 +215,7 @@ fun ChatDetailScreen(
     }
     var showMessageSearch by remember(peerUid, chatType) { mutableStateOf(false) }
     var messageSearchQuery by remember(peerUid, chatType) { mutableStateOf("") }
+    var highlightedMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     val messageSearchMatches = remember(messages, messageSearchQuery) {
         val query = messageSearchQuery.trim()
         if (query.isBlank()) emptyList() else messages.filter { message ->
@@ -224,14 +229,22 @@ fun ChatDetailScreen(
         ChatMessageSearchScreen(
             query = messageSearchQuery,
             matches = messageSearchMatches,
+            isLoadingOlder = isLoadingOlder,
+            canLoadOlder = hasOlderMessages,
             onQueryChange = { messageSearchQuery = it },
+            onLoadOlder = { vm.loadOlderMessages() },
             onSelect = { target ->
                 showMessageSearch = false
+                highlightedMessageKey = target.stableKey
                 val targetIndex = timelineItems.indexOfFirst { item ->
                     (item as? ChatTimelineItem.Message)?.message?.stableKey == target.stableKey
                 }
                 if (targetIndex >= 0) {
-                    searchScope.launch { listState.animateScrollToItem(targetIndex) }
+                    searchScope.launch {
+                        listState.animateScrollToItem(targetIndex)
+                        delay(1_500)
+                        if (highlightedMessageKey == target.stableKey) highlightedMessageKey = null
+                    }
                 }
             },
             onBack = { showMessageSearch = false },
@@ -528,6 +541,7 @@ fun ChatDetailScreen(
                                                     } else {
                                                         null
                                                     },
+                                                    isHighlighted = item.message.stableKey == highlightedMessageKey,
                                                 )
                                                 if (multiSelectMode && isSelected) {
                                                     Box(
@@ -577,6 +591,7 @@ fun ChatDetailScreen(
                         avatarUrl = avatarUrl,
                         vm = vm,
                         onOpenMembers = onOpenMembers,
+                        onOpenMessageSearch = { showMessageSearch = true },
                         onOpenSettings = onOpenChatSettings,
                     )
                 }
@@ -590,6 +605,7 @@ fun ChatDetailScreen(
                     avatarUrl = avatarUrl,
                     vm = vm,
                     onOpenMembers = onOpenMembers,
+                    onOpenMessageSearch = { showMessageSearch = true },
                     onOpenSettings = onOpenChatSettings,
                 )
             }
@@ -607,8 +623,19 @@ fun ChatDetailScreen(
                         if (text.isNotBlank()) copyMessageText(context, text)
                         else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
                     },
-                    onForward = Toast.makeText(context, "批量转发开发中", Toast.LENGTH_SHORT).show()
-                        .let { {} },
+                    onForward = {
+                        if (vm.prepareBatchForward()) onOpenContactPicker()
+                    },
+                    onShare = {
+                        val selectedMessages = messages.filter { it.msgId in selectedMsgIds }
+                        val text = vm.batchCopySelected()
+                        val mediaFiles = selectedMessages.flatMap { it.localMediaFiles() }
+                        if (text.isNotBlank() || mediaFiles.isNotEmpty()) {
+                            shareMessageBatch(context, text, mediaFiles)
+                        } else {
+                            Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
+                        }
+                    },
                     onDelete = {
                         if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
                     },
@@ -837,18 +864,23 @@ private fun ChatComposerActions(
     onOpenInput: () -> Unit,
     onOpenVoiceRecorder: () -> Unit,
 ) {
-    CompactButton(
-        onClick = {},
-        icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
-    )
-    CompactButton(
-        onClick = onOpenInput,
-        icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
-    )
-    CompactButton(
-        onClick = onOpenVoiceRecorder,
-        icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
-    )
+    Row (modifier = Modifier.padding(bottom = 30.dp),) {
+        CompactButton(
+            onClick = {},
+            modifier = Modifier.padding(horizontal = 5.dp),
+            icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
+        )
+        CompactButton(
+            onClick = onOpenInput,
+            modifier = Modifier.padding(horizontal = 5.dp),
+            icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
+        )
+        CompactButton(
+            onClick = onOpenVoiceRecorder,
+            modifier = Modifier.padding(horizontal = 5.dp),
+            icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
+        )
+    }
 }
 
 @Composable
@@ -867,6 +899,7 @@ internal fun MessageBubble(
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState? = { null },
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit = {},
     onRequestCall: ((CallMode) -> Unit)? = null,
+    isHighlighted: Boolean = false,
 ) {
     val systemTip = message.contents.singleOrNull() as? ChatDetailViewModel.MessageContent.SystemTip
     if (systemTip != null) {
@@ -887,7 +920,7 @@ internal fun MessageBubble(
     val bubbleShape = RoundedCornerShape(10.dp)
     val isSingleMedia = message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
-                it is ChatDetailViewModel.MessageContent.MarketFace ||
+            it is ChatDetailViewModel.MessageContent.MarketFace ||
                 it is ChatDetailViewModel.MessageContent.Giphy
     }
 
@@ -914,7 +947,14 @@ internal fun MessageBubble(
                 modifier = Modifier
                     .width(IntrinsicSize.Max)
                     .height(IntrinsicSize.Max)
-                    .widthIn(max = 172.dp),
+                    .widthIn(max = 172.dp)
+                    .then(
+                        if (isHighlighted) {
+                            Modifier.border(2.dp, MaterialTheme.colorScheme.primary, bubbleShape)
+                        } else {
+                            Modifier
+                        },
+                    ),
                 containerColor = containerColor,
                 contentColor = messageContentColor,
                 shape = bubbleShape,
@@ -947,12 +987,15 @@ internal fun MessageBubble(
                     )
                 }
             }
+            // TODO: 换一个时间分割线 现在的很丑
+            /*
             Text(
                 text = formatMsgTime(message.time),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp, end = 4.dp),
             )
+             */
         }
     }
 }
@@ -2013,6 +2056,7 @@ private fun MultiSelectBottomBar(
     onExit: () -> Unit,
     onCopy: () -> Unit,
     onForward: () -> Unit,
+    onShare: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -2031,7 +2075,7 @@ private fun MultiSelectBottomBar(
             Icon(Icons.Default.Close, contentDescription = "退出多选")
         }
         Text(
-            text = "已选 $selectedCount 条",
+            text = selectedCount.toString(),
             color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Medium,
@@ -2041,6 +2085,18 @@ private fun MultiSelectBottomBar(
             modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
         ) {
             Icon(Icons.Default.ContentCopy, contentDescription = "复制")
+        }
+        IconButton(
+            onClick = onForward,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "转发")
+        }
+        IconButton(
+            onClick = onShare,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
+            Icon(Icons.Default.Share, contentDescription = "系统分享")
         }
         IconButton(
             onClick = onDelete,

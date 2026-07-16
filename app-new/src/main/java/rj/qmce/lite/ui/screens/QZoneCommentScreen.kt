@@ -2,6 +2,7 @@ package rj.qmce.lite.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +15,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Reply
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -36,11 +38,20 @@ import rj.qmce.lite.viewmodel.QZoneViewModel
 fun QZoneCommentScreen(
     feed: QZoneViewModel.FeedItem,
     draft: String,
+    replyTarget: QZoneViewModel.CommentReplyTarget?,
+    sendState: QZoneViewModel.CommentSendState,
     onDraftChange: (String) -> Unit,
+    onReply: (QZoneViewModel.FeedComment) -> Unit,
+    onCancelReply: () -> Unit,
+    onSendSucceeded: () -> Unit,
     onSend: () -> Unit,
     onBack: () -> Unit,
 ) {
     BackHandler(onBack = onBack)
+
+    LaunchedEffect(sendState) {
+        if (sendState is QZoneViewModel.CommentSendState.Succeeded) onSendSucceeded()
+    }
 
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
@@ -50,7 +61,7 @@ fun QZoneCommentScreen(
         edgeButton = {
             EdgeButton(
                 onClick = onSend,
-                enabled = draft.isNotBlank(),
+                enabled = draft.isNotBlank() && sendState !is QZoneViewModel.CommentSendState.Sending,
                 buttonSize = EdgeButtonSize.Small,
             ) { Text("发送") }
         },
@@ -61,6 +72,31 @@ fun QZoneCommentScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            replyTarget?.let { target ->
+                item(key = "qzone-comment-reply-target:${target.commentId}") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("回复 ${target.targetName}", style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            "取消",
+                            modifier = Modifier
+                                .padding(start = 8.dp)
+                                .clickable(onClick = onCancelReply),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            if (sendState is QZoneViewModel.CommentSendState.Failed) {
+                item(key = "qzone-comment-send-error") {
+                    QZoneCommentHint("发送失败：${sendState.message}", transformationSpec)
+                }
+            }
             if (feed.comments.isEmpty()) {
                 item(key = "qzone-comment-none") {
                     QZoneCommentHint("暂无评论", transformationSpec)
@@ -80,6 +116,7 @@ fun QZoneCommentScreen(
                                 }
                                 .padding(horizontal = 10.dp, vertical = 3.dp)
                                 .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+                                .clickable { onReply(comment) }
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                         ) {
                             Text(

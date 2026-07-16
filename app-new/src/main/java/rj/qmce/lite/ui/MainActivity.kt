@@ -558,17 +558,28 @@ private fun WearApp() {
                     }
                     composable("qzoneComment") {
                         qZoneCommentTarget?.let { feed ->
+                            val replyTarget by qZoneVm.commentReplyTarget.collectAsState()
+                            val commentSendState by qZoneVm.commentSendState.collectAsState()
                             QZoneCommentScreen(
                                 feed = feed,
                                 draft = qZoneCommentDraft,
+                                replyTarget = replyTarget,
+                                sendState = commentSendState,
                                 onDraftChange = { qZoneCommentDraft = it },
-                                onSend = {
-                                    qZoneVm.comment(feed.feedId, qZoneCommentDraft)
+                                onReply = { comment -> qZoneVm.prepareCommentReply(feed.feedId, comment) },
+                                onCancelReply = qZoneVm::clearCommentReplyTarget,
+                                onSendSucceeded = {
                                     qZoneCommentDraft = ""
                                     qZoneCommentTarget = null
+                                    qZoneVm.clearCommentSendState()
                                     navController.popBackStack()
                                 },
+                                onSend = {
+                                    qZoneVm.comment(feed.feedId, qZoneCommentDraft, replyTarget)
+                                },
                                 onBack = {
+                                    qZoneVm.clearCommentReplyTarget()
+                                    qZoneVm.clearCommentSendState()
                                     qZoneCommentDraft = ""
                                     qZoneCommentTarget = null
                                     navController.popBackStack()
