@@ -1,6 +1,7 @@
 package rj.qmce.lite
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.ActivityManager
 import android.app.Application
 import android.content.BroadcastReceiver
@@ -40,6 +41,7 @@ import rj.qmce.lite.fix.SignatureProbe
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.system.exitProcess
 
 
 @Suppress("SpellCheckingInspection")
@@ -128,6 +130,14 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 Process.killProcess(Process.myPid())
             }, 250L)
             return true
+        }
+
+        fun forceExit(context: Context) {
+            Handler(Looper.getMainLooper()).post {
+                runCatching { (context as? Activity)?.finishAndRemoveTask() }
+                Process.killProcess(Process.myPid())
+                exitProcess(0)
+            }
         }
 
         fun resetRuntimeAfterLogout(app: MobileQQ? = sMobileQQ) {

@@ -88,10 +88,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.LocalContentColor
@@ -112,8 +112,6 @@ import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
-import rj.qmce.lite.ui.components.CurvedCard
-import rj.qmce.lite.ui.components.curvedCompactButton
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -740,6 +738,10 @@ fun ChatDetailScreen(
                             onOpenContactPicker()
                         }
 
+                        "reply" -> {
+                            if (vm.prepareReply(message)) onOpenInput()
+                        }
+
                         "multi_select" -> vm.enterMultiSelect(message.msgId)
                         "edit" -> {
                             val text = MessageActionResolver.copyableText(message)
@@ -835,24 +837,18 @@ private fun ChatComposerActions(
     onOpenInput: () -> Unit,
     onOpenVoiceRecorder: () -> Unit,
 ) {
-    CurvedCard(
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        curvedRow {
-            curvedCompactButton(
-                onClick = {},
-                icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
-            )
-            curvedCompactButton(
-                onClick = onOpenInput,
-                icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
-            )
-            curvedCompactButton(
-                onClick = onOpenVoiceRecorder,
-                icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
-            )
-        }
-    }
+    CompactButton(
+        onClick = {},
+        icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
+    )
+    CompactButton(
+        onClick = onOpenInput,
+        icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
+    )
+    CompactButton(
+        onClick = onOpenVoiceRecorder,
+        icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
+    )
 }
 
 @Composable

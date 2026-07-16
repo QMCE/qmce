@@ -61,6 +61,7 @@ import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
+import rj.qmce.lite.ui.screens.ForceExitConfirmationScreen
 import rj.qmce.lite.ui.screens.InteractionSettingsScreen
 import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
@@ -257,6 +258,11 @@ private fun WearApp() {
                                     launchSingleTop = true
                                 }
                             },
+                            onForceExit = {
+                                navController.navigate("forceExitConfirmation") {
+                                    launchSingleTop = true
+                                }
+                            },
                             onOpenQZoneComposer = {
                                 navController.navigate("qzoneComposer") { launchSingleTop = true }
                             },
@@ -354,20 +360,24 @@ private fun WearApp() {
                     }
                     composable("chatInput") {
                         val editingText by chatDetailVm.editingText.collectAsState()
+                        val pendingReplyTarget by chatDetailVm.pendingReplyTarget.collectAsState()
                         ChatInputScreen(
                             vm = chatDetailVm,
                             peerUid = chatDetailVm.currentPeerUid,
                             chatType = chatDetailVm.currentChatType,
                             editingText = editingText,
-                            onSend = { text -> chatDetailVm.sendText(text) },
+                            replyTarget = pendingReplyTarget,
+                            onConsumeReplyTarget = chatDetailVm::consumePendingReplyTarget,
+                            onSend = { text, target -> chatDetailVm.sendText(text, target) },
                             onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
                             peerUin = chatDetailVm.currentPeerUin,
-                            onSendMixed = { mixedText, uriMap, atMap ->
+                            onSendMixed = { mixedText, uriMap, atMap, target ->
                                 chatDetailVm.sendMixed(
                                     context,
                                     mixedText,
                                     uriMap,
-                                    atMap
+                                    atMap,
+                                    target,
                                 )
                             },
                             onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
@@ -584,6 +594,12 @@ private fun WearApp() {
                                 isLoggedIn = false
                                 loggedUin = ""
                             },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("forceExitConfirmation") {
+                        ForceExitConfirmationScreen(
+                            onConfirm = { QmceApplication.forceExit(context) },
                             onBack = { navController.popBackStack() },
                         )
                     }

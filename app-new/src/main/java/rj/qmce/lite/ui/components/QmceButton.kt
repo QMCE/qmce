@@ -141,7 +141,6 @@ import rj.qmce.lite.ui.components.ButtonDefaults.filledVariantButtonColors
  *   to dynamically change its content separately from the background.
  * @param content Slot for composable body content displayed on the Button
  */
-// TODO(b/261838497) Add Material3 UX guidance links
 @Composable
 public fun Button(
     onClick: () -> Unit,

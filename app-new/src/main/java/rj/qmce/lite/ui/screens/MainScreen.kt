@@ -40,6 +40,7 @@ fun MainScreen(
     showPageIndicator: Boolean,
     onOpenSettings: () -> Unit,
     onOpenLogoutConfirmation: () -> Unit,
+    onForceExit: () -> Unit,
     onOpenQZoneComposer: () -> Unit,
     onOpenQZoneDetail: (rj.qmce.lite.viewmodel.QZoneViewModel.FeedItem) -> Unit,
     onLogout: () -> Unit,
@@ -87,6 +88,7 @@ fun MainScreen(
                     uin = uin,
                     onOpenSettings = onOpenSettings,
                     onOpenLogoutConfirmation = onOpenLogoutConfirmation,
+                    onForceExit = onForceExit,
                     vm = myVm,
                 )
             }

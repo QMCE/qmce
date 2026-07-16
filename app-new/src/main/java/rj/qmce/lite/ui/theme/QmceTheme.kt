@@ -17,7 +17,7 @@ import rj.qmce.lite.AppConfig
 fun QmceTheme(
     navController: NavController? = null,
     autoScale: Boolean = true,
-    manualScale: Float = 1.1f,
+    manualScale: Float = 1.6f,
     content: @Composable () -> Unit,
 ) {
     val deviceDensity = LocalDensity.current
@@ -38,7 +38,7 @@ fun QmceTheme(
         if (autoScale) {
             CompositionLocalProvider(
                 LocalDensity provides Density(
-                    density = deviceDensity.density * 1.0f,
+                    density = deviceDensity.density * 1.6f,
                     fontScale = deviceDensity.fontScale,
                 ),
             ) {
@@ -58,5 +58,5 @@ fun QmceTheme(
     }
 }
 
-private const val MIN_SCALE = 0.75f
-private const val MAX_SCALE = 2.0f
+private const val MIN_SCALE = 0.5f
+private const val MAX_SCALE = 3.0f

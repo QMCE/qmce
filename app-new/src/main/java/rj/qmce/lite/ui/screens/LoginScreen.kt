@@ -48,7 +48,6 @@ import androidx.wear.compose.material3.RadioButton
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.TextButton
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qphone.base.remote.SimpleAccount
@@ -167,13 +166,6 @@ private fun ScreenTypeGuide(
 ) {
     val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
-        item(key = "back") {
-            GuideBackButton(
-                onBack = onBack,
-                modifier = Modifier.transformedHeight(this, transformationSpec),
-                transformation = SurfaceTransformation(transformationSpec),
-            )
-        }
         item(key = "title") {
             Column(
                 modifier = Modifier
@@ -537,7 +529,7 @@ private fun QQLogo(size: androidx.compose.ui.unit.Dp) {
         contentAlignment = Alignment.Center,
     ) {
         Image(
-            painter = painterResource(R.drawable.qqpro_ic_fg),
+            painter = painterResource(R.drawable.ic_launcher_qq_splash),
             contentDescription = "QQ",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
@@ -551,21 +543,6 @@ private fun GuideBackButton(
     modifier: Modifier,
     transformation: SurfaceTransformation,
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                with(transformation) {
-                    applyContainerTransformation()
-                    applyContentTransformation()
-                }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        TextButton(onClick = onBack) {
-            Text("返回", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
 }
 
 @Composable

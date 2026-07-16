@@ -26,6 +26,8 @@ import androidx.wear.compose.foundation.CurvedScope
 import androidx.wear.compose.foundation.curvedComposable
 import androidx.wear.compose.material3.SurfaceTransformation
 
+// TODO & fixme: not finished curved components
+
 @Composable
 fun CurvedCard(
     modifier: Modifier = Modifier,

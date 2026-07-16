@@ -227,6 +227,14 @@ class ChatDetailViewModel : ViewModel() {
         val status: Int, // sendStatus
     )
 
+    data class ReplyTarget(
+        val messageId: Long,
+        val senderUid: String,
+        val senderName: String,
+        val summary: String,
+        val isGroupChat: Boolean,
+    )
+
     sealed interface ForwardDetailState {
         data object Idle : ForwardDetailState
         data class Loading(val title: String) : ForwardDetailState
@@ -275,6 +283,8 @@ class ChatDetailViewModel : ViewModel() {
 
     private val _pendingForwardMessage = MutableStateFlow<UiMsg?>(null)
     val pendingForwardMessage: StateFlow<UiMsg?> = _pendingForwardMessage
+    private val _pendingReplyTarget = MutableStateFlow<ReplyTarget?>(null)
+    val pendingReplyTarget: StateFlow<ReplyTarget?> = _pendingReplyTarget
 
     private val _multiSelectMode = MutableStateFlow(false)
     val multiSelectMode: StateFlow<Boolean> = _multiSelectMode
@@ -366,6 +376,7 @@ class ChatDetailViewModel : ViewModel() {
         _peerName.value = name
         _forwardDetailState.value = ForwardDetailState.Idle
         _replySourceState.value = ReplySourceState.Idle
+        _pendingReplyTarget.value = null
         selfUin = myUin.toLongOrNull() ?: 0L
         peerId = peerUin  // 保存 QQ 号
         contact = Contact(chatType, peerUid, "")
@@ -999,20 +1010,26 @@ class ChatDetailViewModel : ViewModel() {
         mixedText: String,
         uriMap: Map<String, Uri>,
         atMap: Map<String, AtMention> = emptyMap(),
+        replyTarget: ReplyTarget? = null,
     ) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            runWhenMessageServiceReady { sendMixed(context, mixedText, uriMap, atMap) }
+            runWhenMessageServiceReady { sendMixed(context, mixedText, uriMap, atMap, replyTarget) }
             return
         }
 
-        _statusText.value = "正在准备图片..."
+        _statusText.value = "正在准备消息..."
         val appContext = context.applicationContext
         Thread {
             runCatching {
                 val start = ''
                 val endMarker = ''
                 val elements = arrayListOf<MsgElement>()
+                replyTarget?.let { target ->
+                    val replyElement = createReplyElement(target)
+                        ?: error("回复消息不可用")
+                    elements.add(replyElement)
+                }
                 val textBuf = StringBuilder()
                 var index = 0
                 while (index < mixedText.length) {
@@ -1157,9 +1174,13 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun sendText(text: String) {
+        sendText(text, null)
+    }
+
+    fun sendText(text: String, replyTarget: ReplyTarget?) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            runWhenMessageServiceReady { sendText(text) }
+            runWhenMessageServiceReady { sendText(text, replyTarget) }
             return
         }
 
@@ -1173,7 +1194,16 @@ class ChatDetailViewModel : ViewModel() {
                 atNtUid = ""
             }
         }
-        val elements = arrayListOf(element)
+        val elements = arrayListOf<MsgElement>()
+        replyTarget?.let { target ->
+            val replyElement = createReplyElement(target)
+            if (replyElement == null) {
+                _statusText.value = "回复消息不可用"
+                return
+            }
+            elements.add(replyElement)
+        }
+        elements.add(element)
         val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
             Log.d(TAG, "sendMsg: code=$code, errMsg=$errMsg")
             if (code == 0) {
@@ -1191,7 +1221,7 @@ class ChatDetailViewModel : ViewModel() {
                 runCatching {
                     val f = MsgRecord::class.java.getDeclaredField("elements")
                     f.isAccessible = true
-                    f.set(rec, arrayListOf(element))
+                    f.set(rec, elements)
                 }
                 RecentMessageStore.put(peerId, rec)
                 Log.d(TAG, "sendMsg: put to RecentMessageStore id=$peerId")
@@ -1200,6 +1230,40 @@ class ChatDetailViewModel : ViewModel() {
             }
         }
         if (!sent) _statusText.value = "消息服务不可用"
+    }
+
+    private fun createReplyElement(target: ReplyTarget): MsgElement? = runCatching {
+        QRoute.api(IMsgUtilApi::class.java)
+            .createReplyElement(target.messageId)
+            .also { element ->
+                element.replyElement?.senderUid = target.senderUid.toLongOrNull() ?: 0L
+            }
+    }.onFailure {
+        Log.w(TAG, "create reply element failed msg=${target.messageId}", it)
+    }.getOrNull()
+
+    fun prepareReply(message: UiMsg): Boolean {
+        if (message.msgId <= 0L) {
+            _statusText.value = "这条消息暂时无法回复"
+            return false
+        }
+        val target = ReplyTarget(
+            messageId = message.msgId,
+            senderUid = message.senderUid,
+            senderName = message.senderNick.ifBlank { "对方" },
+            summary = message.text.replace('\n', ' ').take(80).ifBlank { "[消息]" },
+            isGroupChat = message.chatType == 2,
+        )
+        if (createReplyElement(target) == null) {
+            _statusText.value = "回复消息不可用"
+            return false
+        }
+        _pendingReplyTarget.value = target
+        return true
+    }
+
+    fun consumePendingReplyTarget() {
+        _pendingReplyTarget.value = null
     }
 
     private fun emitMessages() {

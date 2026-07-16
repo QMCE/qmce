@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
@@ -68,6 +69,7 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.chat.DraftStore
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.util.UUID
 import androidx.compose.material3.TextField as MaterialTextField
@@ -85,14 +87,21 @@ data class ImageSlot(val id: String, val uri: Uri)
 
 @Composable
 fun ChatInputScreen(
-    vm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
+    vm: ChatDetailViewModel,
     peerUid: String = "",
     peerUin: String = "",
     chatType: Int = 1,
     editingText: String = "",
-    onSend: (String) -> Unit,
+    replyTarget: ChatDetailViewModel.ReplyTarget? = null,
+    onConsumeReplyTarget: () -> Unit = {},
+    onSend: (String, ChatDetailViewModel.ReplyTarget?) -> Unit,
     onSendEdited: (String) -> Unit,
-    onSendMixed: (String, Map<String, Uri>, Map<String, AtMention>) -> Unit,
+    onSendMixed: (
+        String,
+        Map<String, Uri>,
+        Map<String, AtMention>,
+        ChatDetailViewModel.ReplyTarget?,
+    ) -> Unit,
     onSendVideo: (Uri) -> Unit,
     onOpenVoiceRecorder: () -> Unit,
     onBack: () -> Unit
@@ -106,6 +115,9 @@ fun ChatInputScreen(
     val imageSlots = remember { mutableStateListOf<ImageSlot>() }
     var imagePickerSelection by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val atSlots = remember { mutableStateListOf<AtMention>() }
+    var activeReplyTarget by remember(peerUid, chatType) {
+        mutableStateOf<ChatDetailViewModel.ReplyTarget?>(null)
+    }
     val groupMembers by vm.groupMembers.collectAsState()
     val scheme = MaterialTheme.colorScheme
     var showImagePicker by remember { mutableStateOf(false) }
@@ -135,14 +147,14 @@ fun ChatInputScreen(
         )
     }
 
-    fun addAtMention(member: GroupMemberRepository.Member) {
-        if (member.uid.isBlank()) {
+    fun addAtMention(uid: String, displayName: String) {
+        if (uid.isBlank()) {
             pickerNotice = "该成员缺少 UID，无法发送 @"
             return
         }
         val cursor = textFieldValue.selection.end
         val slotIndex = textFieldValue.text.substring(0, cursor).count { it == AT_MARKER }
-        val mention = AtMention(member.uid, member.displayName)
+        val mention = AtMention(uid, displayName)
         atSlots.add(slotIndex.coerceIn(0, atSlots.size), mention)
         val text = textFieldValue.text
         val inserted = "$AT_MARKER "
@@ -152,6 +164,10 @@ fun ChatInputScreen(
         )
     }
 
+    fun addAtMention(member: GroupMemberRepository.Member) {
+        addAtMention(member.uid, member.displayName)
+    }
+
     fun insertEmoji(emoji: String) {
         val cursor = textFieldValue.selection.end
         val text = textFieldValue.text
@@ -159,6 +175,15 @@ fun ChatInputScreen(
             text = text.substring(0, cursor) + emoji + text.substring(cursor),
             selection = TextRange(cursor + emoji.length),
         )
+    }
+
+    LaunchedEffect(replyTarget?.messageId) {
+        val target = replyTarget ?: return@LaunchedEffect
+        activeReplyTarget = target
+        if (!isEditing && target.isGroupChat && target.senderUid.isNotBlank()) {
+            addAtMention(target.senderUid, target.senderName)
+        }
+        onConsumeReplyTarget()
     }
 
     // Auto-save draft on text changes (only when not editing)
@@ -413,15 +438,16 @@ fun ChatInputScreen(
                                 }
                             }
                         }
-                        onSendMixed(mappedText, uriMap, atMap)
+                        onSendMixed(mappedText, uriMap, atMap, activeReplyTarget)
                     } else if (isEditing) {
                         onSendEdited(text)
                     } else {
-                        onSend(text)
+                        onSend(text, activeReplyTarget)
                     }
                     textFieldValue = TextFieldValue("")
                     imageSlots.clear()
                     atSlots.clear()
+                    activeReplyTarget = null
                     if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
                     onBack()
                 },
@@ -461,6 +487,44 @@ fun ChatInputScreen(
                         }) {
                             Text("取消", color = scheme.onPrimaryContainer)
                         }
+                    }
+                }
+            }
+            activeReplyTarget?.let { target ->
+                item(key = "reply-banner:${target.messageId}") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(horizontal = 14.dp, vertical = 2.dp)
+                            .background(scheme.primaryContainer, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = "回复 ${target.senderName}",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = scheme.onPrimaryContainer,
+                            )
+                            TextButton(onClick = { activeReplyTarget = null }) {
+                                Text("取消", color = scheme.onPrimaryContainer)
+                            }
+                        }
+                        Text(
+                            text = target.summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onPrimaryContainer,
+                        )
                     }
                 }
             }

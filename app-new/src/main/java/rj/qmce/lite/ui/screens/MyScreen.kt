@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
@@ -52,6 +53,7 @@ fun MyScreen(
     uin: String,
     onOpenSettings: () -> Unit,
     onOpenLogoutConfirmation: () -> Unit,
+    onForceExit: () -> Unit,
     vm: MyViewModel = viewModel(),
 ) {
     val profile by vm.profile.collectAsState()
@@ -107,6 +109,16 @@ fun MyScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 5.dp),
+                )
+            }
+            item(key = "my-force-exit") {
+                MyActionRow(
+                    icon = Icons.Default.PowerSettingsNew,
+                    title = "强制退出",
+                    subtitle = "立即终止 QMCE，不清理登录数据",
+                    onClick = onForceExit,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             item(key = "my-logout") {

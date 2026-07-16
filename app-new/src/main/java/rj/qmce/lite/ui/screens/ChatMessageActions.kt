@@ -66,6 +66,7 @@ object MessageActionResolver {
 
         // 编辑：自己发的有文本的消息
         val copyable = contents.copyableText()
+        if (message.msgId > 0L) add(MessageAction("reply", "回复"))
         if (message.isSelf && copyable.isNotBlank()) {
             add(MessageAction("edit", "编辑"))
         }
