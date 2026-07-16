@@ -1,4 +1,4 @@
-package moye.wearqq.compat.signing;
+package rj.qmce.lite.fix;
 
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;

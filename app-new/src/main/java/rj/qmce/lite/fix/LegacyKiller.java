@@ -11,7 +11,7 @@ import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.Base64;
 import android.util.Log;
-import moye.wearqq.compat.signing.PackageSignatureProvider;
+
 import rj.qmce.lite.BuildConfig;
 
 import java.lang.reflect.Field;

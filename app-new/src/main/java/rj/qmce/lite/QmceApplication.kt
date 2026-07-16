@@ -26,7 +26,7 @@ import com.tencent.qqnt.watch.app.WatchAppInterface
 import com.tencent.qqnt.watch.app.WatchApplicationDelegate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import moye.wearqq.compat.signing.PackageSignatureProvider
+import rj.qmce.lite.fix.PackageSignatureProvider
 import mqq.app.AppRuntime
 import mqq.app.Constants
 import mqq.app.IAccountCallback
