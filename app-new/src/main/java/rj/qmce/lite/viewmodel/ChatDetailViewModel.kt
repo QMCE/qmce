@@ -15,6 +15,7 @@ import com.tencent.qqnt.kernel.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
+import com.tencent.qqnt.kernel.nativeinterface.MarketFaceElement
 import com.tencent.qqnt.kernel.nativeinterface.PicElement
 import com.tencent.qqnt.kernel.nativeinterface.PttElement
 import com.tencent.qqnt.kernel.nativeinterface.QQNTWrapperUtil
@@ -31,12 +32,14 @@ import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.data.chat.MessageTokenCodec
 import rj.qmce.lite.data.chat.OfficialPttPlayer
 import rj.qmce.lite.data.chat.PttMediaRef
 import rj.qmce.lite.data.chat.RichMediaKey
 import rj.qmce.lite.data.chat.RichMediaRepository
 import rj.qmce.lite.data.chat.RichMediaRequestState
 import rj.qmce.lite.data.chat.RichMessageMetadataParser
+import rj.qmce.lite.data.emotion.EmotionRepository
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
@@ -71,6 +74,9 @@ class ChatDetailViewModel : ViewModel() {
             val text: String,
             val packId: String?,
             val stickerId: String?,
+            val faceType: Int = 0,
+            val faceIndex: Int = 0,
+            val imageType: Int? = null,
         ) : MessageContent
 
         data class MarketFace(
@@ -79,6 +85,7 @@ class ChatDetailViewModel : ViewModel() {
             val dynamicPath: String?,
             val width: Int,
             val height: Int,
+            val element: MarketFaceElement? = null,
         ) : MessageContent
 
         data class Giphy(
@@ -1012,8 +1019,8 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     /**
-     * 混合发送：文本、图片和 @ 标记按顺序转换为 NT MsgElement。
-     * 图片 token 为 img:id，@ token 为 at:id。
+     * 混合发送：文本、图片、@ 和表情标记按顺序转换为 NT MsgElement。
+     * 图片 token 为 img:id，@ token 为 at:id，系统表情为 face:index，系列表情为 market:index。
      */
     fun sendMixed(
         context: Context,
@@ -1021,10 +1028,13 @@ class ChatDetailViewModel : ViewModel() {
         uriMap: Map<String, Uri>,
         atMap: Map<String, AtMention> = emptyMap(),
         replyTarget: ReplyTarget? = null,
+        emotionMap: Map<String, EmotionRepository.Selection> = emptyMap(),
     ) {
         val c = contact ?: return
         if (!chatRepository.isConnected()) {
-            runWhenMessageServiceReady { sendMixed(context, mixedText, uriMap, atMap, replyTarget) }
+            runWhenMessageServiceReady {
+                sendMixed(context, mixedText, uriMap, atMap, replyTarget, emotionMap)
+            }
             return
         }
 
@@ -1032,9 +1042,10 @@ class ChatDetailViewModel : ViewModel() {
         val appContext = context.applicationContext
         Thread {
             runCatching {
-                val start = ''
-                val endMarker = ''
+                val start = MessageTokenCodec.BOUNDARY_START
+                val endMarker = MessageTokenCodec.BOUNDARY_END
                 val elements = arrayListOf<MsgElement>()
+                val pendingMarketFaces = ArrayList<Pair<Int, EmotionRepository.Selection.MarketFace>>()
                 replyTarget?.let { target ->
                     val replyElement = createReplyElement(target)
                         ?: error("回复消息不可用")
@@ -1089,6 +1100,24 @@ class ChatDetailViewModel : ViewModel() {
                                 }
                             }
 
+                            token.startsWith("face:") -> {
+                                val selection = emotionMap[token]
+                                    as? EmotionRepository.Selection.SystemFace
+                                    ?: error("表情内容已失效")
+                                val faceElement = EmotionRepository.createSystemFaceElement(selection)
+                                    ?: error("表情构造失败")
+                                elements.add(faceElement)
+                            }
+
+                            token.startsWith("market:") -> {
+                                val selection = emotionMap[token]
+                                    as? EmotionRepository.Selection.MarketFace
+                                    ?: error("系列表情内容已失效")
+                                val elementIndex = elements.size
+                                elements.add(MsgElement())
+                                pendingMarketFaces += elementIndex to selection
+                            }
+
                             else -> {
                                 uriMap[token]?.let { uri ->
                                     elements.add(buildPicElement(appContext, uri))
@@ -1115,35 +1144,91 @@ class ChatDetailViewModel : ViewModel() {
                 }
                 if (elements.isEmpty()) error("没有可发送的内容")
 
-                val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-                    Log.d(TAG, "sendMixed: code=$code, errMsg=$errMsg, count=${elements.size}")
-                    if (code == 0) {
-                        val now = System.currentTimeMillis() / 1000
-                        val rec = MsgRecord().apply {
-                            peerUid = c.peerUid
-                            chatType = c.chatType
-                            msgTime = now
-                            senderUin = selfUin
-                            sendNickName = ""
-                            sendStatus = 2
+                fun dispatch(elementsToSend: ArrayList<MsgElement>) {
+                    val sent = chatRepository.sendMessage(c, elementsToSend) { code, errMsg ->
+                        Log.d(
+                            TAG,
+                            "sendMixed: code=$code, errMsg=$errMsg, count=${elementsToSend.size}",
+                        )
+                        if (code == 0) {
+                            val now = System.currentTimeMillis() / 1000
+                            val rec = MsgRecord().apply {
+                                peerUid = c.peerUid
+                                chatType = c.chatType
+                                msgTime = now
+                                senderUin = selfUin
+                                sendNickName = ""
+                                sendStatus = 2
+                            }
+                            runCatching {
+                                val field = MsgRecord::class.java.getDeclaredField("elements")
+                                field.isAccessible = true
+                                field.set(rec, elementsToSend)
+                            }
+                            RecentMessageStore.put(peerId, rec)
+                            _statusText.value = ""
+                        } else {
+                            _statusText.value = "发送失败：${errMsg ?: code}"
                         }
-                        runCatching {
-                            val field = MsgRecord::class.java.getDeclaredField("elements")
-                            field.isAccessible = true
-                            field.set(rec, elements)
+                    }
+                    if (!sent) _statusText.value = "消息服务不可用"
+                }
+
+                if (pendingMarketFaces.isEmpty()) {
+                    dispatch(elements)
+                } else {
+                    val remaining = AtomicInteger(pendingMarketFaces.size)
+                    val dispatched = AtomicBoolean(false)
+                    val preparationFailed = AtomicBoolean(false)
+                    pendingMarketFaces.forEach { (index, selection) ->
+                        EmotionRepository.createMarketFaceElement(selection) { marketElement ->
+                            val allReady = synchronized(elements) {
+                                if (marketElement == null) {
+                                    preparationFailed.set(true)
+                                } else {
+                                    elements[index] = marketElement
+                                }
+                                remaining.decrementAndGet() == 0
+                            }
+                            if (allReady && dispatched.compareAndSet(false, true)) {
+                                if (preparationFailed.get()) {
+                                    _statusText.value = "系列表情准备失败，请重试"
+                                } else {
+                                    dispatch(elements)
+                                }
+                            }
                         }
-                        RecentMessageStore.put(peerId, rec)
-                        _statusText.value = ""
-                    } else {
-                        _statusText.value = "发送失败：${errMsg ?: code}"
                     }
                 }
-                if (!sent) _statusText.value = "消息服务不可用"
             }.onFailure {
                 Log.w(TAG, "sendMixed failed", it)
-                _statusText.value = "图片发送失败：${it.message ?: "未知错误"}"
+                _statusText.value = "消息发送失败：${it.message ?: "未知错误"}"
             }
         }.apply { isDaemon = true; start() }
+    }
+
+    fun sendSingleEmotion(context: Context, selection: EmotionRepository.Selection) {
+        val token = when (selection) {
+            is EmotionRepository.Selection.SystemFace -> "face:0"
+            is EmotionRepository.Selection.MarketFace -> "market:0"
+        }
+        sendMixed(
+            context = context,
+            mixedText = MessageTokenCodec.wrap(token),
+            uriMap = emptyMap(),
+            emotionMap = mapOf(token to selection),
+        )
+    }
+
+    private fun createTextElement(content: String): MsgElement = MsgElement().apply {
+        elementType = 1
+        elementId = 0
+        textElement = TextElement().apply {
+            this.content = content
+            atType = 0
+            atUid = 0L
+            atNtUid = ""
+        }
     }
 
     /** 从 Uri 构建 PicElement（拷贝到 kernel 路径 + 解码尺寸） */
@@ -1340,6 +1425,8 @@ class ChatDetailViewModel : ViewModel() {
             when (element.elementType) {
                 1 -> "${element.elementId}:1:${element.textElement?.content.orEmpty()}"
                 2 -> "${element.elementId}:2:${element.picElement?.md5HexStr.orEmpty()}:${element.picElement?.fileName.orEmpty()}"
+                6 -> "${element.elementId}:6:${element.faceElement?.faceType}:${element.faceElement?.faceIndex}:${element.faceElement?.faceText.orEmpty()}:${element.faceElement?.packId.orEmpty()}:${element.faceElement?.stickerId.orEmpty()}"
+                11 -> "${element.elementId}:11:${element.marketFaceElement?.emojiPackageId}:${element.marketFaceElement?.emojiId.orEmpty()}:${element.marketFaceElement?.faceName.orEmpty()}:${element.marketFaceElement?.key.orEmpty()}"
                 else -> "${element.elementId}:${element.elementType}"
             }
         }.orEmpty()
@@ -1444,7 +1531,7 @@ class ChatDetailViewModel : ViewModel() {
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
-                    element.picElement != null -> element.picElement?.let { picture ->
+                    element.elementType == 2 && element.picElement != null -> element.picElement?.let { picture ->
                         val requestState = RichMediaRepository.requestState(
                             RichMediaKey(rec.msgId, element.elementId),
                         )
@@ -1468,13 +1555,14 @@ class ChatDetailViewModel : ViewModel() {
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
-                    element.marketFaceElement != null -> element.marketFaceElement?.let { face ->
+                    element.elementType == 11 && element.marketFaceElement != null -> element.marketFaceElement?.let { face ->
                         MessageContent.MarketFace(
                             name = face.faceName?.takeIf { it.isNotBlank() } ?: "[动画表情]",
                             staticPath = face.staticFacePath?.takeIf { it.isNotBlank() },
                             dynamicPath = face.dynamicFacePath?.takeIf { it.isNotBlank() },
                             width = face.imageWidth,
                             height = face.imageHeight,
+                            element = face,
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
@@ -1487,11 +1575,14 @@ class ChatDetailViewModel : ViewModel() {
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
-                    element.faceElement != null -> element.faceElement?.let { face ->
+                    element.elementType == 6 && element.faceElement != null -> element.faceElement?.let { face ->
                         MessageContent.Face(
                             text = face.faceText?.takeIf { it.isNotBlank() } ?: "[表情]",
                             packId = face.packId?.takeIf { it.isNotBlank() },
                             stickerId = face.stickerId?.takeIf { it.isNotBlank() },
+                            faceType = face.faceType,
+                            faceIndex = face.faceIndex,
+                            imageType = face.imageType,
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 

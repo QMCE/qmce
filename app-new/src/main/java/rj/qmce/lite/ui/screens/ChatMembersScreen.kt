@@ -16,15 +16,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
@@ -39,13 +36,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import coil3.compose.AsyncImage
 import rj.qmce.lite.data.chat.GroupMemberRepository
-import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -53,40 +45,9 @@ import java.util.Locale
 fun ChatMembersScreen(
     groupCode: Long,
     vm: ChatDetailViewModel,
+    onOpenMember: (GroupMemberRepository.Member) -> Unit,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val saveScope = rememberCoroutineScope()
-    val mediaStoreSaver = remember { MediaStoreSaver() }
-    var avatarTarget by remember { mutableStateOf<AvatarPreviewTarget?>(null) }
-    var saveLabel by remember { mutableStateOf("保存") }
-
-    avatarTarget?.let { target ->
-        FullscreenMediaViewer(
-            media = target.media,
-            onDismiss = {
-                avatarTarget = null
-                saveLabel = "保存"
-            },
-            onSave = {
-                if (saveLabel != "正在保存…") {
-                    saveScope.launch {
-                        saveLabel = "正在保存…"
-                        val result = withContext(Dispatchers.IO) {
-                            mediaStoreSaver.saveImage(context, target.source)
-                        }
-                        saveLabel = result.fold(
-                            onSuccess = { "已保存" },
-                            onFailure = { "保存失败" },
-                        )
-                    }
-                }
-            },
-            saveLabel = saveLabel,
-        )
-        return
-    }
-
     val members by vm.groupMembers.collectAsState()
     val loading by vm.groupMembersLoading.collectAsState()
     val error by vm.groupMembersError.collectAsState()
@@ -201,16 +162,7 @@ fun ChatMembersScreen(
                         member = member,
                         modifier = Modifier.transformedHeight(this, transformationSpec),
                         transformation = SurfaceTransformation(transformationSpec),
-                        onAvatarClick = { model, source ->
-                            avatarTarget = AvatarPreviewTarget(
-                                media = ViewerMedia(
-                                    key = "member-avatar:${member.uid}:${member.uin}",
-                                    model = model,
-                                    description = "${member.displayName}的头像",
-                                ),
-                                source = source,
-                            )
-                        },
+                        onClick = { onOpenMember(member) },
                     )
                 }
             }
@@ -219,16 +171,50 @@ fun ChatMembersScreen(
 }
 
 private fun memberKey(member: GroupMemberRepository.Member): String =
-    member.uid.ifBlank { "uin:${member.uin}" }
+    "member:${member.uid.ifBlank { "uin:${member.uin}" }}:${member.entryIndex}"
 
 @Composable
 private fun GroupMemberRow(
     member: GroupMemberRepository.Member,
     modifier: Modifier,
     transformation: SurfaceTransformation,
-    onAvatarClick: (model: Any, source: String) -> Unit,
+    onClick: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        transformation = transformation,
+        colors = ButtonDefaults.filledTonalButtonColors(),
+        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+        icon = { MemberAvatar(member) },
+        secondaryLabel = {
+            Text(
+                listOfNotNull(
+                    member.roleLabel().takeIf { it.isNotBlank() },
+                    member.cardName.takeIf { it.isNotBlank() && it != member.displayName }
+                ).joinToString(" · ").ifBlank {
+                    member.uin.takeIf { it > 0L }?.toString() ?: member.uid
+                },
+                maxLines = 1,
+            )
+        },
+    ) {
+        Text(member.displayName, maxLines = 1)
+    }
+}
+
+private fun GroupMemberRepository.Member.roleLabel(): String = when (role.uppercase(Locale.ROOT)) {
+    "OWNER" -> "群主"
+    "ADMIN" -> "管理员"
+    "MEMBER" -> "成员"
+    "STRANGER" -> "陌生人"
+    else -> ""
+}
+
+@Composable
+private fun MemberAvatar(member: GroupMemberRepository.Member) {
     val local = member.avatarPath.removePrefix("file://")
         .takeIf { it.isNotBlank() }
         ?.let(::File)
@@ -236,47 +222,26 @@ private fun GroupMemberRow(
     val model: Any? = local ?: member.uin.takeIf { it > 0L }?.let {
         "https://q1.qlogo.cn/g?b=qq&nk=$it&s=100"
     }
-    val source = local?.absolutePath ?: member.uin.takeIf { it > 0L }?.let {
-        "https://q1.qlogo.cn/g?b=qq&nk=$it&s=100"
-    }
-    Button(
-        onClick = {
-            if (model != null && source != null) onAvatarClick(model, source)
-        },
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        transformation = transformation,
-        colors = ButtonDefaults.filledTonalButtonColors(),
-        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-        icon = {
-            androidx.compose.foundation.layout.Box(
+    androidx.compose.foundation.layout.Box(
+        modifier = Modifier
+            .size(ButtonDefaults.LargeIconSize)
+            .clip(CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            member.displayName.firstOrNull()?.toString() ?: "?",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        if (model != null) {
+            coil3.compose.AsyncImage(
+                model = model,
+                contentDescription = null,
                 modifier = Modifier
-                    .size(ButtonDefaults.LargeIconSize)
-                    .clip(CircleShape)
-                    .background(scheme.surfaceContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    member.displayName.firstOrNull()?.toString() ?: "?",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = scheme.primary
-                )
-                if (model != null) {
-                    AsyncImage(
-                        model,
-                        null,
-                        Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape),
-                        contentScale = ContentScale.Crop
-                    )
-                }
-            }
-        },
-        /* // don't need this
-               secondaryLabel = {
-                   Text(member.uin.takeIf { it > 0L }?.toString() ?: member.uid, maxLines = 1)
-               }, */
-    ) { Text(member.displayName, maxLines = 1) }
+                    .fillMaxSize()
+                    .clip(CircleShape),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        }
+    }
 }

@@ -26,6 +26,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import rj.qmce.lite.viewmodel.GroupManagementState
 import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 
 @Composable
@@ -35,6 +36,8 @@ fun ChatSettingsScreen(
     peerUin: Long,
     displayName: String,
     vm: ChatSettingsViewModel,
+    groupManagementState: GroupManagementState? = null,
+    onOpenGroupManagement: (() -> Unit)? = null,
     onBack: () -> Unit,
 ) {
     val state by vm.state.collectAsState()
@@ -89,6 +92,25 @@ fun ChatSettingsScreen(
                     icon = { Icon(Icons.Default.NotificationsOff, contentDescription = null) },
                     secondaryLabel = { Text("控制这个会话的通知推送") },
                 ) { Text(if (state.muted) "已开启消息免打扰" else "消息免打扰") }
+            }
+            if (isGroup && groupManagementState?.groupCode == peerUin &&
+                groupManagementState.canManage && onOpenGroupManagement != null
+            ) {
+                item(key = "settings-group-management") {
+                    Button(
+                        onClick = onOpenGroupManagement,
+                        enabled = !state.busy,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        icon = { Icon(Icons.Default.NotificationsOff, contentDescription = null) },
+                        secondaryLabel = { Text("全员禁言与群管理") },
+                    ) { Text("群管理") }
+                }
             }
             if (state.busy) {
                 item(key = "settings-busy") {

@@ -6,6 +6,7 @@ import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qphone.base.remote.SimpleAccount
 import com.tencent.qqnt.kernel.api.IKernelCreateListener
 import com.tencent.qqnt.kernel.api.IKernelService
+import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.IQQNTWrapperSession
 import com.tencent.qqnt.kernel.nativeinterface.MsfChangeReasonType
@@ -39,6 +40,14 @@ object KernelBridge {
 
     fun getKernelService(): IKernelService? = cachedKs
     fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedMsgService
+    fun getKernelMsgService(): IKernelMsgService? = runCatching {
+        val kernelService = cachedKs ?: return@runCatching null
+        val wrapperSession = kernelService.javaClass
+            .getDeclaredField("wrapperSession")
+            .apply { isAccessible = true }
+            .get(kernelService) as? IQQNTWrapperSession
+        wrapperSession?.msgService
+    }.getOrNull()
     fun getRecentContactService(): com.tencent.qqnt.kernel.api.IRecentContactService? =
         cachedRecentService
 

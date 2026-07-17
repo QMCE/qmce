@@ -8,9 +8,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,10 +34,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,12 +54,14 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
@@ -69,21 +75,35 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.chat.DraftStore
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_END
+import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_START
+import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import java.io.File
 import java.util.UUID
 import androidx.compose.material3.TextField as MaterialTextField
 import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 // 不可见标记字符（Unicode 私用区），用户不会输入
 private const val IMG_MARKER = ''
 
-// 发送时包裹 slotId 的边界字符，和 IMG_MARKER 不同
-private const val BOUNDARY_START = ''
-private const val BOUNDARY_END = ''
 private const val AT_MARKER = ''
+private const val FACE_MARKER = ''
+private const val MARKET_FACE_MARKER = ''
 
 data class ImageSlot(val id: String, val uri: Uri)
+
+private sealed interface MarketFaceThumbnailState {
+    data object Loading : MarketFaceThumbnailState
+    data class Ready(val bitmap: Bitmap) : MarketFaceThumbnailState
+    data object Unavailable : MarketFaceThumbnailState
+}
 
 @Composable
 fun ChatInputScreen(
@@ -100,6 +120,7 @@ fun ChatInputScreen(
         String,
         Map<String, Uri>,
         Map<String, AtMention>,
+        Map<String, EmotionRepository.Selection>,
         ChatDetailViewModel.ReplyTarget?,
     ) -> Unit,
     onSendVideo: (Uri) -> Unit,
@@ -113,6 +134,8 @@ fun ChatInputScreen(
         mutableStateOf(TextFieldValue(initialText, TextRange(initialText.length)))
     }
     val imageSlots = remember { mutableStateListOf<ImageSlot>() }
+    val faceSlots = remember { mutableStateListOf<EmotionRepository.Selection.SystemFace>() }
+    val marketFaceSlots = remember { mutableStateListOf<EmotionRepository.Selection.MarketFace>() }
     var imagePickerSelection by remember { mutableStateOf<List<Uri>>(emptyList()) }
     val atSlots = remember { mutableStateListOf<AtMention>() }
     val editSendState by vm.editSendState.collectAsState()
@@ -170,12 +193,25 @@ fun ChatInputScreen(
         addAtMention(member.uid, member.displayName)
     }
 
-    fun insertEmoji(emoji: String) {
+    fun insertSystemFace(face: EmotionRepository.Selection.SystemFace) {
         val cursor = textFieldValue.selection.end
+        val slotIndex = textFieldValue.text.substring(0, cursor).count { it == FACE_MARKER }
         val text = textFieldValue.text
+        faceSlots.add(slotIndex.coerceIn(0, faceSlots.size), face)
         textFieldValue = TextFieldValue(
-            text = text.substring(0, cursor) + emoji + text.substring(cursor),
-            selection = TextRange(cursor + emoji.length),
+            text = text.substring(0, cursor) + FACE_MARKER + text.substring(cursor),
+            selection = TextRange(cursor + 1),
+        )
+    }
+
+    fun insertMarketFace(face: EmotionRepository.Selection.MarketFace) {
+        val cursor = textFieldValue.selection.end
+        val slotIndex = textFieldValue.text.substring(0, cursor).count { it == MARKET_FACE_MARKER }
+        val text = textFieldValue.text
+        marketFaceSlots.add(slotIndex.coerceIn(0, marketFaceSlots.size), face)
+        textFieldValue = TextFieldValue(
+            text = text.substring(0, cursor) + MARKET_FACE_MARKER + text.substring(cursor),
+            selection = TextRange(cursor + 1),
         )
     }
 
@@ -193,6 +229,8 @@ fun ChatInputScreen(
             ChatDetailViewModel.EditSendState.Succeeded -> if (isEditing) {
                 textFieldValue = TextFieldValue("")
                 imageSlots.clear()
+                faceSlots.clear()
+                marketFaceSlots.clear()
                 atSlots.clear()
                 if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
                 vm.completeEditedSend()
@@ -332,9 +370,14 @@ fun ChatInputScreen(
     }
 
     if (showEmojiPicker) {
-        EmojiPickerScreen(
-            onSelect = { emoji ->
-                insertEmoji(emoji)
+        EmotionPickerScreen(
+            context = context,
+            onSelectSystemFace = { face ->
+                insertSystemFace(face)
+                showEmojiPicker = false
+            },
+            onSelectMarketFace = { face ->
+                insertMarketFace(face)
                 showEmojiPicker = false
             },
             onBack = { showEmojiPicker = false },
@@ -415,7 +458,10 @@ fun ChatInputScreen(
     val canSend = textFieldValue.text
         .replace(IMG_MARKER.toString(), "")
         .replace(AT_MARKER.toString(), "")
+        .replace(FACE_MARKER.toString(), "")
+        .replace(MARKET_FACE_MARKER.toString(), "")
         .isNotBlank() || imageSlots.isNotEmpty() || atSlots.isNotEmpty()
+        || faceSlots.isNotEmpty() || marketFaceSlots.isNotEmpty()
 
     ScreenScaffold(
         scrollState = listState,
@@ -429,23 +475,36 @@ fun ChatInputScreen(
                     val hasText = text
                         .replace(IMG_MARKER.toString(), "")
                         .replace(AT_MARKER.toString(), "")
+                        .replace(FACE_MARKER.toString(), "")
+                        .replace(MARKET_FACE_MARKER.toString(), "")
                         .isNotBlank()
                     val hasImages = imageSlots.isNotEmpty()
                     val hasMentions = atSlots.isNotEmpty()
+                    val hasFaces = faceSlots.isNotEmpty() || marketFaceSlots.isNotEmpty()
 
-                    if (!hasText && !hasImages && !hasMentions) return@EdgeButton
+                    if (!hasText && !hasImages && !hasMentions && !hasFaces) return@EdgeButton
 
                     if (isEditing) {
                         onSendEdited(text)
                         return@EdgeButton
                     }
 
-                    if (hasImages || hasMentions) {
+                    if (hasImages || hasMentions || hasFaces) {
                         val uriMap = imageSlots.associate { it.id to it.uri }
                         val atMap =
                             atSlots.mapIndexed { index, mention -> "at-$index" to mention }.toMap()
+                        val emotionMap = buildMap {
+                            faceSlots.forEachIndexed { index, face ->
+                                put("face:$index", face)
+                            }
+                            marketFaceSlots.forEachIndexed { index, face ->
+                                put("market:$index", face)
+                            }
+                        }
                         var imageIndex = 0
                         var atIndex = 0
+                        var faceIndex = 0
+                        var marketFaceIndex = 0
                         val mappedText = buildString {
                             text.forEach { ch ->
                                 when (ch) {
@@ -461,16 +520,29 @@ fun ChatInputScreen(
                                         atIndex++
                                     }
 
+                                    FACE_MARKER -> {
+                                        append(BOUNDARY_START).append("face:").append(faceIndex++)
+                                            .append(BOUNDARY_END)
+                                    }
+
+                                    MARKET_FACE_MARKER -> {
+                                        append(BOUNDARY_START).append("market:")
+                                            .append(marketFaceIndex++)
+                                            .append(BOUNDARY_END)
+                                    }
+
                                     else -> append(ch)
                                 }
                             }
                         }
-                        onSendMixed(mappedText, uriMap, atMap, activeReplyTarget)
+                        onSendMixed(mappedText, uriMap, atMap, emotionMap, activeReplyTarget)
                     } else {
                         onSend(text, activeReplyTarget)
                     }
                     textFieldValue = TextFieldValue("")
                     imageSlots.clear()
+                    faceSlots.clear()
+                    marketFaceSlots.clear()
                     atSlots.clear()
                     activeReplyTarget = null
                     if (peerUid.isNotBlank()) DraftStore.clear(context, peerUid, chatType)
@@ -599,6 +671,29 @@ fun ChatInputScreen(
                             )
                             if (removedIdx in atSlots.indices) atSlots.removeAt(removedIdx)
                         }
+                        val oldFaceMarkers = textFieldValue.text.count { it == FACE_MARKER }
+                        val newFaceMarkers = newValue.text.count { it == FACE_MARKER }
+                        if (newFaceMarkers < oldFaceMarkers) {
+                            val removedIdx = findRemovedMarkerIndex(
+                                textFieldValue.text,
+                                newValue.text,
+                                FACE_MARKER,
+                            )
+                            if (removedIdx in faceSlots.indices) faceSlots.removeAt(removedIdx)
+                        }
+                        val oldMarketFaceMarkers =
+                            textFieldValue.text.count { it == MARKET_FACE_MARKER }
+                        val newMarketFaceMarkers = newValue.text.count { it == MARKET_FACE_MARKER }
+                        if (newMarketFaceMarkers < oldMarketFaceMarkers) {
+                            val removedIdx = findRemovedMarkerIndex(
+                                textFieldValue.text,
+                                newValue.text,
+                                MARKET_FACE_MARKER,
+                            )
+                            if (removedIdx in marketFaceSlots.indices) {
+                                marketFaceSlots.removeAt(removedIdx)
+                            }
+                        }
                         textFieldValue = newValue
                     },
                     modifier = Modifier
@@ -616,6 +711,8 @@ fun ChatInputScreen(
                     visualTransformation = imgMarkerTransformation(
                         imageCount = imageSlots.size,
                         atMentions = atSlots,
+                        faceCount = faceSlots.size,
+                        marketFaceCount = marketFaceSlots.size,
                         highlightColor = scheme.primary,
                     ),
                     placeholder = {
@@ -773,23 +870,36 @@ private fun ChatInputToolsScreen(
     }
 }
 
-private val commonEmojiRows = listOf(
-    listOf("😀", "😁", "😂", "🥹"),
-    listOf("😊", "😍", "😘", "🤔"),
-    listOf("😢", "😭", "😡", "😴"),
-    listOf("👍", "👎", "👏", "🙏"),
-    listOf("🎉", "❤️", "🔥", "💯"),
-    listOf("👀", "🤝", "😎", "🤗"),
-)
-
 @Composable
-private fun EmojiPickerScreen(
-    onSelect: (String) -> Unit,
+fun EmotionPickerScreen(
+    context: android.content.Context,
+    onSelectSystemFace: (EmotionRepository.Selection.SystemFace) -> Unit,
+    onSelectMarketFace: (EmotionRepository.Selection.MarketFace) -> Unit,
     onBack: () -> Unit,
 ) {
+    var systemFaces by remember { mutableStateOf<List<EmotionRepository.Selection.SystemFace>>(emptyList()) }
+    var marketPacks by remember { mutableStateOf<List<EmotionRepository.MarketPack>>(emptyList()) }
+    var selectedPack by remember { mutableStateOf<EmotionRepository.MarketPack?>(null) }
+    var marketFaces by remember { mutableStateOf<List<EmotionRepository.Selection.MarketFace>>(emptyList()) }
+    var loadingMarketFaces by remember { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     BackHandler(onBack = onBack)
+    LaunchedEffect(Unit) {
+        systemFaces = EmotionRepository.loadSystemFaces()
+        EmotionRepository.loadMarketPacks { marketPacks = it }
+    }
+    LaunchedEffect(selectedPack?.epId) {
+        val pack = selectedPack ?: run {
+            marketFaces = emptyList()
+            return@LaunchedEffect
+        }
+        loadingMarketFaces = true
+        EmotionRepository.loadMarketFaces(context, pack.epId) {
+            marketFaces = it
+            loadingMarketFaces = false
+        }
+    }
     ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -798,7 +908,7 @@ private fun EmojiPickerScreen(
         ) {
             item(key = "emoji-title") {
                 Text(
-                    text = "表情",
+                    text = if (selectedPack == null) "表情" else selectedPack?.name.orEmpty(),
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
@@ -806,29 +916,220 @@ private fun EmojiPickerScreen(
                     style = MaterialTheme.typography.titleSmall,
                 )
             }
-            commonEmojiRows.forEachIndexed { rowIndex, row ->
-                item(key = "emoji-row:$rowIndex") {
-                    Row(
+            if (selectedPack == null) {
+                item(key = "system-face-heading") {
+                    Text(
+                        text = "系统表情",
                         modifier = Modifier
                             .fillMaxWidth()
                             .transformedHeight(this, transformationSpec)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        row.forEach { emoji ->
-                            Button(
-                                onClick = { onSelect(emoji) },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(emoji, style = MaterialTheme.typography.titleMedium)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                systemFaces.chunked(4).forEachIndexed { rowIndex, row ->
+                    item(key = "system-face-row:$rowIndex") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            row.forEach { face ->
+                                EmotionOptionButton(
+                                    label = face.label,
+                                    drawable = remember(face.faceType, face.faceIndex) {
+                                        EmotionRepository.systemFaceDrawable(face)
+                                    },
+                                    onClick = { onSelectSystemFace(face) },
+                                    modifier = Modifier.weight(1f),
+                                )
                             }
+                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
+                    }
+                }
+                item(key = "market-face-heading") {
+                    Text(
+                        text = "系列表情",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                marketPacks.forEach { pack ->
+                    item(key = "market-pack:${pack.epId}") {
+                        Button(
+                            onClick = { selectedPack = pack },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            transformation = SurfaceTransformation(transformationSpec),
+                        ) {
+                            Text(pack.name)
+                        }
+                    }
+                }
+                if (marketPacks.isEmpty()) {
+                    item(key = "market-pack-empty") {
+                        Text(
+                            text = "暂无可用系列表情",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            } else {
+                item(key = "market-back") {
+                    TextButton(
+                        onClick = { selectedPack = null },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    ) {
+                        Text("返回表情包")
+                    }
+                }
+                if (loadingMarketFaces) {
+                    item(key = "market-loading") {
+                        Text(
+                            text = "正在加载表情…",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+                marketFaces.chunked(3).forEachIndexed { rowIndex, row ->
+                    item(key = "market-face-row:$rowIndex") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            row.forEach { face ->
+                                MarketFaceOptionButton(
+                                    face = face,
+                                    onClick = { onSelectMarketFace(face) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                    }
+                }
+                if (!loadingMarketFaces && marketFaces.isEmpty()) {
+                    item(key = "market-face-empty") {
+                        Text(
+                            text = "该表情包暂时没有可用资源",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                        )
                     }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun EmotionOptionButton(
+    label: String,
+    drawable: Drawable?,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    Button(onClick = onClick, modifier = modifier) {
+        if (drawable == null) {
+            Text("表情")
+        } else {
+            val bitmap = remember(drawable) { drawable.toPreviewBitmap() }
+            if (bitmap == null) Text("表情") else {
+                ComposeImage(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = label,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarketFaceOptionButton(
+    face: EmotionRepository.Selection.MarketFace,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    var previewPath by remember(face.epId, face.eId, face.staticPath) {
+        mutableStateOf<String?>(null)
+    }
+    var previewResolved by remember(face.epId, face.eId, face.staticPath) {
+        mutableStateOf(false)
+    }
+    LaunchedEffect(face.epId, face.eId, face.staticPath) {
+        previewResolved = false
+        EmotionRepository.resolveMarketFacePreview(face) { path ->
+            previewPath = path
+            previewResolved = true
+        }
+    }
+    val thumbnailState by produceState<MarketFaceThumbnailState>(
+        initialValue = MarketFaceThumbnailState.Loading,
+        previewPath,
+        previewResolved,
+    ) {
+        value = when {
+            !previewResolved -> MarketFaceThumbnailState.Loading
+            previewPath.isNullOrBlank() -> MarketFaceThumbnailState.Unavailable
+            else -> withContext(Dispatchers.IO) {
+                BitmapFactory.decodeFile(previewPath)
+            }?.let(MarketFaceThumbnailState::Ready) ?: MarketFaceThumbnailState.Unavailable
+        }
+    }
+    Button(onClick = onClick, modifier = modifier) {
+        when (val state = thumbnailState) {
+            MarketFaceThumbnailState.Loading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                )
+            }
+
+            is MarketFaceThumbnailState.Ready -> {
+                ComposeImage(
+                    bitmap = state.bitmap.asImageBitmap(),
+                    contentDescription = face.label,
+                    modifier = Modifier.size(36.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+
+            MarketFaceThumbnailState.Unavailable -> Text(face.label)
+        }
+    }
+}
+
+private fun Drawable.toPreviewBitmap(): Bitmap? = runCatching {
+    val width = intrinsicWidth.takeIf { it > 0 } ?: 48
+    val height = intrinsicHeight.takeIf { it > 0 } ?: 48
+    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+        setBounds(0, 0, width, height)
+        draw(Canvas(bitmap))
+    }
+}.getOrNull()
 
 @Composable
 private fun ChatInputToolButton(
@@ -967,6 +1268,8 @@ private fun hasVideoGalleryAccess(context: android.content.Context): Boolean = w
 private fun imgMarkerTransformation(
     imageCount: Int,
     atMentions: List<AtMention>,
+    faceCount: Int,
+    marketFaceCount: Int,
     highlightColor: Color,
 ): VisualTransformation {
     return VisualTransformation { original ->
@@ -977,6 +1280,8 @@ private fun imgMarkerTransformation(
 
         var slotIdx = 0
         var atIdx = 0
+        var faceIdx = 0
+        var marketFaceIdx = 0
         for (i in text.indices) {
             if (text[i] == IMG_MARKER) {
                 val label = if (imageCount > 1) "[图片${slotIdx + 1}]" else "[图片]"
@@ -993,6 +1298,20 @@ private fun imgMarkerTransformation(
                 }
                 repeat(label.length) { origOffsets.add(i) }
                 atIdx++
+            } else if (text[i] == FACE_MARKER) {
+                val label = if (faceCount > 1) "[表情${faceIdx + 1}]" else "[表情]"
+                display.withStyle(SpanStyle(color = highlightColor, fontWeight = FontWeight.Bold)) {
+                    append(label)
+                }
+                repeat(label.length) { origOffsets.add(i) }
+                faceIdx++
+            } else if (text[i] == MARKET_FACE_MARKER) {
+                val label = if (marketFaceCount > 1) "[大表情${marketFaceIdx + 1}]" else "[大表情]"
+                display.withStyle(SpanStyle(color = highlightColor, fontWeight = FontWeight.Bold)) {
+                    append(label)
+                }
+                repeat(label.length) { origOffsets.add(i) }
+                marketFaceIdx++
             } else {
                 display.append(text[i])
                 origOffsets.add(i)

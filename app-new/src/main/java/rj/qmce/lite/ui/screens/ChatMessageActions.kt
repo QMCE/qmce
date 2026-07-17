@@ -83,16 +83,15 @@ object MessageActionResolver {
             }
         }
 
-        // 转发：有文本/图片/表情
+        // 转发：有文本或真实图片。表情暂不伪装成媒体或转发为丢失内容。
         val hasForwardableContent = copyable.isNotBlank() ||
-                contents.any { it is ChatDetailViewModel.MessageContent.Image || it is ChatDetailViewModel.MessageContent.MarketFace }
+                contents.any { it is ChatDetailViewModel.MessageContent.Image }
         if (hasForwardableContent) {
             add(MessageAction("forward", "转发"))
         }
 
         val hasMedia = contents.any {
-            it is ChatDetailViewModel.MessageContent.Image ||
-                    it is ChatDetailViewModel.MessageContent.MarketFace
+            it is ChatDetailViewModel.MessageContent.Image
         }
         if (hasMedia) add(MessageAction("view_media", "查看图片"))
 
@@ -402,13 +401,6 @@ fun ChatDetailViewModel.UiMsg.localMediaFiles(): List<File> =
                     .map { File(it.removePrefix("file://")) }
                     .filter(File::isFile)
             }
-
-            is ChatDetailViewModel.MessageContent.MarketFace -> listOfNotNull(
-                content.dynamicPath,
-                content.staticPath,
-            )
-                .map { File(it.removePrefix("file://")) }
-                .filter(File::isFile)
 
             else -> emptyList()
         }

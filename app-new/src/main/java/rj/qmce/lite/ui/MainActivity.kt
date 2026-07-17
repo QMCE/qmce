@@ -53,11 +53,14 @@ import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.R
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.OnlineStatus
+import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.AboutScreen
 import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
+import rj.qmce.lite.ui.screens.EmotionPickerScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
@@ -72,6 +75,9 @@ import rj.qmce.lite.ui.screens.QZoneCommentScreen
 import rj.qmce.lite.ui.screens.QZoneComposerScreen
 import rj.qmce.lite.ui.screens.QZoneFeedDetailScreen
 import rj.qmce.lite.ui.screens.ProfileScreen
+import rj.qmce.lite.ui.screens.GroupInfoScreen
+import rj.qmce.lite.ui.screens.GroupManagementScreen
+import rj.qmce.lite.ui.screens.GroupMemberProfileScreen
 import rj.qmce.lite.ui.screens.SettingsClearChatCacheScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
 import rj.qmce.lite.ui.screens.StorageSettingsScreen
@@ -82,6 +88,8 @@ import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
+import rj.qmce.lite.viewmodel.GroupInfoViewModel
+import rj.qmce.lite.viewmodel.GroupManagementViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
 import rj.qmce.lite.viewmodel.PacketToolViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
@@ -107,6 +115,7 @@ private fun WearApp() {
     var runtime by remember { mutableStateOf<mqq.app.AppRuntime?>(null) }
     var selectedContact by remember { mutableStateOf<RecentContactInfo?>(null) }
     var selectedProfileBuddy by remember { mutableStateOf<ContactsViewModel.UiBuddy?>(null) }
+    var selectedGroupMember by remember { mutableStateOf<GroupMemberRepository.Member?>(null) }
     var qZoneDraft by remember { mutableStateOf("") }
     var qZoneUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var qZonePickerUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -125,6 +134,7 @@ private fun WearApp() {
     LaunchedEffect(logoutReason) {
         if (logoutReason != null) {
             selectedContact = null
+            selectedGroupMember = null
             loggedUin = ""
             isLoggedIn = false
             onlineDesc = null
@@ -225,6 +235,9 @@ private fun WearApp() {
                 val navController = checkNotNull(appNavController)
                 val chatDetailVm: ChatDetailViewModel = viewModel()
                 val chatSettingsVm: ChatSettingsViewModel = viewModel()
+                val groupInfoVm: GroupInfoViewModel = viewModel()
+                val groupManagementVm: GroupManagementViewModel = viewModel()
+                val groupManagementState by groupManagementVm.state.collectAsState()
                 val chatListVm: ChatListViewModel = viewModel()
                 val contactsVm: ContactsViewModel = viewModel()
                 val qZoneVm: QZoneViewModel = viewModel()
@@ -345,6 +358,11 @@ private fun WearApp() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onOpenSingleEmotion = {
+                                    navController.navigate("singleEmotionPicker") {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onOpenVoiceRecorder = {
                                     navController.navigate("voiceRecord") {
                                         launchSingleTop = true
@@ -365,7 +383,20 @@ private fun WearApp() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onOpenGroupInfo = {
+                                    if (contact.chatType == 2) {
+                                        navController.navigate("groupInfo") {
+                                            launchSingleTop = true
+                                        }
+                                    }
+                                },
                                 onOpenChatSettings = {
+                                    if (contact.chatType == 2) {
+                                        groupManagementVm.load(
+                                            contact.peerUin.takeIf { it > 0L }
+                                                ?: contact.id?.toLongOrNull() ?: 0L,
+                                        )
+                                    }
                                     navController.navigate("chatSettings") {
                                         launchSingleTop = true
                                     }
@@ -402,13 +433,14 @@ private fun WearApp() {
                             onSend = { text, target -> chatDetailVm.sendText(text, target) },
                             onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
                             peerUin = chatDetailVm.currentPeerUin,
-                            onSendMixed = { mixedText, uriMap, atMap, target ->
+                            onSendMixed = { mixedText, uriMap, atMap, emotionMap, target ->
                                 chatDetailVm.sendMixed(
                                     context,
                                     mixedText,
                                     uriMap,
                                     atMap,
                                     target,
+                                    emotionMap,
                                 )
                             },
                             onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
@@ -420,6 +452,44 @@ private fun WearApp() {
                             onBack = { navController.popBackStack() }
                         )
                     }
+                    composable("singleEmotionPicker") {
+                        EmotionPickerScreen(
+                            context = context,
+                            onSelectSystemFace = { face ->
+                                chatDetailVm.sendSingleEmotion(context, face)
+                                navController.popBackStack()
+                            },
+                            onSelectMarketFace = { face ->
+                                chatDetailVm.sendSingleEmotion(context, face)
+                                navController.popBackStack()
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("groupInfo") {
+                        val contact = selectedContact
+                        if (contact != null && contact.chatType == 2) {
+                            val groupCode = contact.peerUin.takeIf { it > 0L }
+                                ?: contact.id?.toLongOrNull() ?: 0L
+                            GroupInfoScreen(
+                                groupCode = groupCode,
+                                avatarPath = contact.avatarPath.orEmpty(),
+                                avatarUrl = contact.avatarUrl.orEmpty(),
+                                vm = groupInfoVm,
+                                onOpenMembers = {
+                                    navController.navigate("chatMembers") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenManagement = {
+                                    navController.navigate("groupManagement") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                    }
                     composable("chatMembers") {
                         val contact = selectedContact
                         if (contact != null) {
@@ -427,6 +497,38 @@ private fun WearApp() {
                                 groupCode = contact.peerUin.takeIf { it > 0L }
                                     ?: contact.id?.toLongOrNull() ?: 0L,
                                 vm = chatDetailVm,
+                                onOpenMember = { member ->
+                                    selectedGroupMember = member
+                                    navController.navigate("groupMemberProfile") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                    }
+                    composable("groupMemberProfile") {
+                        val contact = selectedContact
+                        val member = selectedGroupMember
+                        if (contact != null && member != null) {
+                            GroupMemberProfileScreen(
+                                groupCode = contact.peerUin.takeIf { it > 0L }
+                                    ?: contact.id?.toLongOrNull() ?: 0L,
+                                member = member,
+                                onBack = {
+                                    selectedGroupMember = null
+                                    navController.popBackStack()
+                                },
+                            )
+                        }
+                    }
+                    composable("groupManagement") {
+                        val contact = selectedContact
+                        if (contact != null && contact.chatType == 2) {
+                            GroupManagementScreen(
+                                groupCode = contact.peerUin.takeIf { it > 0L }
+                                    ?: contact.id?.toLongOrNull() ?: 0L,
+                                vm = groupManagementVm,
                                 onBack = { navController.popBackStack() },
                             )
                         }
@@ -444,6 +546,12 @@ private fun WearApp() {
                                 displayName = contact.peerName.orEmpty()
                                     .ifBlank { contact.id.orEmpty() },
                                 vm = chatSettingsVm,
+                                groupManagementState = groupManagementState,
+                                onOpenGroupManagement = {
+                                    navController.navigate("groupManagement") {
+                                        launchSingleTop = true
+                                    }
+                                },
                                 onBack = { navController.popBackStack() },
                             )
                         }

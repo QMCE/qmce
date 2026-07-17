@@ -4,6 +4,7 @@ package rj.qmce.lite.ui.screens
 
 import android.content.pm.PackageManager
 import android.text.format.Formatter
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,6 +17,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -72,6 +74,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -89,6 +92,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material3.Button
@@ -103,6 +107,9 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -115,6 +122,7 @@ import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
+import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
@@ -169,10 +177,12 @@ fun ChatDetailScreen(
     myUin: String = "",
     onBack: () -> Unit,
     onOpenInput: () -> Unit = {},
+    onOpenSingleEmotion: () -> Unit = {},
     onOpenVoiceRecorder: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
     onOpenPacketTool: () -> Unit = {},
     onOpenMembers: () -> Unit = {},
+    onOpenGroupInfo: () -> Unit = {},
     onOpenChatSettings: () -> Unit = {},
     avatarPath: String = "",
     avatarUrl: String = "",
@@ -591,6 +601,7 @@ fun ChatDetailScreen(
                         avatarUrl = avatarUrl,
                         vm = vm,
                         onOpenMembers = onOpenMembers,
+                        onOpenGroupInfo = onOpenGroupInfo,
                         onOpenMessageSearch = { showMessageSearch = true },
                         onOpenSettings = onOpenChatSettings,
                     )
@@ -605,6 +616,7 @@ fun ChatDetailScreen(
                     avatarUrl = avatarUrl,
                     vm = vm,
                     onOpenMembers = onOpenMembers,
+                    onOpenGroupInfo = onOpenGroupInfo,
                     onOpenMessageSearch = { showMessageSearch = true },
                     onOpenSettings = onOpenChatSettings,
                 )
@@ -650,6 +662,7 @@ fun ChatDetailScreen(
                             slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
                 ) {
                     ChatComposerActions(
+                        onOpenSingleEmotion = onOpenSingleEmotion,
                         onOpenInput = onOpenInput,
                         onOpenVoiceRecorder = onOpenVoiceRecorder,
                     )
@@ -861,12 +874,13 @@ private fun CallPage(
 
 @Composable
 private fun ChatComposerActions(
+    onOpenSingleEmotion: () -> Unit,
     onOpenInput: () -> Unit,
     onOpenVoiceRecorder: () -> Unit,
 ) {
     Row (modifier = Modifier.padding(bottom = 30.dp),) {
         CompactButton(
-            onClick = {},
+            onClick = onOpenSingleEmotion,
             modifier = Modifier.padding(horizontal = 5.dp),
             icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
         )
@@ -920,7 +934,6 @@ internal fun MessageBubble(
     val bubbleShape = RoundedCornerShape(10.dp)
     val isSingleMedia = message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
-            it is ChatDetailViewModel.MessageContent.MarketFace ||
                 it is ChatDetailViewModel.MessageContent.Giphy
     }
 
@@ -1032,13 +1045,11 @@ private fun MessageContentItem(
         )
 
         is ChatDetailViewModel.MessageContent.Face -> {
-            RichMessageText(content.text, onLongClick)
+            FaceMessageContent(content)
         }
 
         is ChatDetailViewModel.MessageContent.MarketFace -> {
-            LocalMarketFace(content) { file ->
-                onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", file, content.name))
-            }
+            LocalMarketFace(content)
         }
 
         is ChatDetailViewModel.MessageContent.Giphy -> GiphyMessageContent(content) { mediaUrl ->
@@ -1162,32 +1173,97 @@ private fun LocalMessageImage(
 @Composable
 private fun LocalMarketFace(
     content: ChatDetailViewModel.MessageContent.MarketFace,
-    onOpen: (File) -> Unit
 ) {
-    val localFile = remember(content.staticPath, content.dynamicPath) {
-        LocalMediaResolver.firstAvailable(listOf(content.dynamicPath, content.staticPath))
+    val context = LocalContext.current
+    val cachedPaths = remember(content.element) {
+        EmotionRepository.cachedMarketFacePaths(context, content.element)
+    }
+    val localFile = remember(content.staticPath, content.dynamicPath, cachedPaths) {
+        LocalMediaResolver.firstAvailable(
+            listOf(content.staticPath, content.dynamicPath) + cachedPaths,
+        )
     }
     val size = mediaSize(content.width, content.height)
-    if (localFile == null) {
-        MessageFallback(content.name)
-    } else {
-        Card(
-            onClick = { onOpen(localFile) },
-            modifier = Modifier.size(size.width, size.height),
-            colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-                containerColor = Color.Transparent,
-            ),
-            contentPadding = PaddingValues(0.dp),
+    var failed by remember(localFile) { mutableStateOf(false) }
+    val marketFaceKey = remember(content.element) {
+        content.element?.let { "${it.emojiPackageId}:${it.emojiId}" } ?: content.name
+    }
+    var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(marketFaceKey, localFile, failed) {
+        val element = content.element
+        if ((localFile == null || failed) && element != null && officialDrawable == null) {
+            EmotionRepository.loadMarketFaceDrawable(element) { drawable ->
+                officialDrawable = drawable
+            }
+        }
+    }
+    if (localFile != null && !failed) {
+        Box(
+            modifier = Modifier
+                .size(size.width, size.height)
+                .clip(RoundedCornerShape(8.dp)),
         ) {
             AsyncImage(
                 model = localFile,
                 contentDescription = content.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
+                onError = { failed = true },
             )
         }
+    } else if (officialDrawable != null) {
+        AndroidView(
+            factory = { viewContext ->
+                ImageView(viewContext).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+            },
+            update = { imageView ->
+                imageView.setImageDrawable(officialDrawable)
+            },
+            modifier = Modifier.size(size.width, size.height),
+        )
+    } else {
+        MessageFallback(content.name)
     }
 }
+
+@Composable
+private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face) {
+    val face = remember(content.faceType, content.faceIndex, content.text) {
+        if (content.faceType > 0) {
+            EmotionRepository.systemFaceForMessage(
+                faceType = content.faceType,
+                ntFaceIndex = content.faceIndex,
+                label = content.text,
+                packId = content.packId,
+                imageType = content.imageType,
+            )
+        } else {
+            null
+        }
+    }
+    val drawable = remember(face) { face?.let { EmotionRepository.systemFaceDrawable(it) } }
+    val bitmap = remember(drawable) { drawable?.toMessageBitmap() }
+    if (bitmap == null) {
+        MessageFallback(content.text)
+    } else {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = content.text,
+            modifier = Modifier.size(34.dp),
+        )
+    }
+}
+
+private fun Drawable.toMessageBitmap(): Bitmap? = runCatching {
+    val width = intrinsicWidth.takeIf { it > 0 } ?: 48
+    val height = intrinsicHeight.takeIf { it > 0 } ?: 48
+    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
+        setBounds(0, 0, width, height)
+        draw(Canvas(bitmap))
+    }
+}.getOrNull()
 
 @Composable
 private fun GiphyMessageContent(

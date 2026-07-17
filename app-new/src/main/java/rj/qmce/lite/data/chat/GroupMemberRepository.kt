@@ -16,6 +16,7 @@ object GroupMemberRepository {
         val displayName: String,
         val avatarPath: String,
         val role: String,
+        val entryIndex: Int,
     )
 
     private val cache = ConcurrentHashMap<Long, List<Member>>()
@@ -80,10 +81,11 @@ object GroupMemberRepository {
                     ?: info.remark.takeIf { !it.isNullOrBlank() }
                     ?: nick.ifBlank { info.uin.toString() },
                 avatarPath = info.avatarPath.orEmpty(),
-                role = info.role?.toString().orEmpty(),
+                role = info.role?.name.orEmpty(),
+                entryIndex = 0,
             )
         }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.displayName })
-        .distinctBy { if (it.uid.isNotBlank()) it.uid else "uin:${it.uin}" }
+        .mapIndexed { index, member -> member.copy(entryIndex = index) }
         .toList()
 }
