@@ -109,13 +109,12 @@ androidComponents {
 dependencies {
     // AppCenter
 
-    implementation("com.microsoft.appcenter:appcenter-analytics:5.0.4")
-    implementation("com.microsoft.appcenter:appcenter-crashes:5.0.4")
+    implementation(libs.appcenter.analytics)
+    implementation(libs.appcenter.crashes)
 
     // QQ API
     implementation(files("libs/qq-sdk.jar"))
     implementation(files("libs/qav-runtime.jar"))
-
     // Wear OS platform SDK
     implementation(libs.androidx.wear)
 
@@ -127,7 +126,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.jessyan.autosize)
-    implementation("androidx.multidex:multidex:2.0.1")
+    implementation(libs.androidx.multidex)
 
     // Compose BOM
     implementation(platform(libs.androidx.compose.bom))
@@ -145,8 +144,8 @@ dependencies {
     // Wear Compose vendor source deps
     implementation(libs.androidx.graphics.shapes)
     implementation(libs.androidx.graphics.path)
-    implementation(libs.androidx.emoji2)
-    implementation(libs.androidx.emoji2.bundled)
+    // implementation(libs.androidx.emoji2)
+    // implementation(libs.androidx.emoji2.bundled)
 
     // Navigation (needed by Wear Navigator source)
     implementation(libs.androidx.navigation.compose)

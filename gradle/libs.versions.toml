@@ -1,6 +1,9 @@
 [versions]
 agp = "9.3.0"
+appcenterAnalytics = "5.0.6"
+appcenterCrashes = "5.0.6"
 kotlin = "2.4.0"
+multidex = "2.0.1"
 navigationCompose = "2.9.5"
 navigation3 = "1.1.4"
 jetbrainsKotlinJvm = "2.4.0"
@@ -15,6 +18,7 @@ truth = "1.4.5"
 wear = "1.4.0"
 
 [libraries]
+androidx-multidex = { module = "androidx.multidex:multidex", version.ref = "multidex" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 androidx-navigation3-runtime = { module = "androidx.navigation3:navigation3-runtime", version.ref = "navigation3" }
 androidx-navigation3-ui = { module = "androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
@@ -38,6 +42,8 @@ androidx-compose-material-ripple = { module = "androidx.compose.material:materia
 androidx-graphics-shapes = { module = "androidx.graphics:graphics-shapes", version = "1.0.1" }
 androidx-graphics-path = { module = "androidx.graphics:graphics-path", version = "1.0.1" }
 androidx-emoji2 = { module = "androidx.emoji2:emoji2", version = "1.5.0" }
+appcenter-crashes = { module = "com.microsoft.appcenter:appcenter-crashes", version.ref = "appcenterCrashes" }
+appcenter-analytics = { module = "com.microsoft.appcenter:appcenter-analytics", version.ref = "appcenterAnalytics" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 jessyan-autosize = { module = "me.jessyan:autosize", version.ref = "autosize" }
 junit = { module = "junit:junit", version.ref = "junit" }
