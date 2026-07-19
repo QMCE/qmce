@@ -51,6 +51,7 @@ fun ChatMembersScreen(
     val members by vm.groupMembers.collectAsState()
     val loading by vm.groupMembersLoading.collectAsState()
     val error by vm.groupMembersError.collectAsState()
+    val memberLevels by vm.groupMemberLevels.collectAsState()
     var query by remember { mutableStateOf("") }
     val normalizedQuery = query.trim().lowercase(Locale.ROOT)
     val visibleMembers = remember(members, normalizedQuery) {
@@ -158,11 +159,17 @@ fun ChatMembersScreen(
                 }
             } else {
                 items(visibleMembers, key = { memberKey(it) }) { member ->
+                    val memberWithLevel = member.copy(
+                        memberLevel = memberLevels[member.uid] ?: member.memberLevel,
+                    )
                     GroupMemberRow(
-                        member = member,
+                        member = memberWithLevel,
                         modifier = Modifier.transformedHeight(this, transformationSpec),
                         transformation = SurfaceTransformation(transformationSpec),
-                        onClick = { onOpenMember(member) },
+                        onClick = { onOpenMember(memberWithLevel) },
+                        onResolveLevel = {
+                            vm.loadGroupMemberLevels(groupCode, listOf(member.uid))
+                        },
                     )
                 }
             }
@@ -179,7 +186,11 @@ private fun GroupMemberRow(
     modifier: Modifier,
     transformation: SurfaceTransformation,
     onClick: () -> Unit,
+    onResolveLevel: () -> Unit,
 ) {
+    LaunchedEffect(member.uid, member.memberLevel) {
+        if (member.memberLevel == null && member.uid.isNotBlank()) onResolveLevel()
+    }
     Button(
         onClick = onClick,
         modifier = modifier
@@ -193,6 +204,7 @@ private fun GroupMemberRow(
             Text(
                 listOfNotNull(
                     member.roleLabel().takeIf { it.isNotBlank() },
+                    member.memberLevel?.takeIf { it > 0 }?.let { "LV$it" },
                     member.cardName.takeIf { it.isNotBlank() && it != member.displayName }
                 ).joinToString(" · ").ifBlank {
                     member.uin.takeIf { it > 0L }?.toString() ?: member.uid

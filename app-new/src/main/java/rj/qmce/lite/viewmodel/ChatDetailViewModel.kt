@@ -19,6 +19,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MarketFaceElement
 import com.tencent.qqnt.kernel.nativeinterface.PicElement
 import com.tencent.qqnt.kernel.nativeinterface.PttElement
 import com.tencent.qqnt.kernel.nativeinterface.QQNTWrapperUtil
+import com.tencent.qqnt.kernel.nativeinterface.ReplyElement
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernel.nativeinterface.TextElement
 import com.tencent.qqnt.kernel.nativeinterface.VideoElement
@@ -40,9 +41,10 @@ import rj.qmce.lite.data.chat.RichMediaRepository
 import rj.qmce.lite.data.chat.RichMediaRequestState
 import rj.qmce.lite.data.chat.RichMessageMetadataParser
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.kernel.KernelBridge
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -74,9 +76,12 @@ class ChatDetailViewModel : ViewModel() {
             val text: String,
             val packId: String?,
             val stickerId: String?,
+            val stickerType: Int? = null,
             val faceType: Int = 0,
             val faceIndex: Int = 0,
             val imageType: Int? = null,
+            val resultId: String? = null,
+            val surpriseId: String? = null,
         ) : MessageContent
 
         data class MarketFace(
@@ -319,6 +324,11 @@ class ChatDetailViewModel : ViewModel() {
     val groupMembersLoading: StateFlow<Boolean> = _groupMembersLoading
     private val _groupMembersError = MutableStateFlow<String?>(null)
     val groupMembersError: StateFlow<String?> = _groupMembersError
+    private val _groupMemberLevels = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val groupMemberLevels: StateFlow<Map<String, Int>> = _groupMemberLevels
+    private val _groupMemberTitles = MutableStateFlow<Map<String, String>>(emptyMap())
+    val groupMemberTitles: StateFlow<Map<String, String>> = _groupMemberTitles
+    private val groupMemberLevelGroupCode = java.util.concurrent.atomic.AtomicLong(0L)
 
     enum class InlineKeyboardActionPhase { Pending, Succeeded }
 
@@ -332,8 +342,8 @@ class ChatDetailViewModel : ViewModel() {
     val inlineKeyboardActions: StateFlow<Map<String, InlineKeyboardActionState>> =
         _inlineKeyboardActions
 
-    private val msgList = CopyOnWriteArrayList<MsgRecord>()
     private val messageLock = Any()
+    private val msgList = ArrayList<MsgRecord>()
     private val _isLoadingOlder = MutableStateFlow(false)
     val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder
     private val _hasOlderMessages = MutableStateFlow(true)
@@ -346,6 +356,8 @@ class ChatDetailViewModel : ViewModel() {
     private val replyTimeoutHandler = Handler(Looper.getMainLooper())
     private val forwardDetailBackStack = ArrayDeque<ForwardDetailState.Ready>()
     private val chatRepository = ChatRepository()
+    private val replyNicknameCache = ConcurrentHashMap<String, String>()
+    private val replyNicknameRequests = ConcurrentHashMap.newKeySet<String>()
     private var contact: Contact? = null
     @Volatile
     private var chatRuntime: AppRuntime? = null
@@ -383,7 +395,7 @@ class ChatDetailViewModel : ViewModel() {
         synchronized(pendingMessageServiceActions) {
             pendingMessageServiceActions.clear()
         }
-        msgList.clear()
+        synchronized(messageLock) { msgList.clear() }
         _messages.value = emptyList()
         _groupMembers.value = emptyList()
         _groupMembersLoading.value = false
@@ -444,7 +456,7 @@ class ChatDetailViewModel : ViewModel() {
                     "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue"
                 )
                 if (errorCode == 0) {
-                    msgList.clear()
+                    synchronized(messageLock) { msgList.clear() }
                     mergeMessages(list.orEmpty(), c)
                     emitMessages()
                     _hasOlderMessages.value = needContinue
@@ -462,19 +474,21 @@ class ChatDetailViewModel : ViewModel() {
         chatRepository.startListening(object : ChatRepository.Listener {
             override fun onReceived(messages: ArrayList<MsgRecord>) {
                 if (!isCurrentSession(session)) return
-                val previousSize = msgList.size
+                val previousSize = synchronized(messageLock) { msgList.size }
                 mergeMessages(messages, chatContact)
-                if (msgList.size != previousSize) {
+                val currentSize = synchronized(messageLock) { msgList.size }
+                if (currentSize != previousSize) {
                     emitMessages()
-                    Log.d(TAG, "chatDetail: onRecvMsg +${msgList.size - previousSize}")
+                    Log.d(TAG, "chatDetail: onRecvMsg +${currentSize - previousSize}")
                 }
             }
 
             override fun onAddedSendMessage(message: MsgRecord) {
                 if (!isCurrentSession(session)) return
-                val previousSize = msgList.size
+                val previousSize = synchronized(messageLock) { msgList.size }
                 mergeMessages(listOf(message), chatContact)
-                if (msgList.size != previousSize) {
+                val currentSize = synchronized(messageLock) { msgList.size }
+                if (currentSize != previousSize) {
                     emitMessages()
                     Log.d(
                         TAG,
@@ -993,6 +1007,9 @@ class ChatDetailViewModel : ViewModel() {
         val cached = GroupMemberRepository.cached(groupCode)
         if (cached.isNotEmpty() && !forceRefresh) {
             _groupMembers.value = cached
+            _groupMemberLevels.value = GroupMemberRepository.cachedMemberLevels(groupCode)
+            _groupMemberTitles.value = GroupMemberRepository.cachedMemberTitles(groupCode)
+            groupMemberLevelGroupCode.set(groupCode)
             _groupMembersLoading.value = false
             _groupMembersError.value = null
             return
@@ -1004,6 +1021,9 @@ class ChatDetailViewModel : ViewModel() {
             _groupMembersLoading.value = false
             if (members != null) {
                 _groupMembers.value = members
+                _groupMemberLevels.value = GroupMemberRepository.cachedMemberLevels(groupCode)
+                _groupMemberTitles.value = GroupMemberRepository.cachedMemberTitles(groupCode)
+                groupMemberLevelGroupCode.set(groupCode)
                 _groupMembersError.value = null
                 if (updateStatus) _statusText.value = ""
             } else {
@@ -1015,6 +1035,20 @@ class ChatDetailViewModel : ViewModel() {
             _groupMembersLoading.value = false
             _groupMembersError.value = "群服务不可用"
             if (updateStatus) _statusText.value = "群服务不可用"
+        }
+    }
+
+    fun loadGroupMemberLevels(groupCode: Long, memberUids: Collection<String>) {
+        if (groupCode <= 0L || memberUids.isEmpty()) return
+        if (groupMemberLevelGroupCode.getAndSet(groupCode) != groupCode) {
+            _groupMemberLevels.value = GroupMemberRepository.cachedMemberLevels(groupCode)
+            _groupMemberTitles.value = GroupMemberRepository.cachedMemberTitles(groupCode)
+        }
+        GroupMemberRepository.loadMemberLevels(groupCode, memberUids) { levels, _ ->
+            if (groupMemberLevelGroupCode.get() == groupCode) {
+                _groupMemberLevels.value = levels
+                _groupMemberTitles.value = GroupMemberRepository.cachedMemberTitles(groupCode)
+            }
         }
     }
 
@@ -1144,38 +1178,8 @@ class ChatDetailViewModel : ViewModel() {
                 }
                 if (elements.isEmpty()) error("没有可发送的内容")
 
-                fun dispatch(elementsToSend: ArrayList<MsgElement>) {
-                    val sent = chatRepository.sendMessage(c, elementsToSend) { code, errMsg ->
-                        Log.d(
-                            TAG,
-                            "sendMixed: code=$code, errMsg=$errMsg, count=${elementsToSend.size}",
-                        )
-                        if (code == 0) {
-                            val now = System.currentTimeMillis() / 1000
-                            val rec = MsgRecord().apply {
-                                peerUid = c.peerUid
-                                chatType = c.chatType
-                                msgTime = now
-                                senderUin = selfUin
-                                sendNickName = ""
-                                sendStatus = 2
-                            }
-                            runCatching {
-                                val field = MsgRecord::class.java.getDeclaredField("elements")
-                                field.isAccessible = true
-                                field.set(rec, elementsToSend)
-                            }
-                            RecentMessageStore.put(peerId, rec)
-                            _statusText.value = ""
-                        } else {
-                            _statusText.value = "发送失败：${errMsg ?: code}"
-                        }
-                    }
-                    if (!sent) _statusText.value = "消息服务不可用"
-                }
-
                 if (pendingMarketFaces.isEmpty()) {
-                    dispatch(elements)
+                    dispatchPreparedElements(c, elements)
                 } else {
                     val remaining = AtomicInteger(pendingMarketFaces.size)
                     val dispatched = AtomicBoolean(false)
@@ -1194,7 +1198,7 @@ class ChatDetailViewModel : ViewModel() {
                                 if (preparationFailed.get()) {
                                     _statusText.value = "系列表情准备失败，请重试"
                                 } else {
-                                    dispatch(elements)
+                                    dispatchPreparedElements(c, elements)
                                 }
                             }
                         }
@@ -1208,16 +1212,85 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun sendSingleEmotion(context: Context, selection: EmotionRepository.Selection) {
-        val token = when (selection) {
-            is EmotionRepository.Selection.SystemFace -> "face:0"
-            is EmotionRepository.Selection.MarketFace -> "market:0"
+        val currentContact = contact ?: run {
+            Log.w(TAG, "sendSingleEmotion: contact unavailable selection=$selection")
+            return
         }
-        sendMixed(
-            context = context,
-            mixedText = MessageTokenCodec.wrap(token),
-            uriMap = emptyMap(),
-            emotionMap = mapOf(token to selection),
+        Log.d(
+            TAG,
+            "sendSingleEmotion: selection=$selection contact=${currentContact.chatType}/${currentContact.peerUid} " +
+                "connected=${chatRepository.isConnected()}",
         )
+        if (!chatRepository.isConnected()) {
+            runWhenMessageServiceReady { sendSingleEmotion(context, selection) }
+            return
+        }
+        _statusText.value = "正在准备表情..."
+        Thread {
+            when (selection) {
+                is EmotionRepository.Selection.SystemFace -> {
+                    val element = runCatching {
+                        EmotionRepository.createSystemFaceElement(selection)
+                            ?: error("表情构造失败")
+                    }.getOrNull()
+                    if (element == null) {
+                        Log.w(TAG, "sendSingleEmotion: system face construction failed selection=$selection")
+                        _statusText.value = "表情准备失败，请重试"
+                    } else {
+                        dispatchPreparedElements(currentContact, arrayListOf(element))
+                    }
+                }
+
+                is EmotionRepository.Selection.MarketFace -> {
+                    EmotionRepository.createMarketFaceElement(selection) { element ->
+                        Log.d(
+                            TAG,
+                            "sendSingleEmotion: market element ready=${element != null} selection=$selection",
+                        )
+                        if (element == null) {
+                            _statusText.value = "系列表情准备失败，请重试"
+                        } else {
+                            dispatchPreparedElements(currentContact, arrayListOf(element))
+                        }
+                    }
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun dispatchPreparedElements(
+        contact: Contact,
+        elements: ArrayList<MsgElement>,
+    ) {
+        val callbackReceived = AtomicBoolean(false)
+        val sent = chatRepository.sendMessage(contact, elements) { code, errMsg ->
+            callbackReceived.set(true)
+            Log.d(TAG, "sendElements: code=$code, errMsg=$errMsg, count=${elements.size}")
+            if (code == 0) {
+                val now = System.currentTimeMillis() / 1000
+                val record = MsgRecord().apply {
+                    peerUid = contact.peerUid
+                    chatType = contact.chatType
+                    msgTime = now
+                    senderUin = selfUin
+                    sendNickName = ""
+                    sendStatus = 2
+                }
+                runCatching {
+                    val field = MsgRecord::class.java.getDeclaredField("elements")
+                    field.isAccessible = true
+                    field.set(record, elements)
+                }
+                RecentMessageStore.put(peerId, record)
+                _statusText.value = ""
+            } else {
+                _statusText.value = "发送失败：${errMsg ?: code}"
+            }
+        }
+        if (!sent && !callbackReceived.get()) _statusText.value = "消息服务不可用"
     }
 
     private fun createTextElement(content: String): MsgElement = MsgElement().apply {
@@ -1362,7 +1435,15 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun emitMessages() {
-        _messages.value = synchronized(messageLock) { msgList.map(::toUiMsg) }
+        val records = synchronized(messageLock) { msgList.toList() }
+        records.forEach { record ->
+            val senderUid = record.senderUid.trim()
+            val senderNick = record.sendNickName?.trim().orEmpty()
+            if (senderUid.isNotEmpty() && senderNick.isNotEmpty()) {
+                replyNicknameCache.putIfAbsent(senderUid, senderNick)
+            }
+        }
+        _messages.value = records.map(::toUiMsg)
     }
 
     private fun toUiMsg(rec: MsgRecord, forwardRootMessageId: Long? = null): UiMsg {
@@ -1425,7 +1506,11 @@ class ChatDetailViewModel : ViewModel() {
             when (element.elementType) {
                 1 -> "${element.elementId}:1:${element.textElement?.content.orEmpty()}"
                 2 -> "${element.elementId}:2:${element.picElement?.md5HexStr.orEmpty()}:${element.picElement?.fileName.orEmpty()}"
-                6 -> "${element.elementId}:6:${element.faceElement?.faceType}:${element.faceElement?.faceIndex}:${element.faceElement?.faceText.orEmpty()}:${element.faceElement?.packId.orEmpty()}:${element.faceElement?.stickerId.orEmpty()}"
+                6 -> "${element.elementId}:6:${element.faceElement?.faceType}:${element.faceElement?.faceIndex}:" +
+                    "${element.faceElement?.imageType}:${element.faceElement?.stickerType}:" +
+                    "${element.faceElement?.faceText.orEmpty()}:${element.faceElement?.packId.orEmpty()}:" +
+                    "${element.faceElement?.stickerId.orEmpty()}:${element.faceElement?.resultId.orEmpty()}:" +
+                    element.faceElement?.surpriseId.orEmpty()
                 11 -> "${element.elementId}:11:${element.marketFaceElement?.emojiPackageId}:${element.marketFaceElement?.emojiId.orEmpty()}:${element.marketFaceElement?.faceName.orEmpty()}:${element.marketFaceElement?.key.orEmpty()}"
                 else -> "${element.elementId}:${element.elementType}"
             }
@@ -1517,9 +1602,7 @@ class ChatDetailViewModel : ViewModel() {
 
                     element.replyElement != null -> element.replyElement?.let { reply ->
                         MessageContent.Reply(
-                            senderName = reply.anonymousNickName?.takeIf { it.isNotBlank() }
-                                ?: reply.senderUidStr?.takeIf { it.isNotBlank() }
-                                ?: "回复消息",
+                            senderName = resolveReplySenderName(reply),
                             summary = reply.sourceMsgText?.takeIf { it.isNotBlank() }
                                 ?: reply.sourceMsgTextElems
                                     ?.joinToString("") { it.textElemContent.orEmpty() }
@@ -1580,9 +1663,12 @@ class ChatDetailViewModel : ViewModel() {
                             text = face.faceText?.takeIf { it.isNotBlank() } ?: "[表情]",
                             packId = face.packId?.takeIf { it.isNotBlank() },
                             stickerId = face.stickerId?.takeIf { it.isNotBlank() },
+                            stickerType = face.stickerType,
                             faceType = face.faceType,
                             faceIndex = face.faceIndex,
                             imageType = face.imageType,
+                            resultId = face.resultId?.takeIf { it.isNotBlank() },
+                            surpriseId = face.surpriseId?.takeIf { it.isNotBlank() },
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
@@ -1728,6 +1814,76 @@ class ChatDetailViewModel : ViewModel() {
             add(MessageContent.LinkPreview(previewUrl, LinkPreviewRepository.state(previewUrl)))
         }
         if (isEmpty()) add(MessageContent.Unsupported(0))
+    }
+
+    private fun resolveReplySenderName(reply: ReplyElement): String {
+        reply.anonymousNickName?.trim()?.takeIf { it.isNotEmpty() }?.let { return it }
+
+        val identifiers = buildList {
+            reply.senderUidStr?.trim()?.takeIf { it.isNotEmpty() && it != "0" }?.let(::add)
+            reply.senderUid?.takeIf { it > 0L }?.toString()?.let(::add)
+        }.distinct()
+        if (identifiers.isEmpty()) return "回复消息"
+
+        identifiers.asSequence()
+            .mapNotNull(replyNicknameCache::get)
+            .firstOrNull()
+            ?.let { return it }
+
+        requestReplyNickname(identifiers)
+        return identifiers.first()
+    }
+
+    private fun requestReplyNickname(identifiers: List<String>) {
+        val requestKey = identifiers.joinToString("|")
+        if (!replyNicknameRequests.add(requestKey)) return
+
+        Thread {
+            val nickname = runCatching {
+                val buddyNick = KernelBridge.getBuddyService()
+                    ?.getBuddyNick(ArrayList(identifiers))
+                    .orEmpty()
+                identifiers.asSequence()
+                    .mapNotNull { buddyNick[it]?.trim()?.takeIf(String::isNotEmpty) }
+                    .firstOrNull()
+                    ?: resolveReplyNicknameFromProfile(identifiers)
+            }.onFailure { error ->
+                Log.w(TAG, "reply nickname lookup failed: identifiers=$identifiers", error)
+            }.getOrNull()
+
+            if (!nickname.isNullOrBlank()) {
+                identifiers.forEach { identifier -> replyNicknameCache[identifier] = nickname }
+                emitMessages()
+            }
+        }.apply {
+            name = "QMCE-ReplyNickname"
+            isDaemon = true
+            start()
+        }
+    }
+
+    private fun resolveReplyNicknameFromProfile(identifiers: List<String>): String? {
+        val profileService = KernelBridge.getKernelService()?.profileService ?: return null
+        val directInfo = runCatching {
+            profileService.getCoreAndBaseInfo("QMCE-Reply", ArrayList(identifiers))
+        }.getOrNull().orEmpty()
+        directInfo.values.asSequence()
+            .mapNotNull { it.coreInfo?.nick?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
+            ?.let { return it }
+
+        val uins = identifiers.mapNotNull { it.toLongOrNull()?.takeIf { value -> value > 0L } }
+        if (uins.isEmpty()) return null
+        val uidByUin = runCatching {
+            profileService.getUidByUin("QMCE-Reply", ArrayList(uins))
+        }.getOrNull().orEmpty()
+        val resolvedUids = uins.mapNotNull { uidByUin[it] }.filter { it.isNotBlank() }.distinct()
+        if (resolvedUids.isEmpty()) return null
+        return runCatching {
+            profileService.getCoreAndBaseInfo("QMCE-Reply", ArrayList(resolvedUids))
+        }.getOrNull().orEmpty().values.asSequence()
+            .mapNotNull { it.coreInfo?.nick?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
     }
 
     private fun List<MessageContent>.summary(): String = joinToString(separator = "") { content ->

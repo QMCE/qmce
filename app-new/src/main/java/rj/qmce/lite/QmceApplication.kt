@@ -38,6 +38,7 @@ import mqq.app.Constants
 import mqq.app.IAccountCallback
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
+import rj.qmce.lite.data.emotion.EmotionAssetBridge
 import rj.qmce.lite.fix.LegacyKiller
 import rj.qmce.lite.fix.PackageSignatureProvider
 import rj.qmce.lite.fix.SignatureProbe
@@ -265,6 +266,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 f.set(null, BuildConfig.APPLICATION_ID)
             }
         }
+        runCatching { EmotionAssetBridge.ensure(base) }
+            .onFailure { Log.e("QMCE", "emotion asset bridge failed", it) }
         super.attachBaseContext(base)
         MultiDex.install(this)
         Log.d("QMCE", "attachBaseContext done")
@@ -296,7 +299,19 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         }
         if (isMainProcess()) {
             ensureRuntime(this)
+            initializeOfficialImageRuntime()
             registerLogoutCallback()
+        }
+    }
+
+    private fun initializeOfficialImageRuntime() {
+        runCatching {
+            val taskClass = Class.forName("com.tencent.qqnt.watch.startup.task.UrlDrawableInitTask")
+            val task = taskClass.getDeclaredConstructor().newInstance()
+            taskClass.getMethod("a", Context::class.java).invoke(task, this)
+            Log.d("QMCE", "URLDrawable runtime initialized")
+        }.onFailure {
+            Log.w("QMCE", "URLDrawable runtime unavailable; emotion fallback remains enabled", it)
         }
     }
 

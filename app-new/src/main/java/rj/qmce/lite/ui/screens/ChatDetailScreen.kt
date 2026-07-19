@@ -17,7 +17,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -74,7 +73,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -107,8 +105,6 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
-import android.graphics.Bitmap
-import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -129,6 +125,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private val MessageBubbleCornerRadius = 8.dp
+private val MessageBubbleLeadingCornerRadius = 4.dp
+private const val ConsecutiveMessageWindowMillis = 5 * 60 * 1000L
+
+private fun messageBubbleShape(isSelf: Boolean) = RoundedCornerShape(
+    topStart = if (isSelf) MessageBubbleCornerRadius else MessageBubbleLeadingCornerRadius,
+    topEnd = if (isSelf) MessageBubbleLeadingCornerRadius else MessageBubbleCornerRadius,
+    bottomEnd = MessageBubbleCornerRadius,
+    bottomStart = MessageBubbleCornerRadius,
+)
+
 private sealed interface ChatTimelineItem {
     val key: String
 
@@ -139,6 +146,7 @@ private sealed interface ChatTimelineItem {
 
     data class Message(
         val message: ChatDetailViewModel.UiMsg,
+        val isContinuation: Boolean,
     ) : ChatTimelineItem {
         override val key: String = "message:${message.stableKey}"
     }
@@ -197,10 +205,25 @@ fun ChatDetailScreen(
     val forwardDetailState by vm.forwardDetailState.collectAsState()
     val replySourceState by vm.replySourceState.collectAsState()
     val pttPlaybackStates by vm.pttPlaybackStates.collectAsState()
+    val groupMemberLevels by vm.groupMemberLevels.collectAsState()
+    val groupMemberTitles by vm.groupMemberTitles.collectAsState()
     val inlineKeyboardActions by vm.inlineKeyboardActions.collectAsState()
     val multiSelectMode by vm.multiSelectMode.collectAsState()
     val selectedMsgIds by vm.selectedMsgIds.collectAsState()
     val timelineItems = remember(messages) { messages.toTimelineItems() }
+    LaunchedEffect(chatType, peerUin, messages) {
+        if (chatType == 2) {
+            vm.loadGroupMemberLevels(
+                peerUin.toLongOrNull() ?: return@LaunchedEffect,
+                messages.asSequence()
+                    .filterNot { it.isSelf }
+                    .map { it.senderUid }
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .toList(),
+            )
+        }
+    }
     val currentIsLoadingOlder by rememberUpdatedState(isLoadingOlder)
     val currentTimelineItems by rememberUpdatedState(timelineItems)
     val currentOlderPageVersion by rememberUpdatedState(olderPageVersion)
@@ -510,6 +533,9 @@ fun ChatDetailScreen(
                                             Box(modifier = Modifier.fillMaxWidth()) {
                                                 MessageBubble(
                                                     message = item.message,
+                                                    isContinuation = item.isContinuation,
+                                                    memberLevel = groupMemberLevels[item.message.senderUid],
+                                                    memberTitle = groupMemberTitles[item.message.senderUid],
                                                     ensureImageCached = vm::ensureImageCached,
                                                     onOpenMedia = { viewerMedia = it },
                                                     onOpenVideo = { videoPlayer = it },
@@ -801,13 +827,26 @@ private val transientChatStatuses = setOf("正在等待消息服务...", "加载
 
 private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimelineItem> = buildList {
     var previousDayKey: String? = null
+    var previousMessage: ChatDetailViewModel.UiMsg? = null
     this@toTimelineItems.forEach { message ->
         val dayKey = message.time.toDayKey()
         if (dayKey != previousDayKey) {
             add(ChatTimelineItem.DateDivider(formatChatDate(message.time), "date:$dayKey"))
             previousDayKey = dayKey
+            previousMessage = null
         }
-        add(ChatTimelineItem.Message(message))
+        val isContinuation = previousMessage?.let { previous ->
+            val sameSender = if (message.isSelf && previous.isSelf) {
+                true
+            } else {
+                message.senderUid.isNotBlank() && message.senderUid == previous.senderUid
+            }
+            val elapsed = message.time - previous.time
+            sameSender && message.isSelf == previous.isSelf &&
+                elapsed in 0..ConsecutiveMessageWindowMillis
+        } == true
+        add(ChatTimelineItem.Message(message, isContinuation))
+        previousMessage = message
     }
 }
 
@@ -880,7 +919,8 @@ private fun ChatComposerActions(
 ) {
     Row (modifier = Modifier.padding(bottom = 30.dp),) {
         CompactButton(
-            onClick = onOpenSingleEmotion,
+            // TODO: enable it
+            onClick = {}, //onOpenSingleEmotion,
             modifier = Modifier.padding(horizontal = 5.dp),
             icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
         )
@@ -900,6 +940,7 @@ private fun ChatComposerActions(
 @Composable
 internal fun MessageBubble(
     message: ChatDetailViewModel.UiMsg,
+    isContinuation: Boolean = false,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
@@ -914,6 +955,8 @@ internal fun MessageBubble(
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit = {},
     onRequestCall: ((CallMode) -> Unit)? = null,
     isHighlighted: Boolean = false,
+    memberLevel: Int? = null,
+    memberTitle: String? = null,
 ) {
     val systemTip = message.contents.singleOrNull() as? ChatDetailViewModel.MessageContent.SystemTip
     if (systemTip != null) {
@@ -931,7 +974,7 @@ internal fun MessageBubble(
         MaterialTheme.colorScheme.onSurface
     }
     val alignment = if (message.isSelf) Arrangement.End else Arrangement.Start
-    val bubbleShape = RoundedCornerShape(10.dp)
+    val bubbleShape = messageBubbleShape(message.isSelf)
     val isSingleMedia = message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
                 it is ChatDetailViewModel.MessageContent.Giphy
@@ -940,16 +983,20 @@ internal fun MessageBubble(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
+            .padding(top = if (isContinuation) 1.dp else 3.dp, bottom = 3.dp),
         horizontalArrangement = alignment
     ) {
         Column(
             modifier = Modifier.widthIn(max = 172.dp),
             horizontalAlignment = if (message.isSelf) Alignment.End else Alignment.Start,
         ) {
-            if (!message.isSelf && message.senderNick.isNotBlank()) {
+            if (!message.isSelf && !isContinuation && message.senderNick.isNotBlank()) {
                 Text(
-                    text = message.senderNick,
+                    text = listOfNotNull(
+                        memberLevel?.takeIf { it > 0 }?.let { "LV$it" },
+                        memberTitle?.takeIf { it.isNotBlank() },
+                        message.senderNick,
+                    ).joinToString(" "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
@@ -983,6 +1030,7 @@ internal fun MessageBubble(
                         message = message,
                         contentIndex = index,
                         content = content,
+                        messageShape = bubbleShape,
                         ensureImageCached = ensureImageCached,
                         onOpenMedia = onOpenMedia,
                         onOpenVideo = onOpenVideo,
@@ -1018,6 +1066,7 @@ private fun MessageContentItem(
     message: ChatDetailViewModel.UiMsg,
     contentIndex: Int,
     content: ChatDetailViewModel.MessageContent,
+    messageShape: RoundedCornerShape,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
@@ -1070,7 +1119,11 @@ private fun MessageContentItem(
             )
         }
 
-        is ChatDetailViewModel.MessageContent.Reply -> ReplyMessageContent(content, onOpenReply)
+        is ChatDetailViewModel.MessageContent.Reply -> ReplyMessageContent(
+            content = content,
+            messageShape = messageShape,
+            onOpenReply = onOpenReply,
+        )
         is ChatDetailViewModel.MessageContent.Card -> StructuredCardContent(
             title = content.title,
             description = content.description,
@@ -1178,26 +1231,55 @@ private fun LocalMarketFace(
     val cachedPaths = remember(content.element) {
         EmotionRepository.cachedMarketFacePaths(context, content.element)
     }
-    val localFile = remember(content.staticPath, content.dynamicPath, cachedPaths) {
-        LocalMediaResolver.firstAvailable(
-            listOf(content.staticPath, content.dynamicPath) + cachedPaths,
-        )
+    val candidatePaths = remember(content.staticPath, content.dynamicPath, cachedPaths) {
+        (listOf(content.staticPath, content.dynamicPath) + cachedPaths)
+            .filterNotNull()
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .distinct()
     }
     val size = mediaSize(content.width, content.height)
-    var failed by remember(localFile) { mutableStateOf(false) }
     val marketFaceKey = remember(content.element) {
         content.element?.let { "${it.emojiPackageId}:${it.emojiId}" } ?: content.name
     }
+    var failedPaths by remember(marketFaceKey) { mutableStateOf(emptySet<String>()) }
+    var localPath by remember(marketFaceKey, candidatePaths) {
+        mutableStateOf(
+            candidatePaths.firstOrNull { path ->
+                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+            },
+        )
+    }
+    val localFile = localPath?.let(LocalMediaResolver::resolveFile)
     var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
-    LaunchedEffect(marketFaceKey, localFile, failed) {
+    var officialDrawableVersion by remember(marketFaceKey) { mutableStateOf(0) }
+    var officialRetry by remember(marketFaceKey) { mutableStateOf(0) }
+    LaunchedEffect(marketFaceKey, candidatePaths, failedPaths, localPath) {
+        if (localPath != null && localPath !in failedPaths) return@LaunchedEffect
+        val deadline = System.currentTimeMillis() + 8_000L
+        while (System.currentTimeMillis() < deadline) {
+            val nextPath = candidatePaths.firstOrNull { path ->
+                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+            }
+            if (nextPath != null) {
+                localPath = nextPath
+                return@LaunchedEffect
+            }
+            delay(150L)
+        }
+    }
+    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry) {
         val element = content.element
-        if ((localFile == null || failed) && element != null && officialDrawable == null) {
+        if (localPath == null && element != null && officialDrawable == null && officialRetry <= 2) {
+            if (officialRetry > 0) delay(400L)
             EmotionRepository.loadMarketFaceDrawable(element) { drawable ->
                 officialDrawable = drawable
+                officialDrawableVersion++
+                if (drawable == null && officialRetry < 2) officialRetry++
             }
         }
     }
-    if (localFile != null && !failed) {
+    if (localFile != null && localPath !in failedPaths) {
         Box(
             modifier = Modifier
                 .size(size.width, size.height)
@@ -1208,10 +1290,14 @@ private fun LocalMarketFace(
                 contentDescription = content.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
-                onError = { failed = true },
+                onError = {
+                    localPath?.let { path -> failedPaths = failedPaths + path }
+                    localPath = null
+                },
             )
         }
     } else if (officialDrawable != null) {
+        val currentDrawableVersion = officialDrawableVersion
         AndroidView(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
@@ -1219,6 +1305,7 @@ private fun LocalMarketFace(
                 }
             },
             update = { imageView ->
+                imageView.tag = currentDrawableVersion
                 imageView.setImageDrawable(officialDrawable)
             },
             modifier = Modifier.size(size.width, size.height),
@@ -1230,40 +1317,63 @@ private fun LocalMarketFace(
 
 @Composable
 private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face) {
-    val face = remember(content.faceType, content.faceIndex, content.text) {
-        if (content.faceType > 0) {
-            EmotionRepository.systemFaceForMessage(
-                faceType = content.faceType,
-                ntFaceIndex = content.faceIndex,
-                label = content.text,
-                packId = content.packId,
-                imageType = content.imageType,
-            )
-        } else {
-            null
+    val face = remember(
+        content.faceType,
+        content.faceIndex,
+        content.text,
+        content.packId,
+        content.stickerId,
+        content.stickerType,
+        content.imageType,
+        content.resultId,
+        content.surpriseId,
+    ) {
+        EmotionRepository.systemFaceForMessage(
+            faceType = content.faceType,
+            ntFaceIndex = content.faceIndex,
+            label = content.text,
+            packId = content.packId,
+            imageType = content.imageType,
+            stickerId = content.stickerId,
+            stickerType = content.stickerType,
+            resultId = content.resultId,
+            surpriseId = content.surpriseId,
+        )
+    }
+    var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(face) {
+        drawable = null
+        face?.let { value ->
+            EmotionRepository.loadSystemFaceDrawable(value) { loaded ->
+                if (loaded != null || drawable == null) {
+                    drawable = loaded
+                }
+            }
         }
     }
-    val drawable = remember(face) { face?.let { EmotionRepository.systemFaceDrawable(it) } }
-    val bitmap = remember(drawable) { drawable?.toMessageBitmap() }
-    if (bitmap == null) {
-        MessageFallback(content.text)
+    val fallbackText = remember(face, content.text) {
+        face?.let(EmotionRepository::systemFaceText) ?: content.text
+    }
+    if (drawable == null) {
+        MessageFallback(fallbackText)
     } else {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = content.text,
+        val currentDrawable = drawable
+        AndroidView(
+            factory = { viewContext ->
+                ImageView(viewContext).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                }
+            },
+            update = { imageView ->
+                if (imageView.drawable !== currentDrawable) {
+                    imageView.setImageDrawable(currentDrawable)
+                }
+                imageView.invalidate()
+            },
             modifier = Modifier.size(34.dp),
         )
     }
 }
-
-private fun Drawable.toMessageBitmap(): Bitmap? = runCatching {
-    val width = intrinsicWidth.takeIf { it > 0 } ?: 48
-    val height = intrinsicHeight.takeIf { it > 0 } ?: 48
-    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
-        setBounds(0, 0, width, height)
-        draw(Canvas(bitmap))
-    }
-}.getOrNull()
 
 @Composable
 private fun GiphyMessageContent(
@@ -1586,14 +1696,15 @@ private fun RichMessageText(
 @Composable
 private fun ReplyMessageContent(
     content: ChatDetailViewModel.MessageContent.Reply,
+    messageShape: RoundedCornerShape,
     onOpenReply: (ChatDetailViewModel.MessageContent.Reply) -> Unit,
 ) {
     Card(
         onClick = { onOpenReply(content) },
         enabled = !content.expired,
         modifier = Modifier
-            .fillMaxWidth()
             .padding(bottom = 6.dp),
+        shape = messageShape,
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,

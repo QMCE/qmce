@@ -224,6 +224,14 @@ fun GroupMemberProfileScreen(
                 value = member.nick.ifBlank { "未知" },
                 transformationSpec = transformationSpec,
             )
+            member.memberLevel?.takeIf { it > 0 }?.let { level ->
+                memberProfileField(
+                    key = "member-profile-level:${member.entryIndex}",
+                    label = "群等级",
+                    value = "LV$level",
+                    transformationSpec = transformationSpec,
+                )
+            }
             memberProfileField(
                 key = "member-profile-group:${member.entryIndex}",
                 label = "群号",

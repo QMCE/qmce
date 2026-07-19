@@ -1,5 +1,7 @@
 package rj.qmce.lite.data.chat
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import com.tencent.qqnt.kernel.api.IKernelService
 import com.tencent.qqnt.kernel.api.IMsgService
@@ -21,6 +23,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import mqq.app.AppRuntime
 import rj.qmce.lite.kernel.KernelBridge
+import java.util.concurrent.atomic.AtomicBoolean
 
 class ChatRepository {
     data class HistoryRequest(
@@ -45,6 +48,7 @@ class ChatRepository {
     private var service: IMsgService? = null
     private var listenerService: IMsgService? = null
     private var kernelListener: IKernelMsgListener? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     fun connect(runtime: AppRuntime?): Connection {
         val ready = KernelBridge.awaitCoreServices()
@@ -139,6 +143,74 @@ class ChatRepository {
         callback: (errorCode: Int, errorMessage: String?) -> Unit,
     ): Boolean {
         val currentService = service ?: return false
+        val containsMarketFace = elements.any {
+            it.elementType == 11 && it.marketFaceElement != null
+        }
+        if (containsMarketFace) {
+            val hasLegacyControlCharacter = elements.any { element ->
+                element.textElement?.content?.any { character ->
+                    character == '\u0001' || character == '\u0002' ||
+                        character == MessageTokenCodec.BOUNDARY_START ||
+                        character == MessageTokenCodec.BOUNDARY_END
+                } == true
+            }
+            if (hasLegacyControlCharacter) {
+                Log.w(TAG, "chatRepository: refuse market-face send with token control character")
+                callback(-2, "消息内容仍包含旧版表情标记")
+                return false
+            }
+            val officialService = KernelBridge.ensureOfficialMessageBridge()
+            if (officialService == null) {
+                Log.w(TAG, "chatRepository: official MsgService unavailable for market face")
+                callback(-1, "官方消息服务不可用")
+                return false
+            }
+            val completed = AtomicBoolean(false)
+            val timeout = Runnable {
+                if (completed.compareAndSet(false, true)) {
+                    Log.w(TAG, "chatRepository: official market-face send callback timeout")
+                    callback(-3, "官方消息服务未返回结果")
+                }
+            }
+            return runCatching {
+                Log.d(
+                    TAG,
+                    "chatRepository: send market face through official MsgService " +
+                        "count=${elements.size} contact=${contact.chatType}/${contact.peerUid}",
+                )
+                elements.forEachIndexed { index, element ->
+                    val face = element.marketFaceElement
+                    if (face != null) {
+                        Log.d(
+                            TAG,
+                            "chatRepository: market[$index] type=${element.elementType} " +
+                                "epId=${face.emojiPackageId} eId=${face.emojiId} " +
+                                "keyLength=${face.key.length} faceName=${face.faceName}",
+                        )
+                    }
+                }
+                mainHandler.postDelayed(timeout, 20_000L)
+                officialService.sendMsg(contact, 0L, elements, object : IOperateCallback {
+                    override fun onResult(code: Int, errMsg: String?) {
+                        if (completed.compareAndSet(false, true)) {
+                            mainHandler.removeCallbacks(timeout)
+                            Log.d(
+                                TAG,
+                                "chatRepository: official market-face result code=$code msg=$errMsg",
+                            )
+                            callback(code, errMsg)
+                        }
+                    }
+                })
+                true
+            }.onFailure {
+                if (completed.compareAndSet(false, true)) {
+                    mainHandler.removeCallbacks(timeout)
+                    Log.w(TAG, "chatRepository: official market-face send failed", it)
+                    callback(-1, it.message ?: "官方消息服务调用失败")
+                }
+            }.getOrDefault(false)
+        }
         return runCatching {
             currentService.sendMsg(
                 0L,

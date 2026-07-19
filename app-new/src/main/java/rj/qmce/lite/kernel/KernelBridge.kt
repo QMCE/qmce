@@ -37,6 +37,11 @@ object KernelBridge {
     private var cachedBuddyService: com.tencent.qqnt.kernel.api.IBuddyService? = null
     @Volatile
     private var cachedGroupService: com.tencent.qqnt.kernel.api.IGroupService? = null
+    @Volatile
+    private var officialMessageKernel: com.tencent.qqnt.kernel.api.IMsgService? = null
+    @Volatile
+    private var officialMessageService: com.tencent.qqnt.msg.api.IMsgService? = null
+    private val officialMessageLock = Any()
 
     fun getKernelService(): IKernelService? = cachedKs
     fun getMsgService(): com.tencent.qqnt.kernel.api.IMsgService? = cachedMsgService
@@ -53,6 +58,37 @@ object KernelBridge {
 
     fun getBuddyService(): com.tencent.qqnt.kernel.api.IBuddyService? = cachedBuddyService
     fun getGroupService(): com.tencent.qqnt.kernel.api.IGroupService? = cachedGroupService
+    fun ensureOfficialMessageBridge(
+        runtimeOverride: AppRuntime? = null,
+    ): com.tencent.qqnt.msg.api.IMsgService? {
+        val runtime = runtimeOverride ?: QmceApplication.ensureRuntime()
+        val kernelService = cachedKs ?: runCatching {
+            runtime?.getRuntimeService(IKernelService::class.java, "")
+        }.getOrNull()
+        val kernelMsgService = cachedMsgService ?: runCatching {
+            kernelService?.msgService
+        }.getOrNull() ?: return null
+
+        officialMessageService?.let { cached ->
+            if (officialMessageKernel === kernelMsgService) return cached
+        }
+
+        return synchronized(officialMessageLock) {
+            officialMessageService?.let { cached ->
+                if (officialMessageKernel === kernelMsgService) return@synchronized cached
+            }
+            runCatching {
+                val messageBridge = QRoute.api(com.tencent.qqnt.msg.api.IMsgService::class.java)
+                messageBridge.init(kernelMsgService)
+                officialMessageKernel = kernelMsgService
+                officialMessageService = messageBridge
+                Log.d(TAG, "KernelBridge: official message bridge initialized service=$messageBridge")
+                messageBridge
+            }.onFailure { error ->
+                Log.w(TAG, "KernelBridge: official message bridge initialization failed", error)
+            }.getOrNull()
+        }
+    }
     fun getSelfProfileService(): ISelfProfileRuntimeService? = runCatching {
         QmceApplication.ensureRuntime()
             ?.getRuntimeService(ISelfProfileRuntimeService::class.java, "")
@@ -90,7 +126,14 @@ object KernelBridge {
     private fun cacheServices(ks: IKernelService) {
         cachedKs = ks
         completeExistingKernelInit(ks)
-        cachedMsgService = runCatching { ks.msgService }.getOrNull()
+        val nextMsgService = runCatching { ks.msgService }.getOrNull()
+        if (cachedMsgService !== nextMsgService) {
+            synchronized(officialMessageLock) {
+                officialMessageKernel = null
+                officialMessageService = null
+            }
+        }
+        cachedMsgService = nextMsgService
         cachedRecentService = runCatching { ks.recentContactService }.getOrNull()
         cachedBuddyService = runCatching { ks.buddyService }.getOrNull()
         cachedGroupService = runCatching { ks.groupService }.getOrNull()
@@ -215,6 +258,10 @@ object KernelBridge {
     fun reinitializeAfterLogin(runtime: AppRuntime?): Boolean {
         cachedKs = null
         cachedMsgService = null
+        synchronized(officialMessageLock) {
+            officialMessageKernel = null
+            officialMessageService = null
+        }
         cachedRecentService = null
         cachedBuddyService = null
 
@@ -572,16 +619,7 @@ object KernelBridge {
     }
 
     private fun initializeOfficialMessageBridge(runtime: AppRuntime?) {
-        if (runtime == null) return
-        runCatching {
-            val kernelService = runtime.getRuntimeService(IKernelService::class.java, "")
-            val kernelMsgService = kernelService.getMsgService()
-            val messageBridge = QRoute.api(com.tencent.qqnt.msg.api.IMsgService::class.java)
-            messageBridge.init(kernelMsgService)
-            Log.d(TAG, "bind: official message bridge initialized service=$messageBridge")
-        }.onFailure { error ->
-            Log.w(TAG, "bind: official message bridge initialization failed", error)
-        }
+        ensureOfficialMessageBridge(runtime)
     }
 
     private fun registerOfficialMsfConnectionBridge(runtime: AppRuntime?) {

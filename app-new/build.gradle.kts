@@ -1,5 +1,11 @@
 import com.android.build.api.variant.impl.VariantOutputImpl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
+import java.util.Properties
+
+val releaseKeyStorePassword = "android"
+val releaseKeyAlias = "key"
+val releaseKeyPassword = "android"
 
 plugins {
     alias(libs.plugins.android.application)
@@ -17,8 +23,8 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 18
-        versionName = "0.4.3"
+        versionCode = 19
+        versionName = "0.4.4"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -36,9 +42,9 @@ android {
         create("dev") {
             // Using testkey
             storeFile = file("./testkey.jks")
-            storePassword = "android"
-            keyAlias = "key"
-            keyPassword = "android"
+            storePassword = releaseKeyStorePassword
+            keyAlias = releaseKeyAlias
+            keyPassword = releaseKeyPassword
             enableV1Signing = true
             enableV2Signing = true
             enableV3Signing = false
@@ -74,7 +80,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    packaging { jniLibs { useLegacyPackaging = false } }
+    //packaging { jniLibs { useLegacyPackaging = false } }
 }
 
 kotlin {
@@ -106,6 +112,126 @@ androidComponents {
     }
 }
 
+val configuredBuildToolsVersion = android.buildToolsVersion
+
+val ultraCompressReleaseApk = tasks.register("ultraCompressReleaseApk") {
+    group = "build"
+    description = "Rebuilds the signed release APK with maximum standard ZIP Deflate compression."
+    dependsOn("assembleRelease")
+    notCompatibleWithConfigurationCache("Runs external archive and signing tools.")
+
+    doLast {
+        val releaseDirectory = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val inputApk = releaseDirectory.listFiles()
+            ?.firstOrNull { file ->
+                file.extension == "apk" && !file.nameWithoutExtension.endsWith("-ultra")
+            }
+            ?: error("Release APK not found in ${releaseDirectory.absolutePath}")
+        val outputApk = File(releaseDirectory, "${inputApk.nameWithoutExtension}-ultra.apk")
+        val temporaryDirectory = layout.buildDirectory
+            .dir("intermediates/ultraReleaseApk")
+            .get()
+            .asFile
+        val unpackedDirectory = File(temporaryDirectory, "unpacked")
+        val unalignedApk = File(temporaryDirectory, "unaligned.apk")
+        val alignedApk = File(temporaryDirectory, "aligned.apk")
+        val localPropertiesFile = rootProject.file("local.properties")
+        val localProperties = Properties().apply {
+            if (localPropertiesFile.isFile) {
+                localPropertiesFile.inputStream().use(::load)
+            }
+        }
+        val sdkDirectory = listOf(
+            System.getenv("ANDROID_HOME"),
+            System.getenv("ANDROID_SDK_ROOT"),
+            localProperties.getProperty("sdk.dir"),
+        ).firstNotNullOfOrNull { path ->
+            path?.takeIf(String::isNotBlank)?.let(::File)?.takeIf(File::isDirectory)
+        } ?: error(
+            "Android SDK not found. Set ANDROID_HOME or ANDROID_SDK_ROOT, " +
+                "or define sdk.dir in ${localPropertiesFile.absolutePath}",
+        )
+        val toolDirectory = File(sdkDirectory, "build-tools/$configuredBuildToolsVersion")
+        check(toolDirectory.isDirectory) {
+            "Configured Android build-tools $configuredBuildToolsVersion not found in " +
+                "${toolDirectory.absolutePath}"
+        }
+        val zipAlign = File(toolDirectory, "zipalign")
+        val apkSigner = File(toolDirectory, "apksigner")
+        check(zipAlign.canExecute()) { "zipalign is unavailable: ${zipAlign.absolutePath}" }
+        check(apkSigner.canExecute()) { "apksigner is unavailable: ${apkSigner.absolutePath}" }
+
+        fun runCommand(workingDirectory: File, vararg arguments: String) {
+            val process = ProcessBuilder(*arguments)
+                .directory(workingDirectory)
+                .inheritIO()
+                .start()
+            check(process.waitFor() == 0) { "Command failed: ${arguments.joinToString(" ")}" }
+        }
+
+        delete(temporaryDirectory)
+        temporaryDirectory.mkdirs()
+        runCommand(
+            temporaryDirectory,
+            "7z", "x", inputApk.absolutePath, "-o${unpackedDirectory.absolutePath}", "-y",
+        )
+        delete(File(unpackedDirectory, "META-INF"))
+
+        val storeEntries = buildList {
+            if (File(unpackedDirectory, "lib").isDirectory) add("lib")
+            if (File(unpackedDirectory, "resources.arsc").isFile) add("resources.arsc")
+        }
+        if (storeEntries.isNotEmpty()) {
+            runCommand(
+                unpackedDirectory,
+                "7z", "a", "-tzip", "-mx=0", unalignedApk.absolutePath, *storeEntries.toTypedArray(),
+            )
+        }
+
+        val compressedEntries = unpackedDirectory.listFiles()
+            ?.map(File::getName)
+            ?.filterNot { name -> name == "lib" || name == "resources.arsc" || name == "META-INF" }
+            .orEmpty()
+        check(compressedEntries.isNotEmpty()) { "No APK entries available for compression" }
+        runCommand(
+            unpackedDirectory,
+            "7z", "a", "-tzip", "-mm=Deflate", "-mx=9", "-mfb=258", "-mpass=15",
+            unalignedApk.absolutePath,
+            *compressedEntries.toTypedArray(),
+        )
+        runCommand(
+            temporaryDirectory,
+            zipAlign.absolutePath, "-f", "-p", "4", unalignedApk.absolutePath, alignedApk.absolutePath,
+        )
+        runCommand(
+            temporaryDirectory,
+            apkSigner.absolutePath,
+            "sign",
+            "--ks", file("./testkey.jks").absolutePath,
+            "--ks-key-alias", releaseKeyAlias,
+            "--ks-pass", "pass:$releaseKeyStorePassword",
+            "--key-pass", "pass:$releaseKeyPassword",
+            "--v1-signing-enabled", "true",
+            "--v2-signing-enabled", "true",
+            "--v3-signing-enabled", "false",
+            "--v4-signing-enabled", "false",
+            "--out", outputApk.absolutePath,
+            alignedApk.absolutePath,
+        )
+        runCommand(temporaryDirectory, apkSigner.absolutePath, "verify", "--verbose", outputApk.absolutePath)
+        logger.lifecycle(
+            "Ultra-compressed release APK: ${outputApk.absolutePath} " +
+                "(${inputApk.length()} B -> ${outputApk.length()} B)",
+        )
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleRelease") {
+        finalizedBy(ultraCompressReleaseApk)
+    }
+}
+
 dependencies {
     // AppCenter
 
@@ -114,7 +240,8 @@ dependencies {
 
     // QQ API
     implementation(files("libs/qq-sdk.jar"))
-    implementation(files("libs/qav-runtime.jar"))
+    // 新版jar不需要这个了
+    //implementation(files("libs/qav-runtime.jar"))
     // Wear OS platform SDK
     implementation(libs.androidx.wear)
 

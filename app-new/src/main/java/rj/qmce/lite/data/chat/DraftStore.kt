@@ -16,8 +16,10 @@ object DraftStore {
     }
 
     fun load(context: Context, peerUid: String, chatType: Int): String =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(key(peerUid, chatType), "") ?: ""
+        MessageTokenCodec.removeLegacyTokens(
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(key(peerUid, chatType), "") ?: "",
+        )
 
     fun clear(context: Context, peerUid: String, chatType: Int) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()

@@ -239,7 +239,9 @@ fun ChatInfoScreen(
                     onClick = onOpenSettings,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
+                    transformation = SurfaceTransformation(transformationSpec),
                     colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
                     icon = {

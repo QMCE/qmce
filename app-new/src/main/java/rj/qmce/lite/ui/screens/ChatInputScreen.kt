@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -81,7 +82,6 @@ import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.drawable.Drawable
 import java.io.File
 import java.util.UUID
@@ -102,6 +102,7 @@ data class ImageSlot(val id: String, val uri: Uri)
 private sealed interface MarketFaceThumbnailState {
     data object Loading : MarketFaceThumbnailState
     data class Ready(val bitmap: Bitmap) : MarketFaceThumbnailState
+    data class DrawableReady(val drawable: Drawable) : MarketFaceThumbnailState
     data object Unavailable : MarketFaceThumbnailState
 }
 
@@ -782,7 +783,9 @@ private fun ChatInputToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
+            // TODO: enable it
             item(key = "emoji") {
+                /*
                 ChatInputToolButton(
                     icon = Icons.Default.EmojiEmotions,
                     label = "表情",
@@ -791,6 +794,7 @@ private fun ChatInputToolsScreen(
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
                 )
+                */
             }
             item(key = "image") {
                 ChatInputToolButton(
@@ -887,6 +891,9 @@ fun EmotionPickerScreen(
     BackHandler(onBack = onBack)
     LaunchedEffect(Unit) {
         systemFaces = EmotionRepository.loadSystemFaces()
+        EmotionRepository.loadSystemFacesAsync { loadedFaces ->
+            systemFaces = loadedFaces
+        }
         EmotionRepository.loadMarketPacks { marketPacks = it }
     }
     LaunchedEffect(selectedPack?.epId) {
@@ -895,7 +902,7 @@ fun EmotionPickerScreen(
             return@LaunchedEffect
         }
         loadingMarketFaces = true
-        EmotionRepository.loadMarketFaces(context, pack.epId) {
+        EmotionRepository.loadMarketFaces(context, pack.epId, pack.isSmallFace) {
             marketFaces = it
             loadingMarketFaces = false
         }
@@ -938,9 +945,10 @@ fun EmotionPickerScreen(
                         ) {
                             row.forEach { face ->
                                 EmotionOptionButton(
+                                    face = face,
                                     label = face.label,
-                                    drawable = remember(face.faceType, face.faceIndex) {
-                                        EmotionRepository.systemFaceDrawable(face)
+                                    fallbackText = remember(face.faceType, face.faceIndex, face.label) {
+                                        EmotionRepository.systemFaceText(face)
                                     },
                                     onClick = { onSelectSystemFace(face) },
                                     modifier = Modifier.weight(1f),
@@ -1046,23 +1054,40 @@ fun EmotionPickerScreen(
 
 @Composable
 private fun EmotionOptionButton(
+    face: EmotionRepository.Selection.SystemFace,
     label: String,
-    drawable: Drawable?,
+    fallbackText: String,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    Button(onClick = onClick, modifier = modifier) {
-        if (drawable == null) {
-            Text("表情")
-        } else {
-            val bitmap = remember(drawable) { drawable.toPreviewBitmap() }
-            if (bitmap == null) Text("表情") else {
-                ComposeImage(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = label,
-                    modifier = Modifier.size(28.dp),
-                )
+    var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
+    LaunchedEffect(face) {
+        drawable = null
+        EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
+            if (loaded != null || drawable == null) {
+                drawable = loaded
             }
+        }
+    }
+    val currentDrawable = drawable
+    Button(onClick = onClick, modifier = modifier) {
+        if (currentDrawable == null) {
+            Text(fallbackText)
+        } else {
+            AndroidView(
+                factory = { viewContext ->
+                    android.widget.ImageView(viewContext).apply {
+                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                    }
+                },
+                update = { imageView ->
+                    if (imageView.drawable !== currentDrawable) {
+                        imageView.setImageDrawable(currentDrawable)
+                    }
+                    imageView.invalidate()
+                },
+                modifier = Modifier.size(28.dp),
+            )
         }
     }
 }
@@ -1073,30 +1098,90 @@ private fun MarketFaceOptionButton(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    var previewPath by remember(face.epId, face.eId, face.staticPath) {
+    var previewPath by remember(
+        face.epId,
+        face.eId,
+        face.staticPath,
+        face.dynamicPath,
+        face.jsonPath,
+        face.width,
+        face.height,
+    ) {
         mutableStateOf<String?>(null)
     }
-    var previewResolved by remember(face.epId, face.eId, face.staticPath) {
+    var previewDrawable by remember(
+        face.epId,
+        face.eId,
+        face.staticPath,
+        face.dynamicPath,
+        face.jsonPath,
+        face.width,
+        face.height,
+    ) {
+        mutableStateOf<Drawable?>(null)
+    }
+    var previewResolved by remember(
+        face.epId,
+        face.eId,
+        face.staticPath,
+        face.dynamicPath,
+        face.jsonPath,
+        face.width,
+        face.height,
+    ) {
         mutableStateOf(false)
     }
-    LaunchedEffect(face.epId, face.eId, face.staticPath) {
+    var previewDrawableVersion by remember(
+        face.epId,
+        face.eId,
+        face.staticPath,
+        face.dynamicPath,
+        face.jsonPath,
+        face.width,
+        face.height,
+    ) {
+        mutableStateOf(0)
+    }
+    LaunchedEffect(
+        face.epId,
+        face.eId,
+        face.staticPath,
+        face.dynamicPath,
+        face.jsonPath,
+        face.width,
+        face.height,
+    ) {
+        previewPath = null
+        previewDrawable = null
         previewResolved = false
-        EmotionRepository.resolveMarketFacePreview(face) { path ->
-            previewPath = path
+        previewDrawableVersion = 0
+        EmotionRepository.loadMarketFacePreview(face) { preview ->
+            previewPath = preview.path
+            previewDrawable = preview.drawable
             previewResolved = true
+            previewDrawableVersion++
         }
     }
     val thumbnailState by produceState<MarketFaceThumbnailState>(
         initialValue = MarketFaceThumbnailState.Loading,
         previewPath,
+        previewDrawable,
         previewResolved,
     ) {
         value = when {
             !previewResolved -> MarketFaceThumbnailState.Loading
-            previewPath.isNullOrBlank() -> MarketFaceThumbnailState.Unavailable
-            else -> withContext(Dispatchers.IO) {
-                BitmapFactory.decodeFile(previewPath)
-            }?.let(MarketFaceThumbnailState::Ready) ?: MarketFaceThumbnailState.Unavailable
+            else -> {
+                val bitmap = previewPath?.let { path ->
+                    withContext(Dispatchers.IO) { BitmapFactory.decodeFile(path) }
+                }
+                when {
+                    bitmap != null -> MarketFaceThumbnailState.Ready(bitmap)
+                    previewDrawable != null -> MarketFaceThumbnailState.DrawableReady(
+                        previewDrawable!!,
+                    )
+                    else -> MarketFaceThumbnailState.Unavailable
+                }
+            }
         }
     }
     Button(onClick = onClick, modifier = modifier) {
@@ -1117,19 +1202,26 @@ private fun MarketFaceOptionButton(
                 )
             }
 
+            is MarketFaceThumbnailState.DrawableReady -> {
+                val currentDrawableVersion = previewDrawableVersion
+                AndroidView(
+                    factory = { viewContext ->
+                        android.widget.ImageView(viewContext).apply {
+                            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                        }
+                    },
+                    update = { imageView ->
+                        imageView.tag = currentDrawableVersion
+                        imageView.setImageDrawable(state.drawable)
+                    },
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+
             MarketFaceThumbnailState.Unavailable -> Text(face.label)
         }
     }
 }
-
-private fun Drawable.toPreviewBitmap(): Bitmap? = runCatching {
-    val width = intrinsicWidth.takeIf { it > 0 } ?: 48
-    val height = intrinsicHeight.takeIf { it > 0 } ?: 48
-    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bitmap ->
-        setBounds(0, 0, width, height)
-        draw(Canvas(bitmap))
-    }
-}.getOrNull()
 
 @Composable
 private fun ChatInputToolButton(
