@@ -32,6 +32,8 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import androidx.compose.material3.TextField as MaterialTextField
 import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
 @Composable
 fun QZoneComposerScreen(
@@ -57,11 +59,25 @@ fun QZoneComposerScreen(
     ScreenScaffold(
         scrollState = listState,
         edgeButton = {
-            EdgeButton(
-                onClick = onPublish,
-                enabled = canPublish && publishState !is QZoneViewModel.PublishState.Publishing,
-                buttonSize = EdgeButtonSize.Small,
-            ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
+            val params = mapOf("have_picture" to if (selectedUris.isEmpty()) "0" else "1")
+            OfficialReportTargetBox(
+                key = "qzone:publish",
+                elementId = OfficialReportBridge.ElementIds.PUBLISH,
+                params = params,
+            ) { reportTarget ->
+                EdgeButton(
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.PUBLISH,
+                            params = params,
+                        )
+                        onPublish()
+                    },
+                    enabled = canPublish && publishState !is QZoneViewModel.PublishState.Publishing,
+                    buttonSize = EdgeButtonSize.Small,
+                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
+            }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->

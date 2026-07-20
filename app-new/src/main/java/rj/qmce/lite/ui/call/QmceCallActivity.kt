@@ -4,9 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.view.View
 import android.view.WindowManager
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.FragmentActivity
+import android.widget.FrameLayout
+import rj.qmce.lite.data.reporting.LocalOfficialReportHost
 import rj.qmce.lite.data.call.CallPhase
 import rj.qmce.lite.data.call.QmceCallController
 import rj.qmce.lite.ui.theme.QmceTheme
@@ -19,11 +25,30 @@ open class QmceCallActivity : FragmentActivity() {
         if (QmceCallController.state.value.phase == CallPhase.Incoming) {
             showOverLockScreen()
         }
-        setContent {
-            QmceTheme {
-                QmceCallScreen(onFinish = ::finish)
+        val reportHost = FrameLayout(this).apply {
+            id = View.generateViewId()
+        }
+        val composeView = ComposeView(this).apply {
+            id = View.generateViewId()
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+            )
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        reportHost.addView(composeView)
+        composeView.setContent {
+            CompositionLocalProvider(
+                LocalOfficialReportHost provides reportHost,
+            ) {
+                QmceTheme {
+                    QmceCallScreen(onFinish = ::finish)
+                }
             }
         }
+        setContentView(reportHost)
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -87,6 +87,43 @@ object RichMediaRepository {
         }
     }
 
+    fun requestPttAudio(
+        messageId: Long,
+        peerUid: String,
+        chatType: Int,
+        elementId: Long,
+    ): Boolean {
+        if (messageId <= 0L || elementId <= 0L || peerUid.isBlank()) return false
+        val key = RichMediaKey(messageId, elementId)
+        if (!beginRequest(key)) return true
+
+        val service = activeMessageService ?: KernelBridge.getMsgService()
+        if (service == null) {
+            finishRequest(key, RichMediaRequestState.Failed("消息服务不可用"))
+            return false
+        }
+
+        return runCatching {
+            service.getRichMediaElement(
+                RichMediaElementGetReq().apply {
+                    msgId = messageId
+                    this.peerUid = peerUid
+                    this.chatType = chatType
+                    this.elementId = elementId
+                    downloadType = 1
+                    downSourceType = 1
+                    triggerType = 1
+                },
+            )
+            Log.d(TAG, "richMedia: request ptt audio msg=$messageId, element=$elementId")
+            true
+        }.getOrElse {
+            finishRequest(key, RichMediaRequestState.Failed("语音请求失败"))
+            Log.w(TAG, "richMedia: request ptt audio failed", it)
+            false
+        }
+    }
+
     fun requestFile(
         messageId: Long,
         peerUid: String,

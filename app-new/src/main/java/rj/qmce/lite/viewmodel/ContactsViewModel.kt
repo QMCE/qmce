@@ -9,6 +9,7 @@ import com.tencent.qqnt.kernel.nativeinterface.BuddyListReqType
 import com.tencent.qqnt.kernel.nativeinterface.IBuddyListCallback
 import com.tencent.qqnt.watch.contact.api.IContactRuntimeService
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -50,18 +51,36 @@ class ContactsViewModel : ViewModel() {
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
 
+    @Volatile
     private var loaded = false
     private val loadGeneration = AtomicInteger()
+    private val loadLock = Any()
+    private var retryJob: Job? = null
+
+    private fun scheduleRetry(runtime: AppRuntime?, reason: String) {
+        if (runtime == null) return
+        synchronized(loadLock) {
+            if (retryJob?.isActive == true) return
+            retryJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(2_000)
+                synchronized(loadLock) { retryJob = null }
+                if (!_loading.value && !loaded) {
+                    Log.d(TAG, "retrying buddy list, reason=$reason")
+                    loadBuddies(runtime, forceRefresh = true)
+                }
+            }
+        }
+    }
 
     fun loadBuddies(runtime: AppRuntime?, forceRefresh: Boolean = false) {
         if (loaded && !forceRefresh) return
+        if (_loading.value) return
         _loading.value = true
         _statusText.value = "加载联系人..."
 
         val buddySvc = KernelBridge.getBuddyService()
         if (buddySvc != null) {
-            loaded = true
-            requestBuddyList(buddySvc, forceRefresh)
+            requestBuddyList(buddySvc, runtime, forceRefresh)
             return
         }
 
@@ -75,34 +94,57 @@ class ContactsViewModel : ViewModel() {
                 svc = KernelBridge.getBuddyService()
             }
             if (svc != null) {
-                loaded = true
-                requestBuddyList(svc, forceRefresh)
+                requestBuddyList(svc, runtime, forceRefresh)
             } else {
                 _statusText.value = "BuddyService 不可用"
                 _loading.value = false
+                scheduleRetry(runtime, "buddy-service-unavailable")
             }
         }
     }
 
-    private fun requestBuddyList(buddySvc: IBuddyService, forceRefresh: Boolean) {
-        buddySvc.getBuddyListV2(forceRefresh, BuddyListReqType.KNOMAL, object : IBuddyListCallback {
-            override fun onResult(
-                code: Int,
-                errMsg: String?,
-                list: java.util.ArrayList<BuddyListCategory>?
-            ) {
-                Log.d(TAG, "getBuddyListV2: code=$code, count=${list?.size}")
-                if (code == 0 && !list.isNullOrEmpty()) {
-                    val generation = loadGeneration.incrementAndGet()
-                    viewModelScope.launch(Dispatchers.IO) {
-                        processCategoriesIncrementally(list, buddySvc, generation)
+    private fun requestBuddyList(
+        buddySvc: IBuddyService,
+        runtime: AppRuntime?,
+        forceRefresh: Boolean,
+    ) {
+        runCatching {
+            buddySvc.getBuddyListV2(forceRefresh, BuddyListReqType.KNOMAL, object : IBuddyListCallback {
+                override fun onResult(
+                    code: Int,
+                    errMsg: String?,
+                    list: java.util.ArrayList<BuddyListCategory>?
+                ) {
+                    Log.d(TAG, "getBuddyListV2: code=$code, count=${list?.size}")
+                    if (code == 0 && !list.isNullOrEmpty()) {
+                        loaded = true
+                        val generation = loadGeneration.incrementAndGet()
+                        viewModelScope.launch(Dispatchers.IO) {
+                            runCatching {
+                                processCategoriesIncrementally(list, buddySvc, generation)
+                            }.onFailure { error ->
+                                loaded = false
+                                _loading.value = false
+                                _statusText.value = "联系人加载失败，正在重试"
+                                Log.e(TAG, "process buddy list failed", error)
+                                scheduleRetry(runtime, "process-${error.javaClass.simpleName}")
+                            }
+                        }
+                    } else {
+                        loaded = false
+                        _statusText.value = "联系人服务暂未返回数据，正在重试"
+                        _loading.value = false
+                        scheduleRetry(runtime, "empty-or-error-$code")
                     }
-                } else {
-                    _statusText.value = "加载失败: $errMsg"
-                    _loading.value = false
                 }
-            }
-        })
+            })
+        }.onFailure { error ->
+            loaded = false
+            _loading.value = false
+            _statusText.value = "联系人加载失败，正在重试"
+            Log.e(TAG, "getBuddyListV2 request failed", error)
+            scheduleRetry(runtime, "request-${error.javaClass.simpleName}")
+        }
     }
 
     private suspend fun processCategoriesIncrementally(
@@ -161,6 +203,14 @@ class ContactsViewModel : ViewModel() {
             if (uinsByUid.size == allUids.size) return
             delay(500)
         }
+    }
+
+    override fun onCleared() {
+        synchronized(loadLock) {
+            retryJob?.cancel()
+            retryJob = null
+        }
+        super.onCleared()
     }
 
     private fun buildCategories(

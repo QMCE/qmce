@@ -32,8 +32,12 @@ class QZoneFeedRepository {
         isCurrent: () -> Boolean,
         onFeeds: (List<BusinessFeedData>, finishLoading: Boolean) -> Unit,
     ): RefreshResult {
-        val service =
-            QZoneFeedService.h() ?: return RefreshResult.Unavailable("QZoneFeedService 不可用")
+        val service = awaitFeedService(isCurrent)
+            ?: return if (isCurrent()) {
+                RefreshResult.Unavailable("QZoneFeedService 不可用")
+            } else {
+                RefreshResult.Cancelled
+            }
         feedService = service
 
         val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
@@ -68,6 +72,15 @@ class QZoneFeedRepository {
             }
         }
         return RefreshResult.Success
+    }
+
+    private suspend fun awaitFeedService(isCurrent: () -> Boolean): QZoneFeedService? {
+        repeat(50) {
+            if (!isCurrent()) return null
+            QZoneFeedService.h()?.let { return it }
+            delay(300)
+        }
+        return QZoneFeedService.h()
     }
 
     suspend fun loadMore(

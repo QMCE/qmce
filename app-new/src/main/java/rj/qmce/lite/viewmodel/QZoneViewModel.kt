@@ -123,6 +123,8 @@ class QZoneViewModel : ViewModel() {
     private val _loadingMore = MutableStateFlow(false)
     val loadingMoreFlow: StateFlow<Boolean> = _loadingMore
     private var loadMoreStartTime = 0L
+    private val feedRetryLock = Any()
+    private var feedRetryJob: Job? = null
     private val feedDataById = HashMap<String, BusinessFeedData>()
     private var lastSubmittedFingerprint = ""
     private val qZoneFeedRepository = QZoneFeedRepository()
@@ -131,6 +133,27 @@ class QZoneViewModel : ViewModel() {
 
     fun init(rt: AppRuntime?) {
         runtime = rt
+    }
+
+    private fun scheduleFeedRetry(reason: String) {
+        synchronized(feedRetryLock) {
+            if (feedRetryJob?.isActive == true) return
+            feedRetryJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(2_000)
+                synchronized(feedRetryLock) { feedRetryJob = null }
+                if (!_loading.value && !loaded && _feeds.value.isEmpty()) {
+                    Log.d(TAG, "retrying qzone feed load, reason=$reason")
+                    loadFeeds(forceRefresh = true)
+                }
+            }
+        }
+    }
+
+    private fun cancelFeedRetry() {
+        synchronized(feedRetryLock) {
+            feedRetryJob?.cancel()
+            feedRetryJob = null
+        }
     }
 
     fun isLoadingMore(): Boolean = loadingMore
@@ -427,7 +450,7 @@ class QZoneViewModel : ViewModel() {
             if (loaded && !forceRefresh) return
             activeFeedLoad?.cancel()
             generation = ++feedLoadGeneration
-            loaded = true
+            loaded = false
             activeFeedLoad = null
         }
         noMoreData = false
@@ -440,11 +463,17 @@ class QZoneViewModel : ViewModel() {
                     isCurrent = { isCurrentFeedLoad(generation) },
                     onFeeds = ::processFeeds,
                 )) {
-                    QZoneFeedRepository.RefreshResult.Success -> finishFeedLoad(generation, true)
+                    QZoneFeedRepository.RefreshResult.Success -> {
+                        val hasFeeds = _feeds.value.isNotEmpty()
+                        finishFeedLoad(generation, hasFeeds)
+                        if (hasFeeds) cancelFeedRetry()
+                        else scheduleFeedRetry("empty-success")
+                    }
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit
                     is QZoneFeedRepository.RefreshResult.Unavailable -> {
                         _statusText.value = result.reason
                         finishFeedLoad(generation, false)
+                        scheduleFeedRetry("unavailable-${result.reason}")
                     }
                 }
             } catch (e: Exception) {
@@ -452,6 +481,7 @@ class QZoneViewModel : ViewModel() {
                 Log.e(TAG, "loadFeeds error", e)
                 _statusText.value = "加载失败: ${e.message}"
                 finishFeedLoad(generation, false)
+                scheduleFeedRetry("exception-${e.javaClass.simpleName}")
             } finally {
                 synchronized(feedLoadLock) {
                     if (feedLoadGeneration == generation) activeFeedLoad = null
@@ -658,6 +688,7 @@ class QZoneViewModel : ViewModel() {
     fun avatarUrl(uin: String): String = "$AVATAR_BASE$uin"
 
     override fun onCleared() {
+        cancelFeedRetry()
         qZoneFeedRepository.close()
         super.onCleared()
     }

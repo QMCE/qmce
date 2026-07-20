@@ -40,6 +40,8 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import mqq.app.AppRuntime
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
@@ -63,54 +65,144 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "settings-appearance") {
-                SettingsActionRow(
-                    icon = Icons.Default.Settings,
-                    title = "显示与外观",
-                    subtitle = "时间、状态、缩放与显示尺寸",
-                    onClick = onOpenAppearance,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "显示与外观")
+                OfficialReportTargetBox(
+                    key = "settings:appearance",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.Settings,
+                        title = "显示与外观",
+                        subtitle = "时间、状态、缩放与显示尺寸",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenAppearance()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "settings-interaction") {
-                SettingsActionRow(
-                    icon = Icons.Default.Refresh,
-                    title = "交互与导航",
-                    subtitle = "分页提示和全屏交互",
-                    onClick = onOpenInteraction,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "交互与导航")
+                OfficialReportTargetBox(
+                    key = "settings:interaction",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.Refresh,
+                        title = "交互与导航",
+                        subtitle = "分页提示和全屏交互",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenInteraction()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "settings-sync") {
-                SettingsActionRow(
-                    icon = Icons.Default.Sync,
-                    title = "同步与数据",
-                    subtitle = "消息、联系人、空间与发包工具",
-                    onClick = onOpenSyncData,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "同步与数据")
+                OfficialReportTargetBox(
+                    key = "settings:sync",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.Sync,
+                        title = "同步与数据",
+                        subtitle = "消息、联系人、空间与发包工具",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenSyncData()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "settings-storage") {
-                SettingsActionRow(
-                    icon = Icons.Default.DeleteSweep,
-                    title = "存储与缓存",
-                    subtitle = "聊天媒体缓存管理",
-                    onClick = onOpenStorage,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "存储与缓存")
+                OfficialReportTargetBox(
+                    key = "settings:storage",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.DeleteSweep,
+                        title = "存储与缓存",
+                        subtitle = "聊天媒体缓存管理",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenStorage()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "settings-about") {
-                SettingsActionRow(
-                    icon = Icons.Default.Info,
-                    title = "关于",
-                    subtitle = "版本、构建和应用信息",
-                    onClick = onOpenAbout,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "关于")
+                OfficialReportTargetBox(
+                    key = "settings:about",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.Info,
+                        title = "关于",
+                        subtitle = "版本、构建和应用信息",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenAbout()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
         }
     }

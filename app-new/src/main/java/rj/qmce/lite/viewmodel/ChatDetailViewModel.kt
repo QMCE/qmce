@@ -12,6 +12,7 @@ import androidx.lifecycle.ViewModel
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.aio.api.IAIOFileTransfer
 import com.tencent.qqnt.kernel.nativeinterface.Contact
+import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
 import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
@@ -28,14 +29,18 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.AtMention
+import rj.qmce.lite.data.ai.MessageSummaryClient
 import rj.qmce.lite.data.chat.ChatRepository
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.data.chat.MessageNavigationSnapshot
 import rj.qmce.lite.data.chat.MessageTokenCodec
 import rj.qmce.lite.data.chat.OfficialPttPlayer
 import rj.qmce.lite.data.chat.PttMediaRef
+import rj.qmce.lite.data.chat.PttTranslationPhase
+import rj.qmce.lite.data.chat.PttTranslationState
 import rj.qmce.lite.data.chat.RichMediaKey
 import rj.qmce.lite.data.chat.RichMediaRepository
 import rj.qmce.lite.data.chat.RichMediaRequestState
@@ -47,6 +52,7 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 class ChatDetailViewModel : ViewModel() {
@@ -56,6 +62,8 @@ class ChatDetailViewModel : ViewModel() {
         private const val LOAD_COUNT = 30
         private const val HISTORY_PAGE_COUNT = 10
         private const val REPLY_SOURCE_TIMEOUT_MS = 15_000L
+        private const val PTT_TRANSLATION_TIMEOUT_MS = 20_000L
+        private const val PTT_TRANSLATION_REFRESH_DELAY_MS = 800L
     }
 
     sealed interface MessageContent {
@@ -289,6 +297,59 @@ class ChatDetailViewModel : ViewModel() {
         ) : ReplySourceState
     }
 
+    sealed interface MessageNavigationState {
+        data object Idle : MessageNavigationState
+
+        data class Ready(
+            val label: String,
+        ) : MessageNavigationState
+
+        data class Loading(
+            val label: String,
+            val loadedPages: Int,
+        ) : MessageNavigationState
+
+        data class Located(
+            val label: String,
+            val messageKey: String,
+        ) : MessageNavigationState
+
+        data class Error(
+            val label: String,
+            val message: String,
+        ) : MessageNavigationState
+    }
+
+    private enum class MessageNavigationTargetKind {
+        FirstUnread,
+    }
+
+    private data class MessageNavigationTarget(
+        val kind: MessageNavigationTargetKind,
+        val sequence: Long?,
+        val unreadCount: Int,
+        val label: String,
+    )
+
+    sealed interface MessageSummaryState {
+        data object Idle : MessageSummaryState
+        data class Loading(
+            val selectedCount: Int,
+            val text: String,
+        ) : MessageSummaryState
+
+        data class Success(
+            val selectedCount: Int,
+            val text: String,
+        ) : MessageSummaryState
+
+        data class Error(
+            val selectedCount: Int,
+            val message: String,
+            val retryable: Boolean,
+        ) : MessageSummaryState
+    }
+
     private val _messages = MutableStateFlow<List<UiMsg>>(emptyList())
     val messages: StateFlow<List<UiMsg>> = _messages
 
@@ -301,10 +362,24 @@ class ChatDetailViewModel : ViewModel() {
     val forwardDetailState: StateFlow<ForwardDetailState> = _forwardDetailState
     private val _replySourceState = MutableStateFlow<ReplySourceState>(ReplySourceState.Idle)
     val replySourceState: StateFlow<ReplySourceState> = _replySourceState
+    private val _messageNavigationState =
+        MutableStateFlow<MessageNavigationState>(MessageNavigationState.Idle)
+    val messageNavigationState: StateFlow<MessageNavigationState> = _messageNavigationState
+
+    private val _messageSummaryState = MutableStateFlow<MessageSummaryState>(MessageSummaryState.Idle)
+    val messageSummaryState: StateFlow<MessageSummaryState> = _messageSummaryState
+    private val _pttTranslationStates = MutableStateFlow<Map<Long, PttTranslationState>>(emptyMap())
+    val pttTranslationStates: StateFlow<Map<Long, PttTranslationState>> = _pttTranslationStates
+    private val messageSummaryClient = MessageSummaryClient()
+    private var messageSummaryRequest: MessageSummaryClient.Request? = null
+    private var messageSummaryMessages: List<MessageSummaryClient.SummaryMessage> = emptyList()
+    private val messageSummaryGeneration = AtomicInteger()
 
     private val _pendingForwardMessages = MutableStateFlow<List<UiMsg>>(emptyList())
     private val _pendingReplyTarget = MutableStateFlow<ReplyTarget?>(null)
     val pendingReplyTarget: StateFlow<ReplyTarget?> = _pendingReplyTarget
+    private val _pendingVoiceText = MutableStateFlow<String?>(null)
+    val pendingVoiceText: StateFlow<String?> = _pendingVoiceText
 
     private val _multiSelectMode = MutableStateFlow(false)
     val multiSelectMode: StateFlow<Boolean> = _multiSelectMode
@@ -344,6 +419,13 @@ class ChatDetailViewModel : ViewModel() {
 
     private val messageLock = Any()
     private val msgList = ArrayList<MsgRecord>()
+    private val messageNavigationLock = Any()
+    private val messageNavigationTargets = ArrayDeque<MessageNavigationTarget>()
+    private var activeMessageNavigationTarget: MessageNavigationTarget? = null
+    private var messageNavigationStarted = false
+    private var messageNavigationLoadedPages = 0
+    private var messageNavigationLastOldestKey: String? = null
+    private var messageNavigationFallback = MessageNavigationSnapshot()
     private val _isLoadingOlder = MutableStateFlow(false)
     val isLoadingOlder: StateFlow<Boolean> = _isLoadingOlder
     private val _hasOlderMessages = MutableStateFlow(true)
@@ -358,6 +440,11 @@ class ChatDetailViewModel : ViewModel() {
     private val chatRepository = ChatRepository()
     private val replyNicknameCache = ConcurrentHashMap<String, String>()
     private val replyNicknameRequests = ConcurrentHashMap.newKeySet<String>()
+    private val pttPlayedMessageIds = ConcurrentHashMap.newKeySet<Long>()
+    private val pttTranslationRequests = ConcurrentHashMap<Long, Long>()
+    private val pttTranslationRequestGeneration = AtomicLong()
+    private val pttTranslationHandler = Handler(Looper.getMainLooper())
+    private val readMarkedForSession = AtomicBoolean(false)
     private var contact: Contact? = null
     @Volatile
     private var chatRuntime: AppRuntime? = null
@@ -383,8 +470,10 @@ class ChatDetailViewModel : ViewModel() {
         peerUin: String,
         chatType: Int,
         name: String,
-        myUin: String = ""
+        myUin: String = "",
+        messageNavigation: MessageNavigationSnapshot = MessageNavigationSnapshot(),
     ) {
+        dismissMessageSummary()
         val session = chatSession.incrementAndGet()
         forwardDetailRequest.incrementAndGet()
         replySourceRequest.incrementAndGet()
@@ -396,6 +485,10 @@ class ChatDetailViewModel : ViewModel() {
             pendingMessageServiceActions.clear()
         }
         synchronized(messageLock) { msgList.clear() }
+        pttPlayedMessageIds.clear()
+        pttTranslationRequests.clear()
+        pttTranslationHandler.removeCallbacksAndMessages(null)
+        _pttTranslationStates.value = emptyMap()
         _messages.value = emptyList()
         _groupMembers.value = emptyList()
         _groupMembersLoading.value = false
@@ -405,7 +498,10 @@ class ChatDetailViewModel : ViewModel() {
         _peerName.value = name
         _forwardDetailState.value = ForwardDetailState.Idle
         _replySourceState.value = ReplySourceState.Idle
+        resetMessageNavigation(messageNavigation)
         _pendingReplyTarget.value = null
+        _pendingVoiceText.value = null
+        readMarkedForSession.set(false)
         selfUin = myUin.toLongOrNull() ?: 0L
         peerId = peerUin  // 保存 QQ 号
         contact = Contact(chatType, peerUid, "")
@@ -448,6 +544,19 @@ class ChatDetailViewModel : ViewModel() {
         if (!startMessageListener(session, c)) {
             Log.w(TAG, "chatDetail: message listener registration failed")
         }
+        val navigationRequested = chatRepository.loadMessageNavigation(
+            contact = c,
+            fallback = messageNavigationFallback,
+        ) { snapshot ->
+            if (isCurrentSession(session)) {
+                applyMessageNavigationSnapshot(snapshot)
+                markMessagesRead(session, c)
+            }
+        }
+        if (!navigationRequested) {
+            Log.w(TAG, "chatDetail: message navigation query unavailable; using recent-contact snapshot")
+            markMessagesRead(session, c)
+        }
         val requested =
             chatRepository.loadLatest(c, LOAD_COUNT) { errorCode, errMsg, list, needContinue ->
                 if (!isCurrentSession(session)) return@loadLatest
@@ -470,29 +579,48 @@ class ChatDetailViewModel : ViewModel() {
         }
     }
 
+    private fun markMessagesRead(session: Long, chatContact: Contact) {
+        if (!isCurrentSession(session) || !readMarkedForSession.compareAndSet(false, true)) {
+            return
+        }
+        val requested = chatRepository.markMessagesRead(
+            contact = chatContact,
+            runtime = chatRuntime,
+        ) { errorCode, errorMessage ->
+            if (isCurrentSession(session)) {
+                Log.d(
+                    TAG,
+                    "chatDetail: setMsgRead code=$errorCode, errorMessage=$errorMessage",
+                )
+            }
+        }
+        if (!requested) {
+            readMarkedForSession.set(false)
+            Log.w(TAG, "chatDetail: setMsgRead request unavailable")
+        }
+    }
+
     private fun startMessageListener(session: Long, chatContact: Contact): Boolean =
         chatRepository.startListening(object : ChatRepository.Listener {
             override fun onReceived(messages: ArrayList<MsgRecord>) {
                 if (!isCurrentSession(session)) return
-                val previousSize = synchronized(messageLock) { msgList.size }
-                mergeMessages(messages, chatContact)
-                val currentSize = synchronized(messageLock) { msgList.size }
-                if (currentSize != previousSize) {
+                val changed = mergeMessages(messages, chatContact)
+                completePttTranslations(messages, session)
+                if (changed > 0) {
                     emitMessages()
-                    Log.d(TAG, "chatDetail: onRecvMsg +${currentSize - previousSize}")
+                    Log.d(TAG, "chatDetail: onRecvMsg changed=$changed")
                 }
             }
 
             override fun onAddedSendMessage(message: MsgRecord) {
                 if (!isCurrentSession(session)) return
-                val previousSize = synchronized(messageLock) { msgList.size }
-                mergeMessages(listOf(message), chatContact)
-                val currentSize = synchronized(messageLock) { msgList.size }
-                if (currentSize != previousSize) {
+                val changed = mergeMessages(listOf(message), chatContact)
+                completePttTranslations(listOf(message), session)
+                if (changed > 0) {
                     emitMessages()
                     Log.d(
                         TAG,
-                        "chatDetail: onAddSendMsg msgId=${message.msgId}, time=${message.msgTime}"
+                        "chatDetail: onAddSendMsg changed=$changed msgId=${message.msgId}, time=${message.msgTime}"
                     )
                 }
             }
@@ -1434,6 +1562,14 @@ class ChatDetailViewModel : ViewModel() {
         _pendingReplyTarget.value = null
     }
 
+    fun setPendingVoiceText(text: String) {
+        _pendingVoiceText.value = text.takeIf(String::isNotBlank)
+    }
+
+    fun consumePendingVoiceText() {
+        _pendingVoiceText.value = null
+    }
+
     private fun emitMessages() {
         val records = synchronized(messageLock) { msgList.toList() }
         records.forEach { record ->
@@ -1473,31 +1609,57 @@ class ChatDetailViewModel : ViewModel() {
 
     private fun mergeMessages(records: Collection<MsgRecord>, expected: Contact): Int =
         synchronized(messageLock) {
-            val known = msgList.mapTo(HashSet<String>()) { record -> messageIdentity(record) }
-            var added = 0
+            var changed = 0
             records.asSequence()
                 .filter { belongsToContact(it, expected) }
-                .filter { known.add(messageIdentity(it)) }
-                .forEach {
-                    msgList.add(it)
-                    added++
+                .forEach { incoming ->
+                    val existingIndex = msgList.indexOfFirst { existing ->
+                        sameMessageKey(existing, incoming)
+                    }
+                    if (existingIndex < 0) {
+                        msgList.add(incoming)
+                        changed++
+                    } else if (!sameMessagePayload(msgList[existingIndex], incoming)) {
+                        msgList[existingIndex] = incoming
+                        changed++
+                    }
                 }
             msgList.sortWith(compareBy<MsgRecord> { it.msgTime }.thenBy { it.msgSeq }
                 .thenBy { it.clientSeq })
-            added
+            changed
         }
 
+    private fun sameMessageKey(first: MsgRecord, second: MsgRecord): Boolean {
+        if (first.chatType != second.chatType || first.peerUid != second.peerUid) return false
+        if (first.msgId != 0L && second.msgId != 0L) {
+            return first.msgId == second.msgId
+        }
+        if (first.msgSeq != 0L && second.msgSeq != 0L && first.msgSeq == second.msgSeq) {
+            return true
+        }
+        if (first.clientSeq != 0L && second.clientSeq != 0L &&
+            first.clientSeq == second.clientSeq
+        ) {
+            return true
+        }
+        return messageIdentity(first) == messageIdentity(second)
+    }
+
+    private fun sameMessagePayload(first: MsgRecord, second: MsgRecord): Boolean =
+        first.toString() == second.toString()
+
     private fun messageIdentity(record: MsgRecord): String {
+        if (record.msgId != 0L) {
+            return "message:${record.chatType}:${record.peerUid}:${record.msgId}"
+        }
         val commonIdentity = listOf(
             record.chatType,
             record.peerUid,
-            record.msgId,
             record.msgSeq,
             record.msgRandom,
             record.senderUid,
             record.msgTime,
         ).joinToString(separator = ":")
-        if (record.msgId != 0L) return "message:$commonIdentity"
         return "local:$commonIdentity:${record.clientSeq}:${localElementIdentity(record)}"
     }
 
@@ -1521,6 +1683,11 @@ class ChatDetailViewModel : ViewModel() {
         forwardDetailRequest.incrementAndGet()
         replySourceRequest.incrementAndGet()
         replyTimeoutHandler.removeCallbacksAndMessages(null)
+        pttTranslationRequests.clear()
+        pttTranslationHandler.removeCallbacksAndMessages(null)
+        _pttTranslationStates.value = emptyMap()
+        messageSummaryGeneration.incrementAndGet()
+        messageSummaryRequest?.cancel()
         OfficialPttPlayer.stopAndRelease()
         chatRepository.close()
         RichMediaRepository.setInvalidationListener(null)
@@ -1713,6 +1880,9 @@ class ChatDetailViewModel : ViewModel() {
                                 importRichMediaContext = voice.importRichMediaContext,
                                 fileUuid = voice.fileUuid?.takeIf { it.isNotBlank() },
                                 durationSeconds = voice.duration,
+                                playState = voice.playState,
+                                pttElement = voice,
+                                msgElement = element,
                             ),
                             progress = voice.progress,
                             transferStatus = voice.transferStatus,
@@ -2122,6 +2292,7 @@ class ChatDetailViewModel : ViewModel() {
         val expected = contact ?: return false
         val session = chatSession.get()
         val oldest = synchronized(messageLock) { msgList.firstOrNull() } ?: return false
+        val requestedAnchorIdentity = messageIdentity(oldest)
 
         _isLoadingOlder.value = true
         Log.d(
@@ -2135,22 +2306,200 @@ class ChatDetailViewModel : ViewModel() {
                 anchorMessageTime = oldest.msgTime,
                 count = HISTORY_PAGE_COUNT,
             ),
-        ) { result, errMsg, records ->
+        ) { result, errMsg, status, records ->
             if (!isCurrentSession(session)) return@loadOlder
+            if (status == GetMsgsStatusEnum.KDONE) {
+                _hasOlderMessages.value = false
+            }
+            val currentOldest = synchronized(messageLock) { msgList.firstOrNull() }
+            val anchorStillCurrent = currentOldest != null &&
+                    messageIdentity(currentOldest) == requestedAnchorIdentity
+            if (!anchorStillCurrent) {
+                Log.d(
+                    TAG,
+                    "chatDetail: discard stale older page; " +
+                            "requested=$requestedAnchorIdentity current=${currentOldest?.let(::messageIdentity)}",
+                )
+                _isLoadingOlder.value = false
+                _olderPageVersion.value++
+                continueMessageNavigationAfterHistory(0)
+                return@loadOlder
+            }
+
             val added = if (result == 0 && records != null) mergeMessages(records, expected) else 0
             if (added > 0) emitMessages()
-            if (result == 0 && added == 0) {
+            if (status != GetMsgsStatusEnum.KDONE && result == 0 && added == 0) {
                 Log.d(TAG, "chatDetail: older page had no new records; keeping paging available")
             }
             _isLoadingOlder.value = false
             _olderPageVersion.value++
+            continueMessageNavigationAfterHistory(added)
             Log.d(
                 TAG,
-                "chatDetail: load older result=$result, records=${records?.size}, added=$added, err=$errMsg",
+                "chatDetail: load older result=$result, status=$status, " +
+                        "records=${records?.size}, added=$added, err=$errMsg",
             )
         }
         if (!requested) _isLoadingOlder.value = false
         return requested
+    }
+
+    fun requestMessageNavigation() {
+        val target = synchronized(messageNavigationLock) {
+            messageNavigationStarted = true
+            activeMessageNavigationTarget ?: messageNavigationTargets.firstOrNull()?.also {
+                activeMessageNavigationTarget = it
+                messageNavigationLoadedPages = 0
+                messageNavigationLastOldestKey = null
+            }
+        } ?: return
+        locateOrLoadMessageNavigationTarget(target)
+    }
+
+    fun completeMessageNavigation() {
+        val next = synchronized(messageNavigationLock) {
+            val completed = activeMessageNavigationTarget ?: return@synchronized null
+            while (messageNavigationTargets.firstOrNull()?.let { queued ->
+                    queued == completed ||
+                            (completed.sequence != null && queued.sequence == completed.sequence)
+                } == true
+            ) {
+                messageNavigationTargets.removeFirst()
+            }
+            activeMessageNavigationTarget = null
+            messageNavigationLoadedPages = 0
+            messageNavigationLastOldestKey = null
+            messageNavigationTargets.firstOrNull()
+        }
+        _messageNavigationState.value = next?.let {
+            MessageNavigationState.Ready(it.label)
+        } ?: MessageNavigationState.Idle
+    }
+
+    fun onFirstVisibleMessageSequence(sequence: Long) {
+        if (sequence <= 0L) return
+        val next = synchronized(messageNavigationLock) {
+            if (activeMessageNavigationTarget != null) return
+            var changed = false
+            while (true) {
+                val target = messageNavigationTargets.firstOrNull() ?: break
+                val targetSequence = target.sequence ?: break
+                if (sequence > targetSequence) break
+                messageNavigationTargets.removeFirst()
+                changed = true
+            }
+            if (!changed) return
+            messageNavigationStarted = true
+            messageNavigationTargets.firstOrNull()
+        }
+        _messageNavigationState.value = next?.let {
+            MessageNavigationState.Ready(it.label)
+        } ?: MessageNavigationState.Idle
+    }
+
+    private fun resetMessageNavigation(snapshot: MessageNavigationSnapshot) {
+        synchronized(messageNavigationLock) {
+            messageNavigationTargets.clear()
+            activeMessageNavigationTarget = null
+            messageNavigationStarted = false
+            messageNavigationLoadedPages = 0
+            messageNavigationLastOldestKey = null
+            messageNavigationFallback = snapshot
+        }
+        applyMessageNavigationSnapshot(snapshot)
+    }
+
+    private fun applyMessageNavigationSnapshot(snapshot: MessageNavigationSnapshot) {
+        synchronized(messageNavigationLock) {
+            if (messageNavigationStarted) return
+        }
+        val next = synchronized(messageNavigationLock) {
+            messageNavigationFallback = snapshot
+            messageNavigationTargets.clear()
+            if (snapshot.unreadCount > 0) {
+                messageNavigationTargets.addLast(
+                    MessageNavigationTarget(
+                        kind = MessageNavigationTargetKind.FirstUnread,
+                        sequence = snapshot.firstUnreadSequence,
+                        unreadCount = snapshot.unreadCount,
+                        label = "${snapshot.unreadCount} 条新消息",
+                    ),
+                )
+            }
+            messageNavigationTargets.firstOrNull()
+        }
+        _messageNavigationState.value = next?.let {
+            MessageNavigationState.Ready(it.label)
+        } ?: MessageNavigationState.Idle
+    }
+
+    private fun locateOrLoadMessageNavigationTarget(target: MessageNavigationTarget) {
+        val locatedKey = findLoadedMessageNavigationTarget(target)
+        if (locatedKey != null) {
+            _messageNavigationState.value = MessageNavigationState.Located(
+                label = target.label,
+                messageKey = locatedKey,
+            )
+            return
+        }
+        if (!_hasOlderMessages.value) {
+            failMessageNavigation(target, "没有找到对应的历史消息")
+            return
+        }
+
+        _messageNavigationState.value = MessageNavigationState.Loading(
+            label = target.label,
+            loadedPages = messageNavigationLoadedPages,
+        )
+        if (_isLoadingOlder.value) return
+
+        messageNavigationLastOldestKey = synchronized(messageLock) {
+            msgList.firstOrNull()?.let(::messageIdentity)
+        }
+        if (!loadOlderMessages()) {
+            failMessageNavigation(target, "历史消息加载请求失败")
+        }
+    }
+
+    private fun continueMessageNavigationAfterHistory(added: Int) {
+        val target = synchronized(messageNavigationLock) {
+            activeMessageNavigationTarget?.also { messageNavigationLoadedPages++ }
+        } ?: return
+        val currentOldestKey = synchronized(messageLock) {
+            msgList.firstOrNull()?.let(::messageIdentity)
+        }
+        if (added <= 0 && currentOldestKey == messageNavigationLastOldestKey) {
+            failMessageNavigation(target, "历史消息没有继续向前推进")
+            return
+        }
+        locateOrLoadMessageNavigationTarget(target)
+    }
+
+    private fun findLoadedMessageNavigationTarget(target: MessageNavigationTarget): String? =
+        synchronized(messageLock) {
+            val record = target.sequence?.let { sequence ->
+                msgList.firstOrNull { it.msgSeq == sequence }
+            } ?: if (
+                target.kind == MessageNavigationTargetKind.FirstUnread &&
+                target.unreadCount in 1..msgList.size
+            ) {
+                msgList.getOrNull(msgList.size - target.unreadCount)
+            } else {
+                null
+            }
+            record?.let(::messageIdentity)
+        }
+
+    private fun failMessageNavigation(target: MessageNavigationTarget, message: String) {
+        synchronized(messageNavigationLock) {
+            activeMessageNavigationTarget = null
+            messageNavigationLoadedPages = 0
+            messageNavigationLastOldestKey = null
+        }
+        _messageNavigationState.value = MessageNavigationState.Error(
+            label = target.label,
+            message = message,
+        )
     }
 
     fun ensureImageCached(message: UiMsg, image: MessageContent.Image) {
@@ -2168,7 +2517,206 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     fun toggleVoicePlayback(voice: MessageContent.Voice) {
-        OfficialPttPlayer.toggle(voice.media)
+        val currentContact = contact ?: return
+        val localPathAvailable = RichMediaRepository.resolvePttPath(voice.media).isNullOrBlank().not()
+        OfficialPttPlayer.toggle(voice.media) {
+            RichMediaRepository.requestPttAudio(
+                messageId = voice.media.messageId,
+                peerUid = currentContact.peerUid,
+                chatType = currentContact.chatType,
+                elementId = voice.media.elementId,
+            )
+        }
+        if (!localPathAvailable) return
+        if (voice.media.playState == 1 || !pttPlayedMessageIds.add(voice.media.messageId)) {
+            return
+        }
+        val previousPlayState = voice.media.playState
+        val requested = chatRepository.markPttPlayed(
+            contact = currentContact,
+            messageId = voice.media.messageId,
+            elementId = voice.media.elementId,
+        ) { errorCode, errorMessage ->
+            Log.d(
+                TAG,
+                "chatDetail: setPttPlayedState msg=${voice.media.messageId}, " +
+                    "element=${voice.media.elementId}, code=$errorCode, errMsg=$errorMessage",
+            )
+            if (errorCode != 0) {
+                voice.media.playState = previousPlayState
+                voice.media.pttElement?.playState = previousPlayState
+                pttPlayedMessageIds.remove(voice.media.messageId)
+            }
+        }
+        if (!requested) {
+            voice.media.playState = previousPlayState
+            voice.media.pttElement?.playState = previousPlayState
+            pttPlayedMessageIds.remove(voice.media.messageId)
+        } else {
+            voice.media.playState = 1
+            voice.media.pttElement?.playState = 1
+        }
+    }
+
+    fun translateVoiceToText(message: UiMsg): Boolean {
+        val currentContact = contact
+        val voice = message.contents.filterIsInstance<MessageContent.Voice>().firstOrNull()
+        val media = voice?.media
+        if (currentContact == null || media == null || message.msgId <= 0L) {
+            media?.messageId?.takeIf { it > 0L }?.let {
+                setPttTranslationState(it, PttTranslationPhase.Failed, "这条语音暂时无法转换")
+            }
+            return false
+        }
+        val element = media.msgElement
+        if (element?.pttElement == null) {
+            setPttTranslationState(
+                message.msgId,
+                PttTranslationPhase.Failed,
+                "语音数据尚未准备好",
+            )
+            return false
+        }
+        if (!voice.transcript.isNullOrBlank() || !element.pttElement?.text.isNullOrBlank()) {
+            setPttTranslationState(message.msgId, PttTranslationPhase.Success)
+            return true
+        }
+
+        val requestToken = pttTranslationRequestGeneration.incrementAndGet()
+        val activeToken = pttTranslationRequests.putIfAbsent(message.msgId, requestToken)
+        if (activeToken != null) return true
+        val session = chatSession.get()
+        setPttTranslationState(message.msgId, PttTranslationPhase.Loading)
+
+        val requested = chatRepository.translatePttToText(
+            contact = currentContact,
+            messageId = message.msgId,
+            element = element,
+        ) { errorCode, errorMessage ->
+            if (!isActivePttTranslation(message.msgId, requestToken, session)) return@translatePttToText
+            if (errorCode != 0) {
+                finishPttTranslation(
+                    message.msgId,
+                    requestToken,
+                    PttTranslationPhase.Failed,
+                    errorMessage ?: "语音转文字失败（$errorCode）",
+                )
+                return@translatePttToText
+            }
+            refreshTranslatedPttMessage(
+                contact = currentContact,
+                messageId = message.msgId,
+                session = session,
+                requestToken = requestToken,
+                attempt = 0,
+            )
+        }
+        if (!requested) {
+            finishPttTranslation(
+                message.msgId,
+                requestToken,
+                PttTranslationPhase.Failed,
+                "消息服务不可用",
+            )
+            return false
+        }
+        pttTranslationHandler.postDelayed({
+            if (isActivePttTranslation(message.msgId, requestToken, session)) {
+                finishPttTranslation(
+                    message.msgId,
+                    requestToken,
+                    PttTranslationPhase.Failed,
+                    "转换超时，可重新尝试",
+                )
+            }
+        }, PTT_TRANSLATION_TIMEOUT_MS)
+        return true
+    }
+
+    private fun refreshTranslatedPttMessage(
+        contact: Contact,
+        messageId: Long,
+        session: Long,
+        requestToken: Long,
+        attempt: Int,
+    ) {
+        if (!isActivePttTranslation(messageId, requestToken, session)) return
+        val requested = chatRepository.loadMessageById(contact, messageId) { errorCode, errorMessage, records ->
+            if (!isActivePttTranslation(messageId, requestToken, session)) return@loadMessageById
+            if (errorCode == 0) {
+                val changed = mergeMessages(records.orEmpty(), contact)
+                if (changed > 0) emitMessages()
+                if (completePttTranslationFromRecords(records.orEmpty(), messageId, requestToken, session)) {
+                    return@loadMessageById
+                }
+            } else {
+                Log.w(
+                    TAG,
+                    "chatDetail: refresh translated ptt failed msg=$messageId " +
+                        "code=$errorCode err=$errorMessage",
+                )
+            }
+            if (attempt < 2) {
+                pttTranslationHandler.postDelayed({
+                    refreshTranslatedPttMessage(
+                        contact = contact,
+                        messageId = messageId,
+                        session = session,
+                        requestToken = requestToken,
+                        attempt = attempt + 1,
+                    )
+                }, PTT_TRANSLATION_REFRESH_DELAY_MS)
+            }
+        }
+        if (!requested) {
+            Log.w(TAG, "chatDetail: translated ptt refresh request unavailable msg=$messageId")
+        }
+    }
+
+    private fun completePttTranslations(records: Collection<MsgRecord>, session: Long) {
+        pttTranslationRequests.entries.toList().forEach { (messageId, requestToken) ->
+            completePttTranslationFromRecords(records, messageId, requestToken, session)
+        }
+    }
+
+    private fun completePttTranslationFromRecords(
+        records: Collection<MsgRecord>,
+        messageId: Long,
+        requestToken: Long,
+        session: Long,
+    ): Boolean {
+        if (!isActivePttTranslation(messageId, requestToken, session)) return false
+        val transcript = records.asSequence()
+            .filter { it.msgId == messageId }
+            .flatMap { it.elements.orEmpty().asSequence() }
+            .mapNotNull { it.pttElement?.text?.takeIf(String::isNotBlank) }
+            .firstOrNull()
+        if (transcript.isNullOrBlank()) return false
+        finishPttTranslation(messageId, requestToken, PttTranslationPhase.Success)
+        return true
+    }
+
+    private fun isActivePttTranslation(messageId: Long, requestToken: Long, session: Long): Boolean =
+        isCurrentSession(session) && pttTranslationRequests[messageId] == requestToken
+
+    private fun setPttTranslationState(
+        messageId: Long,
+        phase: PttTranslationPhase,
+        error: String? = null,
+    ) {
+        val states = _pttTranslationStates.value.toMutableMap()
+        states[messageId] = PttTranslationState(messageId, phase, error)
+        _pttTranslationStates.value = states
+    }
+
+    private fun finishPttTranslation(
+        messageId: Long,
+        requestToken: Long,
+        phase: PttTranslationPhase,
+        error: String? = null,
+    ) {
+        if (!pttTranslationRequests.remove(messageId, requestToken)) return
+        setPttTranslationState(messageId, phase, error)
     }
 
     fun loadForwardDetail(forward: MessageContent.Forward) {
@@ -2541,6 +3089,94 @@ class ChatDetailViewModel : ViewModel() {
                 }
             }
             .joinToString("\n\n")
+    }
+
+    fun summarizeSelected() {
+        val input = selectedMessages().mapNotNull { message ->
+            val text = message.text.trim()
+            if (text.isBlank() || text == "...") return@mapNotNull null
+            MessageSummaryClient.SummaryMessage(
+                sender = message.senderNick.ifBlank { if (message.isSelf) "我" else "对方" },
+                text = text,
+            )
+        }
+        if (input.isEmpty()) {
+            _messageSummaryState.value = MessageSummaryState.Error(
+                selectedCount = 0,
+                message = "选中的消息没有可总结内容",
+                retryable = false,
+            )
+            return
+        }
+        messageSummaryMessages = input
+        exitMultiSelect()
+        startMessageSummary(input)
+    }
+
+    fun retryMessageSummary() {
+        if (messageSummaryMessages.isEmpty()) {
+            _messageSummaryState.value = MessageSummaryState.Error(
+                selectedCount = 0,
+                message = "没有可重试的总结请求",
+                retryable = false,
+            )
+            return
+        }
+        startMessageSummary(messageSummaryMessages)
+    }
+
+    fun dismissMessageSummary() {
+        messageSummaryGeneration.incrementAndGet()
+        messageSummaryRequest?.cancel()
+        messageSummaryRequest = null
+        messageSummaryMessages = emptyList()
+        _messageSummaryState.value = MessageSummaryState.Idle
+    }
+
+    private fun startMessageSummary(input: List<MessageSummaryClient.SummaryMessage>) {
+        messageSummaryRequest?.cancel()
+        val generation = messageSummaryGeneration.incrementAndGet()
+        _messageSummaryState.value = MessageSummaryState.Loading(input.size, "")
+        messageSummaryRequest = messageSummaryClient.stream(
+            input,
+            object : MessageSummaryClient.Listener {
+                override fun onChunk(text: String) {
+                    if (generation != messageSummaryGeneration.get()) return
+                    val current = _messageSummaryState.value as? MessageSummaryState.Loading
+                        ?: return
+                    _messageSummaryState.value = current.copy(text = current.text + text)
+                }
+
+                override fun onComplete() {
+                    if (generation != messageSummaryGeneration.get()) return
+                    val current = _messageSummaryState.value as? MessageSummaryState.Loading
+                        ?: return
+                    messageSummaryRequest = null
+                    if (current.text.isBlank()) {
+                        _messageSummaryState.value = MessageSummaryState.Error(
+                            selectedCount = current.selectedCount,
+                            message = "模型没有返回总结内容",
+                            retryable = true,
+                        )
+                    } else {
+                        _messageSummaryState.value = MessageSummaryState.Success(
+                            selectedCount = current.selectedCount,
+                            text = current.text.trim(),
+                        )
+                    }
+                }
+
+                override fun onError(message: String, retryable: Boolean) {
+                    if (generation != messageSummaryGeneration.get()) return
+                    messageSummaryRequest = null
+                    _messageSummaryState.value = MessageSummaryState.Error(
+                        selectedCount = input.size,
+                        message = message,
+                        retryable = retryable,
+                    )
+                }
+            },
+        )
     }
 
     fun prepareBatchForward(): Boolean {

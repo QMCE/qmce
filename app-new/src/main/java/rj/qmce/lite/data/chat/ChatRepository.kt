@@ -9,10 +9,13 @@ import com.tencent.qqnt.kernel.api.impl.MsgService
 import com.tencent.qqnt.kernel.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsAndStatusRecord
+import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
 import com.tencent.qqnt.kernel.nativeinterface.IClickInlineKeyboardButtonCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetAioFirstViewLatestMsgCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMsgWithStatusCallback
+import com.tencent.qqnt.kernel.nativeinterface.IGetMsgSeqCallback
 import com.tencent.qqnt.kernel.nativeinterface.IGetMultiMsgCallback
+import com.tencent.qqnt.kernel.nativeinterface.IGetMsgsBoxesCallback
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgListener
 import com.tencent.qqnt.kernel.nativeinterface.IMsgOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
@@ -94,6 +97,82 @@ class ChatRepository {
         }.getOrDefault(false)
     }
 
+    fun loadMessageNavigation(
+        contact: Contact,
+        fallback: MessageNavigationSnapshot,
+        callback: (MessageNavigationSnapshot) -> Unit,
+    ): Boolean {
+        val currentService = service ?: return false
+        return runCatching {
+            currentService.getABatchOfContactMsgBoxInfo(
+                arrayListOf(contact),
+                object : IGetMsgsBoxesCallback {
+                    override fun onMsgBoxesInfo(
+                        result: Int,
+                        errorMessage: String?,
+                        messageBoxes: ArrayList<com.tencent.qqnt.kernel.nativeinterface.ContactMsgBoxInfo>?,
+                    ) {
+                        val snapshot = if (result == 0) {
+                            MessageNavigationSnapshot.fromMessageBox(messageBoxes?.firstOrNull())
+                                .mergeFallback(fallback)
+                        } else {
+                            Log.w(
+                                TAG,
+                                "chatRepository: message navigation query failed " +
+                                        "result=$result error=$errorMessage",
+                            )
+                            fallback
+                        }
+                        if (snapshot.unreadCount > 0 && snapshot.firstUnreadSequence == null) {
+                            loadFirstUnreadSequence(contact, snapshot, callback)
+                        } else {
+                            callback(snapshot)
+                        }
+                    }
+                },
+            )
+            true
+        }.onFailure {
+            Log.w(TAG, "chatRepository: load message navigation failed", it)
+        }.getOrDefault(false)
+    }
+
+    private fun loadFirstUnreadSequence(
+        contact: Contact,
+        snapshot: MessageNavigationSnapshot,
+        callback: (MessageNavigationSnapshot) -> Unit,
+    ) {
+        val currentService = service
+        if (currentService == null) {
+            callback(snapshot)
+            return
+        }
+        runCatching {
+            currentService.getFirstUnreadMsgSeq(
+                contact,
+                object : IGetMsgSeqCallback {
+                    override fun onGetMsgSeq(result: Int, errorMessage: String?, sequence: Long) {
+                        if (result != 0) {
+                            Log.w(
+                                TAG,
+                                "chatRepository: first unread sequence failed " +
+                                        "result=$result error=$errorMessage",
+                            )
+                        }
+                        callback(
+                            snapshot.copy(
+                                firstUnreadSequence = sequence.takeIf { result == 0 && it > 0L },
+                            ),
+                        )
+                    }
+                },
+            )
+        }.onFailure {
+            Log.w(TAG, "chatRepository: load first unread sequence failed", it)
+            callback(snapshot)
+        }
+    }
+
     fun startListening(listener: Listener): Boolean {
         stopListening()
         val currentService = service ?: return false
@@ -136,6 +215,92 @@ class ChatRepository {
     }
 
     fun isConnected(): Boolean = service != null
+
+    fun markMessagesRead(
+        contact: Contact,
+        runtime: AppRuntime? = null,
+        callback: (errorCode: Int, errorMessage: String?) -> Unit = { _, _ -> },
+    ): Boolean {
+        val officialService = runCatching {
+            KernelBridge.ensureOfficialMessageBridge(runtime)
+        }.getOrNull()
+        val readCallback = object : IOperateCallback {
+            override fun onResult(errorCode: Int, errorMessage: String?) {
+                callback(errorCode, errorMessage)
+            }
+        }
+        if (officialService != null) {
+            val reported = runCatching {
+                officialService.setMsgRead(contact, readCallback)
+                true
+            }.onFailure {
+                Log.w(TAG, "chatRepository: mark messages read failed via official bridge", it)
+            }.getOrDefault(false)
+            if (reported) return true
+        }
+        val currentService = service ?: return false
+        return runCatching {
+            currentService.setMsgRead(contact, readCallback)
+            true
+        }.onFailure {
+            Log.w(TAG, "chatRepository: mark messages read failed via kernel service", it)
+        }.getOrDefault(false)
+    }
+
+    fun markPttPlayed(
+        contact: Contact,
+        messageId: Long,
+        elementId: Long,
+        callback: (errorCode: Int, errorMessage: String?) -> Unit = { _, _ -> },
+    ): Boolean {
+        if (messageId <= 0L || elementId <= 0L) return false
+        val currentService = service ?: KernelBridge.getMsgService() ?: return false
+        val playedCallback = object : IOperateCallback {
+            override fun onResult(errorCode: Int, errorMessage: String?) {
+                callback(errorCode, errorMessage)
+            }
+        }
+        return runCatching {
+            currentService.t(contact, messageId, elementId, playedCallback)
+            true
+        }.onFailure {
+            Log.w(
+                TAG,
+                "chatRepository: mark ptt played failed msg=$messageId element=$elementId",
+                it,
+            )
+        }.getOrDefault(false)
+    }
+
+    fun translatePttToText(
+        contact: Contact,
+        messageId: Long,
+        element: MsgElement,
+        callback: (errorCode: Int, errorMessage: String?) -> Unit = { _, _ -> },
+    ): Boolean {
+        if (messageId <= 0L || element.pttElement == null) return false
+        val currentService = service ?: KernelBridge.getMsgService() ?: return false
+        val translateCallback = object : IOperateCallback {
+            override fun onResult(errorCode: Int, errorMessage: String?) {
+                callback(errorCode, errorMessage)
+            }
+        }
+        return runCatching {
+            currentService.translatePtt2Text(
+                messageId,
+                contact,
+                element,
+                translateCallback,
+            )
+            true
+        }.onFailure {
+            Log.w(
+                TAG,
+                "chatRepository: translate ptt failed msg=$messageId element=${element.elementId}",
+                it,
+            )
+        }.getOrDefault(false)
+    }
 
     fun sendMessage(
         contact: Contact,
@@ -333,7 +498,12 @@ class ChatRepository {
 
     fun loadOlder(
         request: HistoryRequest,
-        callback: (result: Int, errorMessage: String?, records: ArrayList<MsgRecord>?) -> Unit,
+        callback: (
+            result: Int,
+            errorMessage: String?,
+            status: GetMsgsStatusEnum?,
+            records: ArrayList<MsgRecord>?,
+        ) -> Unit,
     ): Boolean {
         val currentService = service ?: return false
         return runCatching {
@@ -351,10 +521,10 @@ class ChatRepository {
                     override fun onResult(
                         result: Int,
                         errMsg: String?,
-                        status: com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum?,
+                        status: GetMsgsStatusEnum?,
                         records: ArrayList<MsgRecord>?,
                     ) {
-                        callback(result, errMsg, records)
+                        callback(result, errMsg, status, records)
                     }
                 },
             )
@@ -417,6 +587,33 @@ class ChatRepository {
             true
         }.onFailure {
             Log.w(TAG, "chatRepository: load reply source failed", it)
+        }.getOrDefault(false)
+    }
+
+    fun loadMessageById(
+        contact: Contact,
+        messageId: Long,
+        callback: (errorCode: Int, errorMessage: String?, records: ArrayList<MsgRecord>?) -> Unit,
+    ): Boolean {
+        if (messageId <= 0L) return false
+        val currentService = service ?: return false
+        return runCatching {
+            currentService.getMsgsByMsgId(
+                contact,
+                arrayListOf(messageId),
+                object : IMsgOperateCallback {
+                    override fun onResult(
+                        errorCode: Int,
+                        errorMessage: String?,
+                        records: ArrayList<MsgRecord>?,
+                    ) {
+                        callback(errorCode, errorMessage, records)
+                    }
+                },
+            )
+            true
+        }.onFailure {
+            Log.w(TAG, "chatRepository: load message by id failed msg=$messageId", it)
         }.getOrDefault(false)
     }
 

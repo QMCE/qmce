@@ -35,10 +35,12 @@
 # ── 应用代码 ──
 #-keep class rj.qmce.lite.** { *; }
 -keep class rj.qmce.lite.QmceApplication { *; }
+-keep class rj.qmce.lite.viewmodel.GroupManagementViewModel { *; }
 -keep class androidx.core.app.CoreComponentFactory { *; }
 
 
-# Keep lazy call (?)
+# Keep lazy call
+# 不知道为啥能炸这个
 -keepclasseswithmembers class * {
     public static kotlin.Lazy lazy(kotlin.jvm.functions.Function0);
 }
@@ -46,12 +48,12 @@
 # ── Flag, called by QLog ──
 -keep class rj.qmce.lite.Flag { *; }
 
-# R8 处理 Navigation 2.9 的 NavOptions 字段重命名时会生成重复 field-id，
-# Android ART 因此拒绝加载整个 APK。保持该类原始字段布局。
+# R8 may emit duplicate field_ids for NavOptions after field renaming even when
+# horizontal class merging is disabled. ART rejects the entire containing dex.
 -keep class androidx.navigation.NavOptions { *; }
 
 
-# ── multidex ──
+# ── stub ──
 -keep class com.bytedance.** { *; }
 
 # ── Kotlin ──

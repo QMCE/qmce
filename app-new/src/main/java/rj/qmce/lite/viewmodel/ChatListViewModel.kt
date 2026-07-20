@@ -70,6 +70,29 @@ class ChatListViewModel : ViewModel() {
     private var activeRefreshSequence: Long? = null
     private var activeRefreshStarted = false
     private var refreshTimeoutJob: Job? = null
+    private val loadRetryLock = Any()
+    private var loadRetryJob: Job? = null
+
+    private fun scheduleLoadRetry(runtime: AppRuntime?, reason: String) {
+        if (runtime == null || !running) return
+        synchronized(loadRetryLock) {
+            if (loadRetryJob?.isActive == true) return
+            loadRetryJob = scope.launch {
+                delay(2_000)
+                synchronized(loadRetryLock) { loadRetryJob = null }
+                if (!running || loading || !cacheIsEmpty()) return@launch
+                Log.d(TAG, "chatPoll: retrying initial load, reason=$reason")
+                loadContacts(runtime)
+            }
+        }
+    }
+
+    private fun cancelLoadRetry() {
+        synchronized(loadRetryLock) {
+            loadRetryJob?.cancel()
+            loadRetryJob = null
+        }
+    }
 
     fun refreshContacts() {
         val refreshId = synchronized(refreshLock) {
@@ -363,6 +386,7 @@ class ChatListViewModel : ViewModel() {
         logDebugContacts("publish-$source", visible)
         _contacts.value = ContactsSnapshot(++cacheRevision, visible)
         _statusText.value = "${visible.size} 条会话"
+        if (visible.isNotEmpty()) cancelLoadRetry()
         Log.d(
             TAG,
             "recentCache[$source]: publish=${visible.size}, revision=$cacheRevision, top3=${
@@ -402,6 +426,7 @@ class ChatListViewModel : ViewModel() {
                     }
                     if (ks == null) {
                         mainHandler.post { _statusText.value = "IKernelService 不可用" }
+                        scheduleLoadRetry(runtime, "kernel-service-unavailable")
                         return@Thread
                     }
                 }
@@ -444,6 +469,7 @@ class ChatListViewModel : ViewModel() {
                 this@ChatListViewModel.recentService = recentService
                 if (recentService == null) {
                     mainHandler.post { _statusText.value = "IRecentContactService 不可用" }
+                    scheduleLoadRetry(runtime, "recent-service-unavailable")
                     return@Thread
                 }
 
@@ -628,6 +654,7 @@ class ChatListViewModel : ViewModel() {
                 if (cacheIsEmpty()) {
                     Log.d(TAG, "chatPoll: 60s poll exhausted, no contacts")
                     mainHandler.post { _statusText.value = "暂无会话" }
+                    scheduleLoadRetry(runtime, "empty-contact-cache")
                 }
 
                 // 4. 后台触发 buddy init + getBuddyList（不阻塞，不影响已有 listeners）
@@ -678,6 +705,12 @@ class ChatListViewModel : ViewModel() {
                         })
                     }
                 }.onFailure { Log.d(TAG, "chatPoll: getBuddyList skipped: ${it.message}") }
+            } catch (error: Exception) {
+                if (running) {
+                    Log.e(TAG, "chatPoll: initial load failed", error)
+                    mainHandler.post { _statusText.value = "会话加载失败，正在重试" }
+                    scheduleLoadRetry(runtime, "exception-${error.javaClass.simpleName}")
+                }
             } finally {
                 loading = false
                 Log.d(TAG, "chatPoll: thread finished; loading released")
@@ -692,6 +725,7 @@ class ChatListViewModel : ViewModel() {
         Log.w(TAG, "chatListVm[$instanceId]: onCleared")
         running = false
         scope.cancel()
+        cancelLoadRetry()
         workerThread?.interrupt()
         syncProbeListener?.let { listener -> runCatching { msgService?.g(listener) } }
         syncProbeListener = null

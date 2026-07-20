@@ -27,3 +27,5 @@ work/
 /app-new/libs/qq-sdk.jar.bak*
 .log
 /tools
+# AI
+.claude

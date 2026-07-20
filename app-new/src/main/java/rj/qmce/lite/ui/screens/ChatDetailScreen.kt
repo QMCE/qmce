@@ -57,7 +57,10 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -72,7 +75,11 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -96,6 +103,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.IconButton
@@ -116,14 +124,20 @@ import rj.qmce.lite.data.call.QmceCallController
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.data.chat.MessageNavigationSnapshot
 import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
+import rj.qmce.lite.data.chat.PttTranslationPhase
+import rj.qmce.lite.data.chat.PttTranslationState
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 private val MessageBubbleCornerRadius = 8.dp
 private val MessageBubbleLeadingCornerRadius = 4.dp
@@ -162,7 +176,9 @@ private data class TimelineScrollState(
     val isScrolling: Boolean,
     val firstVisibleItemIndex: Int,
     val firstVisibleItemOffset: Int,
-    val canScrollBackward: Boolean,
+    val firstVisibleMessageSequence: Long?,
+    val atTop: Boolean,
+    val atBottom: Boolean,
 )
 
 private data class FileDetailTarget(
@@ -192,8 +208,10 @@ fun ChatDetailScreen(
     onOpenMembers: () -> Unit = {},
     onOpenGroupInfo: () -> Unit = {},
     onOpenChatSettings: () -> Unit = {},
+    onReportingPageChanged: (String?) -> Unit = {},
     avatarPath: String = "",
     avatarUrl: String = "",
+    messageNavigation: MessageNavigationSnapshot = MessageNavigationSnapshot(),
     vm: ChatDetailViewModel = viewModel(),
 ) {
     val messages by vm.messages.collectAsState()
@@ -204,13 +222,17 @@ fun ChatDetailScreen(
     val olderPageVersion by vm.olderPageVersion.collectAsState()
     val forwardDetailState by vm.forwardDetailState.collectAsState()
     val replySourceState by vm.replySourceState.collectAsState()
+    val messageNavigationState by vm.messageNavigationState.collectAsState()
     val pttPlaybackStates by vm.pttPlaybackStates.collectAsState()
+    val pttTranslationStates by vm.pttTranslationStates.collectAsState()
     val groupMemberLevels by vm.groupMemberLevels.collectAsState()
     val groupMemberTitles by vm.groupMemberTitles.collectAsState()
     val inlineKeyboardActions by vm.inlineKeyboardActions.collectAsState()
     val multiSelectMode by vm.multiSelectMode.collectAsState()
     val selectedMsgIds by vm.selectedMsgIds.collectAsState()
+    val messageSummaryState by vm.messageSummaryState.collectAsState()
     val timelineItems = remember(messages) { messages.toTimelineItems() }
+    val currentTimelineItems = rememberUpdatedState(timelineItems)
     LaunchedEffect(chatType, peerUin, messages) {
         if (chatType == 2) {
             vm.loadGroupMemberLevels(
@@ -224,15 +246,12 @@ fun ChatDetailScreen(
             )
         }
     }
-    val currentIsLoadingOlder by rememberUpdatedState(isLoadingOlder)
-    val currentTimelineItems by rememberUpdatedState(timelineItems)
-    val currentOlderPageVersion by rememberUpdatedState(olderPageVersion)
     val listState = rememberLazyListState()
     var composerActionsVisible by remember(peerUid, chatType) { mutableStateOf(true) }
     var initialPositioned by remember(peerUid, chatType) { mutableStateOf(false) }
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
+    var followNewMessages by remember(peerUid, chatType) { mutableStateOf(true) }
     var isHistoryRequestPending by remember(peerUid, chatType) { mutableStateOf(false) }
-    val currentHistoryRequestPending by rememberUpdatedState(isHistoryRequestPending)
     var pendingHistoryAnchor by remember(peerUid, chatType) { mutableStateOf<HistoryAnchor?>(null) }
     var viewerMedia by remember(peerUid, chatType) { mutableStateOf<ViewerMedia?>(null) }
     var videoPlayer by remember(peerUid, chatType) { mutableStateOf<VideoPlayback?>(null) }
@@ -249,6 +268,9 @@ fun ChatDetailScreen(
     var showMessageSearch by remember(peerUid, chatType) { mutableStateOf(false) }
     var messageSearchQuery by remember(peerUid, chatType) { mutableStateOf("") }
     var highlightedMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { onReportingPageChanged(null) }
+    }
     val messageSearchMatches = remember(messages, messageSearchQuery) {
         val query = messageSearchQuery.trim()
         if (query.isBlank()) emptyList() else messages.filter { message ->
@@ -346,6 +368,49 @@ fun ChatDetailScreen(
         }
     }
     val lastMessageKey = messages.lastOrNull()?.stableKey
+    val requestOlderAtTop: () -> Unit = {
+        val atTop = listState.firstVisibleItemIndex == 0 &&
+                listState.firstVisibleItemScrollOffset == 0
+        if (
+            initialPositioned &&
+            atTop &&
+            hasOlderMessages &&
+            !isLoadingOlder &&
+            !isHistoryRequestPending
+        ) {
+            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            val anchorItem = visibleItems.firstOrNull { item ->
+                timelineItems.getOrNull(item.index) is ChatTimelineItem.Message
+            } ?: visibleItems.firstOrNull()
+            val anchor = anchorItem?.let { item ->
+                timelineItems.getOrNull(item.index)?.let { timelineItem ->
+                    HistoryAnchor(
+                        messageKey = timelineItem.key,
+                        viewportOffset = item.offset,
+                        resultVersion = olderPageVersion + 1,
+                    )
+                }
+            }
+            val requested = vm.loadOlderMessages()
+            isHistoryRequestPending = requested
+            pendingHistoryAnchor = anchor?.takeIf { requested }
+        }
+    }
+    val currentRequestOlderAtTop = rememberUpdatedState(requestOlderAtTop)
+    val topHistoryNestedScrollConnection = remember(listState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (
+                    source == NestedScrollSource.UserInput &&
+                    available.y > 0f &&
+                    !listState.canScrollBackward
+                ) {
+                    currentRequestOlderAtTop.value()
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     pendingHistoryAnchor?.let { anchor ->
         val anchorIndex = timelineItems.indexOfFirst { item -> item.key == anchor.messageKey }
@@ -358,17 +423,25 @@ fun ChatDetailScreen(
                 pendingHistoryAnchor = null
                 isHistoryRequestPending = false
                 if (shouldRestorePosition) {
-                    listState.requestScrollToItem(anchorIndex, -anchor.viewportOffset)
+                    listState.requestScrollToItem(anchorIndex, anchor.viewportOffset)
                 }
             }
         }
     }
 
-    LaunchedEffect(peerUid) {
-        vm.openChat(runtime, peerUid, peerUin, chatType, peerName, myUin)
+    LaunchedEffect(peerUid, chatType) {
+        vm.openChat(
+            runtime = runtime,
+            peerUid = peerUid,
+            peerUin = peerUin,
+            chatType = chatType,
+            name = peerName,
+            myUin = myUin,
+            messageNavigation = messageNavigation,
+        )
     }
-    LaunchedEffect(peerUid, chatType, statusText, lastMessageKey, timelineItems.size) {
-        if (timelineItems.isEmpty() || statusText.isNotEmpty()) return@LaunchedEffect
+    LaunchedEffect(peerUid, chatType, lastMessageKey, timelineItems.size) {
+        if (timelineItems.isEmpty()) return@LaunchedEffect
         val lastIndex = timelineItems.lastIndex
         if (!initialPositioned) {
             snapshotFlow { listState.layoutInfo.totalItemsCount }
@@ -378,9 +451,9 @@ fun ChatDetailScreen(
             withFrameNanos { }
             listState.scrollToItem(timelineItems.lastIndex)
             initialPositioned = true
-        } else if (lastMessageKey != previousLastMessageKey) {
-            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
-            if (lastVisibleIndex >= lastIndex - 1) listState.animateScrollToItem(lastIndex)
+        } else if (lastMessageKey != previousLastMessageKey && followNewMessages) {
+            withFrameNanos { }
+            listState.scrollToItem(lastIndex)
         }
         previousLastMessageKey = lastMessageKey
     }
@@ -393,7 +466,18 @@ fun ChatDetailScreen(
                 isScrolling = listState.isScrollInProgress,
                 firstVisibleItemIndex = listState.firstVisibleItemIndex,
                 firstVisibleItemOffset = listState.firstVisibleItemScrollOffset,
-                canScrollBackward = listState.canScrollBackward,
+                firstVisibleMessageSequence = listState.layoutInfo.visibleItemsInfo
+                    .asSequence()
+                    .mapNotNull { visibleItem ->
+                        (currentTimelineItems.value.getOrNull(visibleItem.index) as? ChatTimelineItem.Message)
+                            ?.message
+                            ?.msgSeq
+                            ?.takeIf { it > 0L }
+                    }
+                    .firstOrNull(),
+                atTop = listState.firstVisibleItemIndex == 0 &&
+                        listState.firstVisibleItemScrollOffset == 0,
+                atBottom = !listState.canScrollForward,
             )
         }.collect { state ->
             val movedTowardTop = previousState?.let { previous ->
@@ -403,39 +487,24 @@ fun ChatDetailScreen(
                                         state.firstVisibleItemOffset < previous.firstVisibleItemOffset
                                 )
             } == true
-            if (state.canScrollBackward) {
+            if (state.isScrolling) {
+                followNewMessages = state.atBottom && !movedTowardTop
+            }
+            if (!state.atTop) {
                 reachedTopFromUpwardScroll = false
-            } else if (
-                state.isScrolling &&
-                (movedTowardTop || previousState?.canScrollBackward == true)
-            ) {
+            } else if (movedTowardTop || previousState?.atTop == false) {
                 reachedTopFromUpwardScroll = true
             }
             if (
                 initialPositioned &&
-                !state.isScrolling &&
-                !state.canScrollBackward &&
-                !currentIsLoadingOlder &&
-                !currentHistoryRequestPending &&
+                state.atTop &&
                 reachedTopFromUpwardScroll
             ) {
-                val anchor = listState.layoutInfo.visibleItemsInfo
-                    .firstOrNull { item ->
-                        currentTimelineItems.getOrNull(item.index) is ChatTimelineItem.Message
-                    }
-                    ?.let { item ->
-                        HistoryAnchor(
-                            messageKey = currentTimelineItems[item.index].key,
-                            viewportOffset = item.offset,
-                            resultVersion = currentOlderPageVersion + 1,
-                        )
-                    }
-                isHistoryRequestPending = vm.loadOlderMessages()
-                pendingHistoryAnchor = anchor?.takeIf { isHistoryRequestPending }
+                currentRequestOlderAtTop.value()
                 reachedTopFromUpwardScroll = false
             }
-            if (state.isScrolling && pendingHistoryAnchor != null) {
-                pendingHistoryAnchor = null
+            if (initialPositioned) {
+                state.firstVisibleMessageSequence?.let(vm::onFirstVisibleMessageSequence)
             }
             previousState = state
         }
@@ -479,10 +548,50 @@ fun ChatDetailScreen(
         }
     }
 
+    LaunchedEffect(messageNavigationState, timelineItems) {
+        when (val navigation = messageNavigationState) {
+            is ChatDetailViewModel.MessageNavigationState.Located -> {
+                val targetIndex = timelineItems.indexOfFirst { item ->
+                    (item as? ChatTimelineItem.Message)?.message?.stableKey == navigation.messageKey
+                }
+                if (targetIndex < 0) return@LaunchedEffect
+                snapshotFlow { listState.layoutInfo.totalItemsCount }
+                    .first { itemCount -> itemCount > targetIndex }
+                highlightedMessageKey = navigation.messageKey
+                try {
+                    listState.animateScrollToItem(targetIndex)
+                    vm.completeMessageNavigation()
+                    delay(1_500)
+                    if (highlightedMessageKey == navigation.messageKey) {
+                        highlightedMessageKey = null
+                    }
+                } catch (_: kotlinx.coroutines.CancellationException) {
+                    throw kotlinx.coroutines.CancellationException()
+                }
+            }
+
+            is ChatDetailViewModel.MessageNavigationState.Error -> {
+                Toast.makeText(context, navigation.message, Toast.LENGTH_SHORT).show()
+            }
+
+            else -> Unit
+        }
+    }
+
     val showCallPage = chatType == 1 && peerUid.isNotBlank()
     val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
         pageCount = { if (showCallPage) 3 else 2 },
     )
+    LaunchedEffect(pagerState.currentPage, showCallPage, selectedActionMessage) {
+        onReportingPageChanged(
+            when {
+                selectedActionMessage != null -> OfficialReportBridge.PageIds.LONG_PRESS_MENU
+                showCallPage && pagerState.currentPage == 1 ->
+                    OfficialReportBridge.PageIds.DIAL_INTERFACE
+                else -> null
+            },
+        )
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -511,7 +620,8 @@ fun ChatDetailScreen(
                             scrollState = listState,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .weight(1f),
+                                .weight(1f)
+                                .nestedScroll(topHistoryNestedScrollConnection),
                             contentPadding = PaddingValues(
                                 start = 10.dp,
                                 end = 10.dp,
@@ -570,6 +680,9 @@ fun ChatDetailScreen(
                                                     },
                                                     voicePlaybackState = { voice ->
                                                         pttPlaybackStates[voice.media.messageId]
+                                                    },
+                                                    voiceTranslationState = { voice ->
+                                                        pttTranslationStates[voice.media.messageId]
                                                     },
                                                     onToggleVoice = vm::toggleVoicePlayback,
                                                     onRequestCall = if (chatType == 1) {
@@ -648,6 +761,34 @@ fun ChatDetailScreen(
                 )
             }
         }
+        AnimatedVisibility(
+            visible = initialPositioned &&
+                    pagerState.currentPage == 0 &&
+                    !multiSelectMode &&
+                    messageNavigationState !is ChatDetailViewModel.MessageNavigationState.Idle,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 8.dp),
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            val loading = messageNavigationState is ChatDetailViewModel.MessageNavigationState.Loading ||
+                    messageNavigationState is ChatDetailViewModel.MessageNavigationState.Located
+            CompactButton(
+                onClick = vm::requestMessageNavigation,
+                enabled = !loading,
+                icon = {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(Icons.Default.ArrowUpward, contentDescription = "跳转新消息")
+                    }
+                },
+            )
+        }
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.BottomCenter,
@@ -656,6 +797,7 @@ fun ChatDetailScreen(
                 MultiSelectBottomBar(
                     selectedCount = selectedMsgIds.size,
                     onExit = { vm.exitMultiSelect() },
+                    onSummary = { vm.summarizeSelected() },
                     onCopy = {
                         val text = vm.batchCopySelected()
                         if (text.isNotBlank()) copyMessageText(context, text)
@@ -694,6 +836,13 @@ fun ChatDetailScreen(
                     )
                 }
             }
+        }
+        if (messageSummaryState !is ChatDetailViewModel.MessageSummaryState.Idle) {
+            MessageSummaryScreen(
+                state = messageSummaryState,
+                onBack = vm::dismissMessageSummary,
+                onRetry = vm::retryMessageSummary,
+            )
         }
         if (forwardDetailState !is ChatDetailViewModel.ForwardDetailState.Idle) {
             ForwardDetailScreen(
@@ -763,8 +912,23 @@ fun ChatDetailScreen(
                 message = message,
                 context = actionContext,
                 onBack = { selectedActionMessage = null },
-                onAction = { action ->
+                onAction = { action, actionTarget ->
                     selectedActionMessage = null
+                    val reportEvent = when (action.id) {
+                        "delete" -> OfficialReportBridge.ElementIds.DELETED
+                        "recall" -> OfficialReportBridge.ElementIds.REVOCATION
+                        "read_text" -> OfficialReportBridge.ElementIds.TO_TEXT
+                        "translate_text" -> OfficialReportBridge.ElementIds.TO_TEXT
+                        else -> null
+                    }
+                    if (reportEvent != null) {
+                        OfficialReportBridge.reportElementClick(
+                            target = actionTarget,
+                            elementId = reportEvent,
+                            params = mapOf("msg_id" to message.msgId.toString()),
+                            reuseIdentifier = message.stableKey,
+                        )
+                    }
                     when (action.id) {
                         "copy" -> copyMessageText(
                             context,
@@ -773,6 +937,12 @@ fun ChatDetailScreen(
 
                         "read_text" -> selectedTextContent =
                             MessageActionResolver.copyableText(message)
+
+                        "translate_text" -> {
+                            if (!vm.translateVoiceToText(message)) {
+                                Toast.makeText(context, "语音转文字暂不可用", Toast.LENGTH_SHORT).show()
+                            }
+                        }
 
                         "share_text" -> shareMessageText(
                             context,
@@ -918,22 +1088,45 @@ private fun ChatComposerActions(
     onOpenVoiceRecorder: () -> Unit,
 ) {
     Row (modifier = Modifier.padding(bottom = 30.dp),) {
-        CompactButton(
-            // TODO: enable it
-            onClick = {}, //onOpenSingleEmotion,
+        OfficialReportTargetBox(
+            key = "aio-composer:expression",
             modifier = Modifier.padding(horizontal = 5.dp),
-            icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
-        )
+            elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+            reportImpression = true,
+        ) { reportTarget ->
+            CompactButton(
+                onClick = {
+                    OfficialReportBridge.reportElementClick(
+                        target = reportTarget,
+                        elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+                    )
+                    onOpenSingleEmotion()
+                },
+                icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
+            )
+        }
         CompactButton(
             onClick = onOpenInput,
             modifier = Modifier.padding(horizontal = 5.dp),
             icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
         )
-        CompactButton(
-            onClick = onOpenVoiceRecorder,
+        OfficialReportTargetBox(
+            key = "aio-composer:voice",
             modifier = Modifier.padding(horizontal = 5.dp),
-            icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
-        )
+            elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
+            reportImpression = true,
+        ) { reportTarget ->
+            CompactButton(
+                onClick = {
+                    OfficialReportBridge.reportElementClick(
+                        target = reportTarget,
+                        elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
+                    )
+                    onOpenVoiceRecorder()
+                },
+                icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
+            )
+        }
     }
 }
 
@@ -952,6 +1145,7 @@ internal fun MessageBubble(
     inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState> = emptyMap(),
     onClickInlineKeyboard: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit = { _, _, _ -> },
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState? = { null },
+    voiceTranslationState: (ChatDetailViewModel.MessageContent.Voice) -> PttTranslationState? = { null },
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit = {},
     onRequestCall: ((CallMode) -> Unit)? = null,
     isHighlighted: Boolean = false,
@@ -1043,6 +1237,7 @@ internal fun MessageBubble(
                             onClickInlineKeyboard(message, keyboard, button)
                         },
                         voicePlaybackState = voicePlaybackState,
+                        voiceTranslationState = voiceTranslationState,
                         onToggleVoice = onToggleVoice,
                         onRequestCall = onRequestCall,
                     )
@@ -1077,6 +1272,7 @@ private fun MessageContentItem(
     inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState>,
     onClickInlineKeyboard: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
     voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState?,
+    voiceTranslationState: (ChatDetailViewModel.MessageContent.Voice) -> PttTranslationState?,
     onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit,
     onRequestCall: ((CallMode) -> Unit)?,
 ) {
@@ -1108,6 +1304,7 @@ private fun MessageContentItem(
         is ChatDetailViewModel.MessageContent.Voice -> VoiceMessageContent(
             content = content,
             playbackState = voicePlaybackState(content),
+            translationState = voiceTranslationState(content),
             onTogglePlayback = { onToggleVoice(content) },
         )
 
@@ -1340,12 +1537,17 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             surpriseId = content.surpriseId,
         )
     }
+    val isAnimated = remember(face) {
+        face != null && (face.faceType == 3 || (face.stickerType ?: 0) > 0)
+    }
     var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
+    val loadGeneration = remember { AtomicLong(0L) }
     LaunchedEffect(face) {
+        val generation = loadGeneration.incrementAndGet()
         drawable = null
         face?.let { value ->
             EmotionRepository.loadSystemFaceDrawable(value) { loaded ->
-                if (loaded != null || drawable == null) {
+                if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
                     drawable = loaded
                 }
             }
@@ -1358,6 +1560,7 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
         MessageFallback(fallbackText)
     } else {
         val currentDrawable = drawable
+        val size = if (isAnimated) 120.dp else 34.dp
         AndroidView(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
@@ -1367,11 +1570,17 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             update = { imageView ->
                 if (imageView.drawable !== currentDrawable) {
                     imageView.setImageDrawable(currentDrawable)
+                    currentDrawable?.setVisible(true, true)
                 }
                 imageView.invalidate()
             },
-            modifier = Modifier.size(34.dp),
+            modifier = Modifier.size(size),
         )
+        DisposableEffect(currentDrawable) {
+            onDispose {
+                currentDrawable?.setVisible(false, false)
+            }
+        }
     }
 }
 
@@ -1791,6 +2000,7 @@ private fun FileMessageContent(
 private fun VoiceMessageContent(
     content: ChatDetailViewModel.MessageContent.Voice,
     playbackState: PttPlaybackState?,
+    translationState: PttTranslationState?,
     onTogglePlayback: () -> Unit,
 ) {
     val phase = playbackState?.phase ?: PttPlaybackPhase.Idle
@@ -1811,7 +2021,20 @@ private fun VoiceMessageContent(
         }"
 
         PttPlaybackPhase.Failed -> playbackState?.error ?: "无法播放此语音"
-        PttPlaybackPhase.Idle -> content.progress?.let { "传输中 $it%" } ?: "点击播放"
+        PttPlaybackPhase.Idle -> playbackState?.error
+            ?: content.progress?.let { "传输中 $it%" }
+            ?: "点击播放"
+    }
+    val translationLabel = when (translationState?.phase) {
+        PttTranslationPhase.Loading -> "正在转换文字..."
+        PttTranslationPhase.Failed -> translationState.error ?: "转文字失败，可从菜单重试"
+        PttTranslationPhase.Success -> if (content.transcript.isNullOrBlank()) {
+            "转换完成，等待消息更新..."
+        } else {
+            null
+        }
+
+        PttTranslationPhase.Idle, null -> null
     }
     Column(
         modifier = Modifier
@@ -1849,6 +2072,19 @@ private fun VoiceMessageContent(
                         style = MaterialTheme.typography.bodySmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (content.transcript.isNullOrBlank() && translationLabel != null) {
+                    Text(
+                        text = translationLabel,
+                        color = if (translationState?.phase == PttTranslationPhase.Failed) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -2241,6 +2477,7 @@ private fun InlineKeyboardMessageContent(
 private fun MultiSelectBottomBar(
     selectedCount: Int,
     onExit: () -> Unit,
+    onSummary: () -> Unit,
     onCopy: () -> Unit,
     onForward: () -> Unit,
     onShare: () -> Unit,
@@ -2267,6 +2504,12 @@ private fun MultiSelectBottomBar(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Medium,
         )
+        IconButton(
+            onClick = onSummary,
+            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
+        ) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = "AI总结")
+        }
         IconButton(
             onClick = onCopy,
             modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)

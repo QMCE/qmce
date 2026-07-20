@@ -14,7 +14,10 @@ object OfficialPttPlayer {
     private val _states = MutableStateFlow<Map<Long, PttPlaybackState>>(emptyMap())
     val states: StateFlow<Map<Long, PttPlaybackState>> = _states
 
-    fun toggle(media: PttMediaRef) {
+    fun toggle(
+        media: PttMediaRef,
+        onMissingPath: (() -> Boolean)? = null,
+    ) {
         if (media.messageId <= 0L) {
             publish(media.messageId) {
                 it.copy(
@@ -26,8 +29,17 @@ object OfficialPttPlayer {
         }
         val path = RichMediaRepository.resolvePttPath(media)
         if (path.isNullOrBlank()) {
+            val requested = runCatching { onMissingPath?.invoke() == true }.getOrDefault(false)
             publish(media.messageId) {
-                it.copy(phase = PttPlaybackPhase.Failed, error = "语音文件路径不可用")
+                if (requested) {
+                    it.copy(
+                        phase = PttPlaybackPhase.Idle,
+                        error = "正在下载语音，请稍后再试",
+                        durationMillis = maxOf(it.durationMillis, media.durationSeconds * 1_000),
+                    )
+                } else {
+                    it.copy(phase = PttPlaybackPhase.Failed, error = "语音文件路径不可用")
+                }
             }
             return
         }

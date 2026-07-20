@@ -45,6 +45,8 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.MyViewModel
 import java.io.File
 
@@ -82,24 +84,58 @@ fun MyScreen(
                 )
             }
             item(key = "my-refresh-profile") {
-                MyActionRow(
-                    icon = Icons.Default.Refresh,
-                    title = "刷新资料",
-                    subtitle = if (profile.refreshing) "正在请求最新资料" else "同步昵称、签名和头像缓存",
-                    onClick = { vm.load(uin, forceRefresh = true) },
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "刷新资料")
+                OfficialReportTargetBox(
+                    key = "my:refresh-profile",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                ) { reportTarget ->
+                    MyActionRow(
+                        icon = Icons.Default.Refresh,
+                        title = "刷新资料",
+                        subtitle = if (profile.refreshing) "正在请求最新资料" else "同步昵称、签名和头像缓存",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            vm.load(uin, forceRefresh = true)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "my-settings") {
-                MyActionRow(
-                    icon = Icons.Default.Settings,
-                    title = "设置",
-                    subtitle = "显示、交互、同步与存储管理",
-                    onClick = onOpenSettings,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "设置")
+                OfficialReportTargetBox(
+                    key = "my:settings",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                ) { reportTarget ->
+                    MyActionRow(
+                        icon = Icons.Default.Settings,
+                        title = "设置",
+                        subtitle = "显示、交互、同步与存储管理",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenSettings()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "my-account-label") {
                 Text(
@@ -112,24 +148,58 @@ fun MyScreen(
                 )
             }
             item(key = "my-force-exit") {
-                MyActionRow(
-                    icon = Icons.Default.PowerSettingsNew,
-                    title = "强制退出",
-                    subtitle = "立即终止 QMCE，不清理登录数据",
-                    onClick = onForceExit,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "强制退出")
+                OfficialReportTargetBox(
+                    key = "my:force-exit",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                ) { reportTarget ->
+                    MyActionRow(
+                        icon = Icons.Default.PowerSettingsNew,
+                        title = "强制退出",
+                        subtitle = "立即终止 QMCE，不清理登录数据",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onForceExit()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "my-logout") {
-                MyActionRow(
-                    icon = Icons.AutoMirrored.Filled.Logout,
-                    title = "退出登录",
-                    subtitle = "清理本机登录状态后返回登录页",
-                    onClick = onOpenLogoutConfirmation,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("function_name" to "退出登录")
+                OfficialReportTargetBox(
+                    key = "my:logout",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                ) { reportTarget ->
+                    MyActionRow(
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        title = "退出登录",
+                        subtitle = "清理本机登录状态后返回登录页",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenLogoutConfirmation()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             if (operationStatus.isNotBlank()) {
                 item(key = "my-operation-status") {

@@ -47,6 +47,8 @@ import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,15 +82,27 @@ fun QZoneScreen(
             contentPadding = contentPadding,
         ) {
             item(key = "qzone-compose") {
-                CompactButton(
-                    onClick = onOpenComposer,
+                OfficialReportTargetBox(
+                    key = "qzone-compose",
                     modifier = Modifier
-                        .transformedHeight(this, transformationSpec)
-                        .padding(vertical = 3.dp),
-                    colors = ButtonDefaults.filledVariantButtonColors(),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    icon = { Icon(Icons.Default.Add, contentDescription = "发表动态") },
-                )
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
+                ) { reportTarget ->
+                    CompactButton(
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
+                            )
+                            onOpenComposer()
+                        },
+                        modifier = Modifier.padding(vertical = 3.dp),
+                        colors = ButtonDefaults.filledVariantButtonColors(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        icon = { Icon(Icons.Default.Add, contentDescription = "发表动态") },
+                    )
+                }
             }
             if (statusText.isNotEmpty()) {
                 item(key = "qzone-status") {
@@ -135,13 +149,42 @@ fun QZoneScreen(
                 else -> {
                     feeds.forEach { feed ->
                         item(key = "feed:${feed.feedId}") {
-                            FeedPreviewCard(
-                                feed = feed,
-                                avatarUrl = vm.avatarUrl(feed.uin),
-                                onOpenDetail = { onOpenDetail(feed) },
-                                modifier = Modifier.transformedHeight(this, transformationSpec),
-                                transformation = SurfaceTransformation(transformationSpec),
-                            )
+                            OfficialReportTargetBox(
+                                key = "qzone-feed:${feed.feedId}",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, transformationSpec),
+                                elementId = OfficialReportBridge.ElementIds.DYNAMIC_ENTRY,
+                                params = mapOf(
+                                    "dynamic_id" to feed.feedId,
+                                    "touin" to feed.uin,
+                                ),
+                                reuseIdentifier = OfficialReportBridge.ElementIds.dynamicEntryReuse(
+                                    feed.feedId,
+                                ),
+                                reportAllExposures = true,
+                            ) { reportTarget ->
+                                FeedPreviewCard(
+                                    feed = feed,
+                                    avatarUrl = vm.avatarUrl(feed.uin),
+                                    onOpenDetail = {
+                                        OfficialReportBridge.reportElementClick(
+                                            target = reportTarget,
+                                            elementId = OfficialReportBridge.ElementIds.DYNAMIC_ENTRY,
+                                            params = mapOf(
+                                                "dynamic_id" to feed.feedId,
+                                                "touin" to feed.uin,
+                                            ),
+                                            reuseIdentifier = OfficialReportBridge.ElementIds.dynamicEntryReuse(
+                                                feed.feedId,
+                                            ),
+                                        )
+                                        onOpenDetail(feed)
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    transformation = SurfaceTransformation(transformationSpec),
+                                )
+                            }
                         }
                     }
                 }

@@ -32,6 +32,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.QZoneViewModel
 
 @Composable
@@ -59,11 +61,23 @@ fun QZoneCommentScreen(
     ScreenScaffold(
         scrollState = listState,
         edgeButton = {
-            EdgeButton(
-                onClick = onSend,
-                enabled = draft.isNotBlank() && sendState !is QZoneViewModel.CommentSendState.Sending,
-                buttonSize = EdgeButtonSize.Small,
-            ) { Text("发送") }
+            OfficialReportTargetBox(
+                key = "qzone:comment-send",
+                elementId = OfficialReportBridge.ElementIds.SEND,
+            ) { reportTarget ->
+                EdgeButton(
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.SEND,
+                            params = mapOf("dynamic_id" to feed.feedId),
+                        )
+                        onSend()
+                    },
+                    enabled = draft.isNotBlank() && sendState !is QZoneViewModel.CommentSendState.Sending,
+                    buttonSize = EdgeButtonSize.Small,
+                ) { Text("发送") }
+            }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->
@@ -104,21 +118,38 @@ fun QZoneCommentScreen(
             } else {
                 feed.comments.takeLast(12).forEachIndexed { index, comment ->
                     item(key = "qzone-comment:$index:${comment.id}") {
-                        Column(
+                        val reuseIdentifier = OfficialReportBridge.ElementIds.commentsReuse(
+                            comment.id,
+                        )
+                        OfficialReportTargetBox(
+                            key = "qzone:comment:${feed.feedId}:$index:${comment.id}",
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .graphicsLayer {
-                                    with(SurfaceTransformation(transformationSpec)) {
-                                        applyContainerTransformation()
-                                        applyContentTransformation()
+                                .transformedHeight(this, transformationSpec),
+                            elementId = OfficialReportBridge.ElementIds.COMMENTS,
+                            reuseIdentifier = reuseIdentifier,
+                        ) { reportTarget ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .graphicsLayer {
+                                        with(SurfaceTransformation(transformationSpec)) {
+                                            applyContainerTransformation()
+                                            applyContentTransformation()
+                                        }
                                     }
-                                }
-                                .padding(horizontal = 10.dp, vertical = 3.dp)
-                                .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-                                .clickable { onReply(comment) }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                        ) {
+                                    .padding(horizontal = 10.dp, vertical = 3.dp)
+                                    .background(scheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        OfficialReportBridge.reportElementClick(
+                                            target = reportTarget,
+                                            elementId = OfficialReportBridge.ElementIds.COMMENTS,
+                                            reuseIdentifier = reuseIdentifier,
+                                        )
+                                        onReply(comment)
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                            ) {
                             Text(
                                 comment.author,
                                 color = scheme.primary,
@@ -149,6 +180,7 @@ fun QZoneCommentScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                     )
                                 }
+                            }
                             }
                         }
                     }

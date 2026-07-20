@@ -16,6 +16,7 @@ import com.tencent.mobileqq.text.style.EmoticonSpan
 import com.tencent.mobileqq.data.AniStickerInfo
 import com.tencent.mobileqq.emoticon.QQSysAndEmojiResInfo
 import com.tencent.mobileqq.emoticon.QQSysAndEmojiResMgr
+import com.tencent.mobileqq.emoticon.QQSysFaceResImpl
 import com.tencent.mobileqq.utils.HexUtil
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.aio.anisticker.download.AniStickerLottieResDownloader
@@ -260,24 +261,13 @@ object EmotionRepository {
                     SystemAndEmojiEmotionInfo(face.faceType, face.faceIndex, face.label).r()
                 }.getOrNull()
         }
+        officialSystemFaceDrawable(face)?.let { return it }
         if (face.isAnimatedSticker()) {
             animatedDrawableCache[animatedFaceKey(face)]?.let {
                 runCatching { it.drawable }.getOrNull()
             }?.takeUnless { it is ColorDrawable }?.let { return it }
-            superFaceDrawable(face)?.let { return it }
-            localSystemFaceDrawable(face)?.let { return it }
-        } else {
-            kernelRenderedFaceDrawable(face)
-                ?.takeUnless { it is ColorDrawable }
-                ?.let { return it }
-            runCatching { QQSysFaceUtil.a.d(face.faceIndex) }.getOrNull()
-                ?.takeUnless { it is ColorDrawable }
-                ?.let { return it }
-            runCatching { systemFaceRes()?.getDrawable(face.faceIndex) }.getOrNull()
-                ?.takeUnless { it is ColorDrawable }
-                ?.let { return it }
-            localSystemFaceDrawable(face)?.let { return it }
         }
+        localSystemFaceDrawable(face)?.let { return it }
         kernelRenderedFaceDrawable(face)
             ?.takeUnless { it is ColorDrawable }
             ?.let { return it }
@@ -290,15 +280,57 @@ object EmotionRepository {
             ?.takeUnless { it is ColorDrawable }
     }
 
-    private fun superFaceDrawable(face: Selection.SystemFace): Drawable? = runCatching {
-        QQSysFaceUtil.a.f(face.faceIndex)
-    }.getOrNull()?.takeUnless { it is ColorDrawable }
+    private fun officialSystemFaceDrawable(face: Selection.SystemFace): Drawable? {
+        if (face.isEmoji) return null
+        if (face.faceType == 4) {
+            return kernelRenderedFaceDrawable(face)
+                ?.takeUnless { it is ColorDrawable }
+        }
+        val drawable = if (face.isAnimatedSticker()) {
+            superFaceDrawable(face)
+        } else {
+            runCatching { QQSysFaceUtil.a.d(face.faceIndex) }.getOrNull()
+                ?.takeUnless { it is ColorDrawable }
+                ?: runCatching { systemFaceRes()?.getDrawable(face.faceIndex) }
+                    .getOrNull()
+                    ?.takeUnless { it is ColorDrawable }
+        }
+        return drawable?.takeUnless { it is ColorDrawable }
+            ?: kernelRenderedFaceDrawable(face)?.takeUnless { it is ColorDrawable }
+    }
+
+    private fun superFaceDrawable(face: Selection.SystemFace): Drawable? =
+        libraAnimatedSystemFaceDrawable(face)
+            ?: runCatching { QQSysFaceUtil.a.f(face.faceIndex) }
+                .getOrNull()
+                ?.takeUnless { it is ColorDrawable }
         ?: runCatching {
             systemFaceRes()?.invokeDrawable("getGifDrawable", face.faceIndex)
         }.getOrNull()?.takeUnless { it is ColorDrawable }
         ?: runCatching {
             systemFaceRes()?.invokeDrawable("getGifURLDrawable", face.faceIndex)
         }.getOrNull()?.takeUnless { it is ColorDrawable }
+
+    private fun libraAnimatedSystemFaceDrawable(face: Selection.SystemFace): Drawable? = runCatching {
+        val resource = systemFaceRes() as? QQSysFaceResImpl ?: return@runCatching null
+        val serverIndex = face.serverId ?: serverIdForLocal(face.faceIndex)
+        val placeholder = localSystemFaceDrawable(face)
+            ?: runCatching { QQSysFaceUtil.a.e(face.faceIndex) }.getOrNull()
+            ?: ColorDrawable()
+        resource.getLibraApngDrawable(placeholder, true, serverIndex.toString())
+    }.onSuccess { drawable ->
+        Log.d(
+            TAG,
+            "libra animated face local=${face.faceIndex} server=${face.serverId} " +
+                "drawable=${drawable?.javaClass?.name}",
+        )
+    }.onFailure {
+        Log.w(
+            TAG,
+            "libra animated face unavailable local=${face.faceIndex} server=${face.serverId}",
+            it,
+        )
+    }.getOrNull()?.takeUnless { it is ColorDrawable }
 
     private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? = runCatching {
         val serverIndex = face.serverId ?: serverIdForLocal(face.faceIndex)
@@ -349,75 +381,64 @@ object EmotionRepository {
                 runCatching { localSystemFaceDrawable(face) }.getOrNull()
             }
             mainHandler.post {
-                val hasDrawable = AtomicBoolean(localFallback != null)
-                val deliver: (Drawable?) -> Unit = { value ->
-                    mainHandler.post {
-                        if (value != null) {
-                            hasDrawable.set(true)
-                            onResult(value)
-                        } else if (!hasDrawable.get()) {
-                            onResult(null)
-                        }
-                    }
-                }
-                localFallback?.let(onResult)
                 if (face.isEmoji) {
-                    if (localFallback == null) {
-                        deliver(systemFaceDrawable(face))
-                    }
+                    onResult(localFallback ?: systemFaceDrawable(face))
                     return@post
                 }
                 if (face.isAnimatedSticker()) {
-                    loadAnimatedSvgThumb(face, deliver)
-                    val officialAnimated = superFaceDrawable(face)
-                    if (officialAnimated != null) {
-                        if (!isOfficialUrlDrawable(officialAnimated) ||
-                            officialUrlDrawableStatus(officialAnimated) == 1
-                        ) {
-                            deliver(officialAnimated)
-                        } else {
-                            runCatching {
-                                installOfficialUrlDrawableListener(officialAnimated, face, deliver)
-                                startOfficialUrlDrawableDownload(officialAnimated) {
-                                    deliver(officialAnimated)
-                                }
-                            }.onFailure {
-                                Log.d(TAG, "animated official drawable unavailable face=${face.faceIndex}", it)
+                    if (localFallback != null) onResult(localFallback)
+                    loadAnimatedSystemFaceFallback(face) { animated ->
+                        if (animated != null) onResult(animated)
+                    }
+                    return@post
+                }
+                val official = officialSystemFaceDrawable(face)
+                if (official != null) {
+                    if (isLibraWrapper(official)) {
+                        onResult(localFallback ?: official)
+                    } else {
+                        onResult(official)
+                    }
+                    if (isOfficialUrlDrawable(official)) {
+                        runCatching {
+                            installOfficialUrlDrawableListener(
+                                drawable = official,
+                                face = face,
+                                fallback = localFallback,
+                                deliver = onResult,
+                            )
+                            startOfficialUrlDrawableDownload(official) {
+                                onResult(official)
                             }
+                        }.onFailure {
+                            Log.d(TAG, "official system-face drawable unavailable face=${face.faceIndex}", it)
+                            onResult(localFallback)
                         }
                     }
-                    loadAnimatedSystemFaceDrawable(face, deliver)
                     return@post
                 }
-                val currentDrawable = systemFaceDrawable(face)
-                if (currentDrawable == null) {
-                    deliver(null)
-                    return@post
-                }
-                if (!isOfficialUrlDrawable(currentDrawable)) {
-                    deliver(currentDrawable)
-                    return@post
-                }
-
-                if (officialUrlDrawableStatus(currentDrawable) == 1) {
-                    deliver(currentDrawable)
-                    return@post
-                }
-
-                runCatching {
-                    installOfficialUrlDrawableListener(currentDrawable, face, deliver)
-                    startOfficialUrlDrawableDownload(currentDrawable) {
-                        deliver(currentDrawable)
-                    }
-                }.onFailure {
-                    Log.d(TAG, "system face drawable listener unavailable face=${face.faceIndex}", it)
-                    deliver(null)
-                }
+                onResult(localFallback ?: systemFaceDrawable(face))
             }
         }.apply {
             isDaemon = true
             start()
         }
+    }
+
+    private fun loadAnimatedSystemFaceFallback(
+        face: Selection.SystemFace,
+        onResult: (Drawable?) -> Unit,
+    ) {
+        val delivered = AtomicBoolean(false)
+        loadAnimatedSystemFaceDrawable(face, onResult = { drawable ->
+            if (drawable != null) {
+                if (delivered.compareAndSet(false, true)) onResult(drawable)
+            } else if (delivered.compareAndSet(false, true)) {
+                loadAnimatedSvgThumb(face) { svg ->
+                    onResult(svg)
+                }
+            }
+        })
     }
 
     private fun loadAnimatedSvgThumb(
@@ -438,7 +459,7 @@ object EmotionRepository {
             }.onFailure {
                 Log.d(TAG, "animated face svg thumb unavailable face=${face.faceIndex}", it)
             }.getOrNull()
-            if (drawable != null) onResult(drawable)
+            mainHandler.post { onResult(drawable) }
         }.apply {
             isDaemon = true
             start()
@@ -640,6 +661,16 @@ object EmotionRepository {
         return false
     }
 
+    private fun isLibraWrapper(drawable: Drawable): Boolean {
+        var type: Class<*>? = drawable.javaClass
+        while (type != null) {
+            if (type.name == "com.tencent.qqnt.emotion.pic.libra.drawable.SysAndEmojiLibraDrawable")
+                return true
+            type = type.superclass
+        }
+        return false
+    }
+
     private fun officialUrlDrawableStatus(drawable: Drawable): Int = runCatching {
         (drawable.javaClass.methods.firstOrNull {
             it.name == "getStatus" && it.parameterTypes.isEmpty()
@@ -649,6 +680,7 @@ object EmotionRepository {
     private fun installOfficialUrlDrawableListener(
         drawable: Drawable,
         face: Selection.SystemFace,
+        fallback: Drawable?,
         deliver: (Drawable?) -> Unit,
     ) {
         val loader = drawable.javaClass.classLoader ?: EmotionRepository::class.java.classLoader
@@ -667,7 +699,7 @@ object EmotionRepository {
                 "onLoadCanceled", "onLoadFialed" -> {
                     Log.d(TAG, "system face drawable load failed face=${face.faceIndex}")
                     if (!retried.compareAndSet(false, true) || !restartOfficialUrlDrawable(drawable)) {
-                        deliver(localSystemFaceDrawable(face))
+                        deliver(fallback)
                     }
                 }
             }
@@ -718,12 +750,12 @@ object EmotionRepository {
         true
     }.getOrDefault(false)
 
-    private fun Selection.SystemFace.isAnimatedSticker(): Boolean =
-        faceType == 3 || (
-            (stickerType ?: 0) > 0 &&
-                !packId.isNullOrBlank() &&
-                !stickerId.isNullOrBlank()
-            )
+    private fun Selection.SystemFace.isAnimatedSticker(): Boolean {
+        if (faceType == 3 || (stickerType ?: 0) > 0) return true
+        val bundled = bundledFaceMapping.byLocalId[faceIndex]
+            ?: serverId?.let(bundledFaceMapping.byServerId::get)
+        return (bundled?.stickerType ?: 0) > 0
+    }
 
     /**
      * Use the same span-producing path as the official AIO renderer. The span owns the drawable
@@ -736,12 +768,14 @@ object EmotionRepository {
         } else {
             face.serverId ?: serverIdForLocal(face.faceIndex)
         }
+        val imageType = face.imageType ?: 0
+        val animated = face.isAnimatedSticker()
         val spanService = QRoute.api(IEmojiSpanService::class.java)
         val rawText = spanService.createSysAndEmojiSpanText(
             face.faceType,
             rawIndex,
-            face.imageType ?: 0,
-            true,
+            imageType,
+            animated,
             0,
         )
         val text = if (face.faceType == 4 && rawText !is Spanned) {
@@ -1186,14 +1220,31 @@ object EmotionRepository {
             2 -> ntFaceIndex
             else -> ntFaceIndex
         }
+        val bundled = bundledFaceMapping.byLocalId[localIndex]
+            ?: bundledFaceMapping.byServerId[ntFaceIndex]
+        val official = if (resolvedFaceType == 1 || resolvedFaceType == 3) {
+            systemFaceRes()?.invokeAniStickerInfo(
+                localId = localIndex,
+                resultId = resultId,
+                surpriseId = surpriseId,
+            )
+        } else {
+            null
+        }
         return Selection.SystemFace(
             faceType = resolvedFaceType,
             faceIndex = localIndex,
             label = label,
-            packId = packId,
+            packId = packId?.takeIf(String::isNotBlank)
+                ?: official?.b?.takeIf(String::isNotBlank)
+                ?: bundled?.packId,
             imageType = imageType,
-            stickerId = stickerId,
-            stickerType = stickerType,
+            stickerId = stickerId?.takeIf(String::isNotBlank)
+                ?: official?.c?.takeIf(String::isNotBlank)
+                ?: bundled?.stickerId,
+            stickerType = stickerType?.takeIf { it > 0 }
+                ?: official?.a?.takeIf { it > 0 }
+                ?: bundled?.stickerType?.takeIf { it > 0 },
             isEmoji = resolvedFaceType == 2,
             serverId = ntFaceIndex,
             resultId = resultId,

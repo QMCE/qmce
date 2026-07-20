@@ -50,6 +50,8 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.QZoneViewModel
 
 @Composable
@@ -93,10 +95,24 @@ fun QZoneFeedDetailScreen(
     ScreenScaffold(
         scrollState = listState,
         edgeButton = {
-            EdgeButton(
-                onClick = { onOpenComment(feed) },
-                buttonSize = EdgeButtonSize.Small,
-            ) { Text("评论") }
+            val params = mapOf("dynamic_id" to feed.feedId)
+            OfficialReportTargetBox(
+                key = "qzone:detail-comments:${feed.feedId}",
+                elementId = OfficialReportBridge.ElementIds.COMMENTS,
+                params = params,
+            ) { reportTarget ->
+                EdgeButton(
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.COMMENTS,
+                            params = params,
+                        )
+                        onOpenComment(feed)
+                    },
+                    buttonSize = EdgeButtonSize.Small,
+                ) { Text("评论") }
+            }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->
@@ -172,27 +188,53 @@ fun QZoneFeedDetailScreen(
                     ) { Text("复制动态") }
                 }
                 item(key = "feed-detail-share:${feed.feedId}") {
-                    Button(
-                        onClick = { shareMessageText(context, shareText) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                        icon = { Icon(Icons.Default.Share, contentDescription = null) },
-                    ) { Text("系统分享") }
+                    OfficialReportTargetBox(
+                        key = "qzone:detail-share:${feed.feedId}",
+                        modifier = Modifier.fillMaxWidth(),
+                        elementId = OfficialReportBridge.ElementIds.SHARE,
+                        params = mapOf("dynamic_id" to feed.feedId),
+                    ) { reportTarget ->
+                        Button(
+                            onClick = {
+                                OfficialReportBridge.reportElementClick(
+                                    target = reportTarget,
+                                    elementId = OfficialReportBridge.ElementIds.SHARE,
+                                    params = mapOf("dynamic_id" to feed.feedId),
+                                )
+                                shareMessageText(context, shareText)
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(),
+                            contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            icon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        ) { Text("系统分享") }
+                    }
                 }
             }
             if (vm.canDeleteFeed(feed)) {
                 item(key = "feed-detail-delete:${feed.feedId}") {
-                    Button(
-                        onClick = {
-                            vm.clearDeleteState()
-                            showDeleteConfirmation = true
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
-                    ) { Text("删除动态") }
+                    OfficialReportTargetBox(
+                        key = "qzone:detail-delete:${feed.feedId}",
+                        modifier = Modifier.fillMaxWidth(),
+                        elementId = OfficialReportBridge.ElementIds.DELETED,
+                        params = mapOf("dynamic_id" to feed.feedId),
+                    ) { reportTarget ->
+                        Button(
+                            onClick = {
+                                OfficialReportBridge.reportElementClick(
+                                    target = reportTarget,
+                                    elementId = OfficialReportBridge.ElementIds.DELETED,
+                                    params = mapOf("dynamic_id" to feed.feedId),
+                                )
+                                vm.clearDeleteState()
+                                showDeleteConfirmation = true
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(),
+                            contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                        ) { Text("删除动态") }
+                    }
                 }
             }
             if (feed.picUrls.isNotEmpty()) {
@@ -252,21 +294,38 @@ fun QZoneFeedDetailScreen(
                 }
             }
             item(key = "feed-detail-like:${feed.feedId}") {
-                CompactButton(
-                    onClick = { vm.toggleLike(feed.feedId) },
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    icon = {
-                        Icon(
-                            imageVector = if (feed.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            contentDescription = if (feed.isLiked) "取消点赞" else "点赞",
-                        )
-                    },
-                    colors = if (feed.isLiked) {
-                        ButtonDefaults.filledVariantButtonColors()
-                    } else {
-                        ButtonDefaults.filledTonalButtonColors()
-                    },
+                val params = mapOf(
+                    "dynamic_id" to feed.feedId,
+                    "is_liked" to if (feed.isLiked) "1" else "0",
                 )
+                OfficialReportTargetBox(
+                    key = "qzone:detail-like:${feed.feedId}",
+                    elementId = OfficialReportBridge.ElementIds.CLICK_LIKE,
+                    params = params,
+                ) { reportTarget ->
+                    CompactButton(
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.CLICK_LIKE,
+                                params = params,
+                            )
+                            vm.toggleLike(feed.feedId)
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        icon = {
+                            Icon(
+                                imageVector = if (feed.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                contentDescription = if (feed.isLiked) "取消点赞" else "点赞",
+                            )
+                        },
+                        colors = if (feed.isLiked) {
+                            ButtonDefaults.filledVariantButtonColors()
+                        } else {
+                            ButtonDefaults.filledTonalButtonColors()
+                        },
+                    )
+                }
             }
             item(key = "feed-detail-comments-title:${feed.feedId}") {
                 Text(

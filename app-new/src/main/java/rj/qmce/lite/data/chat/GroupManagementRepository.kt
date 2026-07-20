@@ -141,16 +141,27 @@ object GroupManagementRepository {
             return false
         }
         return runCatching {
+            val request = GroupBulletinPublishReq().apply {
+                this.oldFeedsId = oldFeedsId.orEmpty()
+                this.text = content
+                this.pinned = if (pinned) 1 else 0
+            }
+            Log.d(
+                TAG,
+                "publish group bulletin: group=$groupCode oldFeedsId=${oldFeedsId.orEmpty()} " +
+                    "textLength=${content.length} pinned=${request.pinned} picInfo=${request.picInfo}",
+            )
             service.publishGroupBulletin(
                 groupCode,
-                oldFeedsId.orEmpty(),
-                GroupBulletinPublishReq().apply {
-                    this.oldFeedsId = oldFeedsId.orEmpty()
-                    this.text = content
-                    this.pinned = if (pinned) 1 else 0
-                },
+                content,
+                request,
                 object : IOperateCallback {
                     override fun onResult(errorCode: Int, errorMessage: String?) {
+                        Log.d(
+                            TAG,
+                            "publish group bulletin result: group=$groupCode code=$errorCode " +
+                                "message=${errorMessage.orEmpty()}",
+                        )
                         callback(
                             errorCode == 0,
                             errorMessage?.takeIf { it.isNotBlank() }

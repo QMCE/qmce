@@ -1,0 +1,1 @@
+/home/rj/qmce-lite-x/AGENTS.md

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,6 +36,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.net.URLConnection
@@ -102,6 +105,15 @@ object MessageActionResolver {
             add(MessageAction("forward_detail", "查看聊天记录"))
         }
 
+        contents.filterIsInstance<ChatDetailViewModel.MessageContent.Voice>()
+            .firstOrNull()
+            ?.let { voice ->
+                val ptt = voice.media.pttElement
+                if (voice.transcript.isNullOrBlank() && ptt?.canConvert2Text == true) {
+                    add(MessageAction("translate_text", "转文字", icon = Icons.Default.TextFields))
+                }
+            }
+
         // 多选
         // TODO: 改进到能用
         // add(MessageAction("multi_select", "多选"))
@@ -148,7 +160,7 @@ fun MessageActionsScreen(
     message: ChatDetailViewModel.UiMsg,
     context: MessageActionContext = MessageActionContext(),
     onBack: () -> Unit,
-    onAction: (MessageAction) -> Unit,
+    onAction: (MessageAction, android.view.View) -> Unit,
 ) {
     val actions = MessageActionResolver.resolve(message, context)
     BackHandler(onBack = onBack)
@@ -166,31 +178,47 @@ fun MessageActionsScreen(
         ) {
             actions.forEachIndexed { index, action ->
                 item(key = "message-action:$index:${action.id}") {
-                    Button(
-                        onClick = { onAction(action) },
-                        enabled = action.enabled,
+                    OfficialReportTargetBox(
+                        key = "long-action:${message.stableKey}:$index:${action.id}",
                         modifier = Modifier
                             .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                        colors = if (action.destructive) ButtonDefaults.buttonColors(
-                            containerColor = scheme.errorContainer,
-                            contentColor = scheme.onErrorContainer,
-                        ) else ButtonDefaults.buttonColors(
-                            containerColor = scheme.surfaceContainerHigh,
-                            contentColor = scheme.onSurface,
-                        ),
-                        transformation = SurfaceTransformation(transformationSpec),
-                        icon = action.icon?.let { actionIcon ->
-                            { Icon(actionIcon, contentDescription = null) }
-                        },
-                    ) {
-                        Text(action.label)
+                            .transformedHeight(this, transformationSpec),
+                        elementId = action.officialElementId(),
+                        params = mapOf("msg_id" to message.msgId.toString()),
+                        reuseIdentifier = message.stableKey,
+                    ) { reportTarget ->
+                        Button(
+                            onClick = { onAction(action, reportTarget) },
+                            enabled = action.enabled,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            colors = if (action.destructive) ButtonDefaults.buttonColors(
+                                containerColor = scheme.errorContainer,
+                                contentColor = scheme.onErrorContainer,
+                            ) else ButtonDefaults.buttonColors(
+                                containerColor = scheme.surfaceContainerHigh,
+                                contentColor = scheme.onSurface,
+                            ),
+                            transformation = SurfaceTransformation(transformationSpec),
+                            icon = action.icon?.let { actionIcon ->
+                                { Icon(actionIcon, contentDescription = null) }
+                            },
+                        ) {
+                            Text(action.label)
+                        }
                     }
                 }
             }
         }
     }
+}
+
+private fun MessageAction.officialElementId(): String? = when (id) {
+    "read_text" -> OfficialReportBridge.ElementIds.TO_TEXT
+    "delete" -> OfficialReportBridge.ElementIds.DELETED
+    "recall" -> OfficialReportBridge.ElementIds.REVOCATION
+    else -> null
 }
 
 fun copyMessageText(context: Context, text: String) {

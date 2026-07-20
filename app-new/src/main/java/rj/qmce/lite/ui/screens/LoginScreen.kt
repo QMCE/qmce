@@ -52,6 +52,8 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qphone.base.remote.SimpleAccount
 import rj.qmce.lite.R
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.AuthViewModel
 
 private enum class LoginGuideStep {
@@ -61,6 +63,14 @@ private enum class LoginGuideStep {
     Qr,
 }
 
+private val LoginGuideStep.officialPageId: String?
+    get() = when (this) {
+        LoginGuideStep.Welcome -> OfficialReportBridge.PageIds.WELCOME
+        LoginGuideStep.ScreenType -> null
+        LoginGuideStep.Agreement -> OfficialReportBridge.PageIds.PROTOCOL_CONFIRMATION
+        LoginGuideStep.Qr -> OfficialReportBridge.PageIds.LOGIN
+    }
+
 private enum class ScreenType(val title: String, val detail: String) {
     Round("圆形屏幕", "适用于圆形手表屏幕"),
     Square("方形屏幕", "适用于方形或矩形屏幕（未实装）"),
@@ -69,6 +79,7 @@ private enum class ScreenType(val title: String, val detail: String) {
 @Composable
 fun LoginScreen(
     onLoginSuccess: (String, SimpleAccount) -> Unit,
+    onPageIdChanged: (String?) -> Unit = {},
     vm: AuthViewModel = viewModel(),
 ) {
     val qrBitmap by vm.qrBitmap.collectAsState()
@@ -78,14 +89,16 @@ fun LoginScreen(
     var step by remember { mutableStateOf(LoginGuideStep.Welcome) }
     var screenType by remember { mutableStateOf(ScreenType.Round) }
     var agreed by remember { mutableStateOf(false) }
-
+    LaunchedEffect(step) { onPageIdChanged(step.officialPageId) }
     LaunchedEffect(Unit) { vm.initWtService() }
     LaunchedEffect(Unit) {
         vm.loginResult.collect { (uin, account) -> onLoginSuccess(uin, account) }
     }
 
     when (step) {
-        LoginGuideStep.Welcome -> WelcomeGuide(onContinue = { step = LoginGuideStep.ScreenType })
+        LoginGuideStep.Welcome -> WelcomeGuide(
+            onContinue = { step = LoginGuideStep.ScreenType },
+        )
         LoginGuideStep.ScreenType -> ScreenTypeGuide(
             selected = screenType,
             onSelected = { screenType = it },
@@ -120,7 +133,9 @@ fun LoginScreen(
 }
 
 @Composable
-private fun WelcomeGuide(onContinue: () -> Unit) {
+private fun WelcomeGuide(
+    onContinue: () -> Unit,
+) {
     val transformationSpec = rememberTransformationSpec()
     GuideScrollColumn {
         item(key = "welcome-content") {
@@ -151,7 +166,22 @@ private fun WelcomeGuide(onContinue: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(30.dp))
-                PrimaryGuideButton(text = "开始使用", onClick = onContinue)
+                OfficialReportTargetBox(
+                    key = "login-guide:welcome",
+                    modifier = Modifier.fillMaxWidth(),
+                    elementId = OfficialReportBridge.ElementIds.LOGIN,
+                ) { reportTarget ->
+                    PrimaryGuideButton(
+                        text = "开始使用",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.LOGIN,
+                            )
+                            onContinue()
+                        },
+                    )
+                }
             }
         }
     }
@@ -283,7 +313,23 @@ private fun AgreementGuide(
                     label = { Text("我已阅读并同意") },
                 )
                 Spacer(Modifier.height(16.dp))
-                PrimaryGuideButton(text = "同意并继续", enabled = agreed, onClick = onContinue)
+                OfficialReportTargetBox(
+                    key = "login-guide:agreement",
+                    modifier = Modifier.fillMaxWidth(),
+                    elementId = OfficialReportBridge.ElementIds.AGREE,
+                ) { reportTarget ->
+                    PrimaryGuideButton(
+                        text = "同意并继续",
+                        enabled = agreed,
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.AGREE,
+                            )
+                            onContinue()
+                        },
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
             }
         }

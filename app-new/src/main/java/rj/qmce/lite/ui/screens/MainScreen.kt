@@ -38,6 +38,7 @@ fun MainScreen(
     runtime: mqq.app.AppRuntime?,
     showTimeText: Boolean,
     showPageIndicator: Boolean,
+    onPageChanged: (Int) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenLogoutConfirmation: () -> Unit,
     onForceExit: () -> Unit,
@@ -49,6 +50,10 @@ fun MainScreen(
     onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
+
+    LaunchedEffect(pagerState.currentPage) {
+        onPageChanged(pagerState.currentPage)
+    }
 
     LaunchedEffect(uin, runtime) {
         if (runtime == null) return@LaunchedEffect
@@ -69,6 +74,7 @@ fun MainScreen(
                 0 -> ChatListScreen(
                     uin = uin,
                     runtime = runtime,
+                    isPageVisible = page == pagerState.currentPage,
                     onLogout = onLogout,
                     onOpenChat = onOpenChat,
                     vm = chatListVm,

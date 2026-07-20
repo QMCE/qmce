@@ -46,12 +46,29 @@ import rj.qmce.lite.data.call.CallMode
 import rj.qmce.lite.data.call.CallPhase
 import rj.qmce.lite.data.call.CallUiState
 import rj.qmce.lite.data.call.QmceCallController
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportLifecycle
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
 @Composable
 fun QmceCallScreen(onFinish: () -> Unit) {
     val state by QmceCallController.state.collectAsState()
     val peer = state.peer
     val context = LocalContext.current
+    var incomingSession by remember { mutableStateOf(state.phase == CallPhase.Incoming) }
+    LaunchedEffect(state.phase) {
+        if (state.phase == CallPhase.Incoming) incomingSession = true
+    }
+    val reportPageId = when {
+        state.phase == CallPhase.Incoming -> OfficialReportBridge.PageIds.INVITED_INTERFACE
+        incomingSession -> OfficialReportBridge.PageIds.VOICE
+        state.phase == CallPhase.Idle -> null
+        else -> OfficialReportBridge.PageIds.DIAL_INTERFACE
+    }
+    OfficialReportLifecycle(
+        pageId = reportPageId,
+        params = mapOf("page_model" to if (state.mode.isOnlyAudio) 1 else 2),
+    )
     val permissionResultHandler = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { grants ->
@@ -176,21 +193,41 @@ private fun CallControls(
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ControlButton(
-                text = "拒绝",
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-                contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                onClick = {
-                    QmceCallController.rejectIncoming()
-                    onFinish()
-                },
-            )
-            ControlButton(
-                text = "接听",
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                onClick = onAcceptIncoming,
-            )
+            OfficialReportTargetBox(
+                key = "call:reject",
+                elementId = OfficialReportBridge.ElementIds.HANG_UP,
+            ) { reportTarget ->
+                ControlButton(
+                    text = "拒绝",
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.HANG_UP,
+                        )
+                        QmceCallController.rejectIncoming()
+                        onFinish()
+                    },
+                )
+            }
+            OfficialReportTargetBox(
+                key = "call:answer",
+                elementId = OfficialReportBridge.ElementIds.ANSWER_CALL,
+            ) { reportTarget ->
+                ControlButton(
+                    text = "接听",
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.ANSWER_CALL,
+                        )
+                        onAcceptIncoming()
+                    },
+                )
+            }
         }
         return
     }
@@ -204,32 +241,65 @@ private fun CallControls(
             horizontalArrangement = Arrangement.spacedBy(7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ControlButton(
-                text = if (state.isMuted) "开麦" else "静音",
-                onClick = QmceCallController::toggleMute,
-            )
+            OfficialReportTargetBox(
+                key = "call:microphone",
+                elementId = OfficialReportBridge.ElementIds.MICROPHONE,
+            ) { reportTarget ->
+                ControlButton(
+                    text = if (state.isMuted) "开麦" else "静音",
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.MICROPHONE,
+                        )
+                        QmceCallController.toggleMute()
+                    },
+                )
+            }
             ControlButton(
                 text = if (state.isSpeakerOn) "听筒" else "扬声器",
                 onClick = QmceCallController::toggleSpeaker,
             )
             if (state.mode == CallMode.Video) {
-                ControlButton(
-                    text = if (state.hasLocalVideo) "关视频" else "开视频",
-                    onClick = QmceCallController::toggleVideo,
-                )
+                OfficialReportTargetBox(
+                    key = "call:camera",
+                    elementId = OfficialReportBridge.ElementIds.CAMERA,
+                ) { reportTarget ->
+                    ControlButton(
+                        text = if (state.hasLocalVideo) "关视频" else "开视频",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.CAMERA,
+                            )
+                            QmceCallController.toggleVideo()
+                        },
+                    )
+                }
                 ControlButton(
                     text = "翻转",
                     onClick = QmceCallController::switchCamera,
                 )
             }
         }
-        ControlButton(
-            text = if (state.phase == CallPhase.Ending) "挂断中" else "挂断",
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            enabled = state.phase != CallPhase.Ending,
-            onClick = QmceCallController::hangUp,
-        )
+        OfficialReportTargetBox(
+            key = "call:hang-up",
+            elementId = OfficialReportBridge.ElementIds.HANG_UP,
+        ) { reportTarget ->
+            ControlButton(
+                text = if (state.phase == CallPhase.Ending) "挂断中" else "挂断",
+                containerColor = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                enabled = state.phase != CallPhase.Ending,
+                onClick = {
+                    OfficialReportBridge.reportElementClick(
+                        target = reportTarget,
+                        elementId = OfficialReportBridge.ElementIds.HANG_UP,
+                    )
+                    QmceCallController.hangUp()
+                },
+            )
+        }
     }
 }
 

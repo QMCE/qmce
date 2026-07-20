@@ -56,6 +56,8 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
 private data class LocalGalleryImage(
     val id: Long,
@@ -77,6 +79,7 @@ fun LocalImagePickerScreen(
     onSelectionChange: (List<Uri>) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: (List<Uri>) -> Unit,
+    reportQZoneElements: Boolean = false,
 ) {
     val context = LocalContext.current
     var mediaRevision by remember { mutableStateOf(0) }
@@ -102,17 +105,41 @@ fun LocalImagePickerScreen(
     }
     val scheme = MaterialTheme.colorScheme
     val scaffoldState = rememberLazyListState()
-
-    BackHandler(onBack = onDismiss)
+    BackHandler {
+        onDismiss()
+    }
     ScreenScaffold(
         scrollState = scaffoldState,
         scrollIndicator = null,
         edgeButton = {
-            EdgeButton(
-                onClick = { onConfirm(selectedUris.map(Uri::parse)) },
-                enabled = selectedUris.isNotEmpty(),
-                buttonSize = EdgeButtonSize.Small,
-            ) { Text("添加 ${selectedUris.size}") }
+            val onConfirmClick = {
+                onConfirm(selectedUris.map(Uri::parse))
+            }
+            if (reportQZoneElements) {
+                OfficialReportTargetBox(
+                    key = "local-image-picker:confirm",
+                    modifier = Modifier.fillMaxWidth(),
+                    elementId = OfficialReportBridge.ElementIds.CONFIRM,
+                ) { reportTarget ->
+                    EdgeButton(
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.CONFIRM,
+                            )
+                            onConfirmClick()
+                        },
+                        enabled = selectedUris.isNotEmpty(),
+                        buttonSize = EdgeButtonSize.Small,
+                    ) { Text("添加 ${selectedUris.size}") }
+                }
+            } else {
+                EdgeButton(
+                    onClick = onConfirmClick,
+                    enabled = selectedUris.isNotEmpty(),
+                    buttonSize = EdgeButtonSize.Small,
+                ) { Text("添加 ${selectedUris.size}") }
+            }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->

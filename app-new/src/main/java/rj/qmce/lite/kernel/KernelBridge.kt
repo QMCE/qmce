@@ -5,6 +5,7 @@ import com.tencent.mobileqq.app.guard.GuardManager
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qphone.base.remote.SimpleAccount
 import com.tencent.qqnt.kernel.api.IKernelCreateListener
+import com.tencent.qqnt.kernel.api.IGroupService
 import com.tencent.qqnt.kernel.api.IKernelService
 import com.tencent.qqnt.kernel.nativeinterface.IKernelMsgService
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
@@ -120,6 +121,26 @@ object KernelBridge {
                     "ks=$cachedKs, msg=$cachedMsgService, recent=$cachedRecentService"
         )
         return false
+    }
+
+    fun awaitGroupService(
+        timeoutMillis: Long = 15_000,
+        runtimeOverride: AppRuntime? = null,
+    ): IGroupService? {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (System.currentTimeMillis() < deadline) {
+            val runtime = runtimeOverride ?: QmceApplication.ensureRuntime()
+            val kernelService = cachedKs ?: runCatching {
+                runtime?.getRuntimeService(IKernelService::class.java, "")
+            }.getOrNull()
+            if (kernelService != null) {
+                cacheServices(kernelService)
+                cachedGroupService?.let { return it }
+            }
+            Thread.sleep(250)
+        }
+        Log.w(TAG, "KernelBridge: timed out waiting for group service")
+        return cachedGroupService
     }
 
     /** bind 完成后由 waitForSession 调用，缓存各子 service */

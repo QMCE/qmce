@@ -1,5 +1,6 @@
 package rj.qmce.lite.ui.components
 
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -25,12 +26,16 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
 // 消息列表的单个联系人
 @Composable
 fun ChatItem(
     contact: RecentContactInfo,
-    onClick: () -> Unit = {},
+    reportParams: Map<String, *> = emptyMap<String, Any?>(),
+    reuseIdentifier: String? = null,
+    onClick: (View) -> Unit = {},
     modifier: Modifier = Modifier,
     transformation: SurfaceTransformation? = null,
 ) {
@@ -60,56 +65,66 @@ fun ChatItem(
         ?: contact.avatarUrl?.takeIf { it.isNotBlank() }
         ?: fallbackAvatarUrl
 
-    Button(
-        onClick = onClick,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = scheme.surfaceContainerHigh,
-            contentColor = scheme.onSurface,
-            secondaryContentColor = scheme.onSurfaceVariant,
-        ),
-        transformation = transformation,
-        contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
-        icon = {
-            AsyncImage(
-                model = avatarModel,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(ButtonDefaults.ExtraLargeIconSize)
-                    .clip(CircleShape)
-                    .background(scheme.surfaceContainer, CircleShape),
-                contentScale = ContentScale.Crop,
-            )
-        },
-        secondaryLabel = {
-            Text(
-                text = preview,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (timeStr.isNotEmpty()) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = timeStr,
-                    color = scheme.outline,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
+    val key = reuseIdentifier ?: contact.contactId.takeIf { it > 0L }?.toString()
+        ?: contact.id ?: contact.peerUid ?: name
+    OfficialReportTargetBox(
+        key = "chat-item:$key",
+        modifier = modifier,
+        elementId = OfficialReportBridge.ElementIds.MESSAGE_ENTRY,
+        params = reportParams,
+        reuseIdentifier = reuseIdentifier ?: key,
+    ) { reportTarget ->
+        Button(
+            onClick = { onClick(reportTarget) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = scheme.surfaceContainerHigh,
+                contentColor = scheme.onSurface,
+                secondaryContentColor = scheme.onSurfaceVariant,
+            ),
+            transformation = transformation,
+            contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
+            icon = {
+                AsyncImage(
+                    model = avatarModel,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(ButtonDefaults.ExtraLargeIconSize)
+                        .clip(CircleShape)
+                        .background(scheme.surfaceContainer, CircleShape),
+                    contentScale = ContentScale.Crop,
                 )
+            },
+            secondaryLabel = {
+                Text(
+                    text = preview,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (timeStr.isNotEmpty()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = timeStr,
+                        color = scheme.outline,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }

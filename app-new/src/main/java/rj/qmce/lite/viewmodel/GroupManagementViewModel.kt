@@ -52,6 +52,11 @@ class GroupManagementViewModel : ViewModel() {
 
     private var loadedKey: Long? = null
 
+    override fun onCleared() {
+        infoRepository.close()
+        super.onCleared()
+    }
+
     fun load(groupCode: Long, forceRefresh: Boolean = false) {
         if (groupCode <= 0L) {
             _state.value = GroupManagementState(groupCode = groupCode, error = "群号无效")

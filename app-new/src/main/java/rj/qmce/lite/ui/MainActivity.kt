@@ -8,8 +8,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.View
+import android.widget.FrameLayout
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,6 +34,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -45,6 +49,7 @@ import androidx.wear.compose.material3.timeTextCurvedText
 import androidx.wear.compose.material3.timeTextSeparator
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
+import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +59,12 @@ import rj.qmce.lite.R
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.OnlineStatus
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.data.chat.MessageNavigationSnapshot
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.data.reporting.LocalOfficialReportHost
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportLifecycle
+import rj.qmce.lite.data.reporting.OfficialReportPage
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.AboutScreen
 import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
@@ -98,9 +108,28 @@ import rj.qmce.lite.viewmodel.SettingsViewModel
 class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            WearApp()
+        val reportHost = FrameLayout(this).apply {
+            id = View.generateViewId()
         }
+        val composeView = ComposeView(this).apply {
+            id = View.generateViewId()
+            setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+            )
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            )
+        }
+        reportHost.addView(composeView)
+        composeView.setContent {
+            CompositionLocalProvider(
+                LocalOfficialReportHost provides reportHost,
+            ) {
+                WearApp()
+            }
+        }
+        setContentView(reportHost)
     }
 }
 
@@ -122,6 +151,7 @@ private fun WearApp() {
     var qZoneCommentTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
     var qZoneCommentDraft by remember { mutableStateOf("") }
     var qZoneDetailTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
+    var loginPageId by remember { mutableStateOf<String?>(OfficialReportBridge.PageIds.WELCOME) }
     settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
 
@@ -137,6 +167,7 @@ private fun WearApp() {
             selectedGroupMember = null
             loggedUin = ""
             isLoggedIn = false
+            loginPageId = OfficialReportBridge.PageIds.WELCOME
             onlineDesc = null
             onlineKnown = false
             Log.w("QMCE", "ui: returned to login after official logout=$logoutReason")
@@ -191,7 +222,9 @@ private fun WearApp() {
             autoScale = settings.autoScale,
             manualScale = settings.manualScale,
         ) {
-            SplashScreen()
+            OfficialReportPage(OfficialReportBridge.PageIds.SPLASH) {
+                SplashScreen()
+            }
         }
         return
     }
@@ -243,6 +276,16 @@ private fun WearApp() {
                 val qZoneVm: QZoneViewModel = viewModel()
                 val myVm: MyViewModel = viewModel()
                 val packetToolVm: PacketToolViewModel = viewModel()
+                var mainPage by remember { mutableStateOf(0) }
+                var nestedOfficialPageId by remember { mutableStateOf<String?>(null) }
+                val navBackStackEntry by navController.currentBackStackEntryAsState()
+                LaunchedEffect(navBackStackEntry?.destination?.route) {
+                    nestedOfficialPageId = null
+                }
+                val officialPageId = nestedOfficialPageId ?: officialPageId(
+                    route = navBackStackEntry?.destination?.route,
+                    mainPage = mainPage,
+                )
                 val imagePermissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions(),
                 ) {
@@ -250,70 +293,77 @@ private fun WearApp() {
                         navController.navigate("qzoneImagePicker") { launchSingleTop = true }
                     }
                 }
+                OfficialReportLifecycle(officialPageId)
                 SwipeDismissableNavHost(
                     navController = navController,
                     startDestination = "main"
                 ) {
-                    composable("main") {
-                        MainScreen(
-                            chatListVm = chatListVm,
-                            chatDetailVm = chatDetailVm,
-                            contactsVm = contactsVm,
-                            qZoneVm = qZoneVm,
-                            myVm = myVm,
-                            uin = loggedUin,
-                            runtime = runtime,
-                            showTimeText = settings.showTimeText,
-                            showPageIndicator = settings.showPageIndicator,
-                            onOpenSettings = {
-                                navController.navigate("settings") { launchSingleTop = true }
-                            },
-                            onOpenLogoutConfirmation = {
-                                navController.navigate("logoutConfirmation") {
-                                    launchSingleTop = true
-                                }
-                            },
-                            onForceExit = {
-                                navController.navigate("forceExitConfirmation") {
-                                    launchSingleTop = true
-                                }
-                            },
-                            onOpenQZoneComposer = {
-                                navController.navigate("qzoneComposer") { launchSingleTop = true }
-                            },
-                            onOpenQZoneDetail = { feed ->
-                                qZoneDetailTarget = feed
-                                navController.navigate("qzoneFeedDetail") { launchSingleTop = true }
-                            },
-                            onLogout = {
-                                (context.applicationContext as? QmceApplication)?.clearLocalLoginState()
-                                    ?: LoginPrefs.clear(context)
-                                selectedContact = null
-                                isLoggedIn = false
-                                loggedUin = ""
-                            },
-                            onOpenChat = { contact ->
-                                selectedContact = contact
-                                navController.navigate("chat") { launchSingleTop = true }
-                            },
-                            onOpenChatFromContacts = { uid, uin, name ->
-                                // 从联系人页面点击，构造一个最小 RecentContactInfo
-                                val fakeContact = RecentContactInfo().apply {
-                                    peerUid = uid
-                                    peerUin = uin.toLongOrNull() ?: 0L
-                                    peerName = name
-                                    chatType = 1
-                                    id = uin
-                                }
-                                selectedContact = fakeContact
-                                navController.navigate("chat") { launchSingleTop = true }
-                            },
-                            onOpenContactProfile = { buddy ->
-                                selectedProfileBuddy = buddy
-                                navController.navigate("contactProfile") { launchSingleTop = true }
-                            },
-                        )
-                    }
+                        composable("main") {
+                            MainScreen(
+                                chatListVm = chatListVm,
+                                chatDetailVm = chatDetailVm,
+                                contactsVm = contactsVm,
+                                qZoneVm = qZoneVm,
+                                myVm = myVm,
+                                uin = loggedUin,
+                                runtime = runtime,
+                                showTimeText = settings.showTimeText,
+                                showPageIndicator = settings.showPageIndicator,
+                                onPageChanged = { mainPage = it },
+                                onOpenSettings = {
+                                    navController.navigate("settings") { launchSingleTop = true }
+                                },
+                                onOpenLogoutConfirmation = {
+                                    navController.navigate("logoutConfirmation") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onForceExit = {
+                                    navController.navigate("forceExitConfirmation") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenQZoneComposer = {
+                                    navController.navigate("qzoneComposer") { launchSingleTop = true }
+                                },
+                                onOpenQZoneDetail = { feed ->
+                                    qZoneDetailTarget = feed
+                                    navController.navigate("qzoneFeedDetail") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onLogout = {
+                                    (context.applicationContext as? QmceApplication)
+                                        ?.clearLocalLoginState()
+                                        ?: LoginPrefs.clear(context)
+                                    selectedContact = null
+                                    isLoggedIn = false
+                                    loggedUin = ""
+                                },
+                                onOpenChat = { contact ->
+                                    selectedContact = contact
+                                    navController.navigate("chat") { launchSingleTop = true }
+                                },
+                                onOpenChatFromContacts = { uid, uin, name ->
+                                    // 从联系人页面点击，构造一个最小 RecentContactInfo
+                                    val fakeContact = RecentContactInfo().apply {
+                                        peerUid = uid
+                                        peerUin = uin.toLongOrNull() ?: 0L
+                                        peerName = name
+                                        chatType = 1
+                                        id = uin
+                                    }
+                                    selectedContact = fakeContact
+                                    navController.navigate("chat") { launchSingleTop = true }
+                                },
+                                onOpenContactProfile = { buddy ->
+                                    selectedProfileBuddy = buddy
+                                    navController.navigate("contactProfile") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                            )
+                        }
                     composable("contactProfile") {
                         selectedProfileBuddy?.let { buddy ->
                             ProfileScreen(
@@ -351,6 +401,7 @@ private fun WearApp() {
                                 peerName = contact.peerName ?: contact.id ?: "",
                                 avatarPath = contact.avatarPath.orEmpty(),
                                 avatarUrl = contact.avatarUrl.orEmpty(),
+                                messageNavigation = MessageNavigationSnapshot.fromRecentContact(contact),
                                 myUin = loggedUin,
                                 onBack = { navController.popBackStack() },
                                 onOpenInput = {
@@ -401,6 +452,7 @@ private fun WearApp() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onReportingPageChanged = { nestedOfficialPageId = it },
                                 vm = chatDetailVm
                             )
                         }
@@ -449,6 +501,7 @@ private fun WearApp() {
                                     launchSingleTop = true
                                 }
                             },
+                            onReportingPageChanged = { nestedOfficialPageId = it },
                             onBack = { navController.popBackStack() }
                         )
                     }
@@ -561,6 +614,18 @@ private fun WearApp() {
                             onSendVoice = { file, durationMillis, formatType ->
                                 chatDetailVm.sendVoice(file, durationMillis, formatType)
                             },
+                            onTranscribedText = { text ->
+                                chatDetailVm.setPendingVoiceText(text)
+                                val cameFromInput =
+                                    navController.previousBackStackEntry?.destination?.route == "chatInput"
+                                navController.popBackStack()
+                                if (!cameFromInput) {
+                                    navController.navigate("chatInput") {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
+                            isGroup = chatDetailVm.currentChatType == 2,
                             onBack = { navController.popBackStack() },
                         )
                     }
@@ -701,6 +766,7 @@ private fun WearApp() {
                                 qZonePickerUris = emptyList()
                                 navController.popBackStack()
                             },
+                            reportQZoneElements = true,
                         )
                     }
                     composable("qzoneComment") {
@@ -772,15 +838,46 @@ private fun WearApp() {
                     }
                 }
             } else {
-                LoginScreen(onLoginSuccess = { uin, account ->
-                    LoginPrefs.saveAccount(context, account)
-                    QmceApplication.markLoginEstablished()
-                    val restarted = QmceApplication.restartAfterLogin(context)
-                    Log.d("QMCE", "ui: login persisted uin=$uin, scheduled fresh start=$restarted")
-                })
+                OfficialReportPage(loginPageId) {
+                    LoginScreen(
+                        onPageIdChanged = { loginPageId = it },
+                        onLoginSuccess = { uin, account ->
+                            LoginPrefs.saveAccount(context, account)
+                            QmceApplication.markLoginEstablished()
+                            val restarted = QmceApplication.restartAfterLogin(context)
+                            Log.d(
+                                "QMCE",
+                                "ui: login persisted uin=$uin, scheduled fresh start=$restarted",
+                            )
+                        },
+                    )
+                }
             }
         }
     }
+}
+
+private fun officialPageId(route: String?, mainPage: Int): String? = when (route) {
+    "main" -> when (mainPage) {
+        0 -> OfficialReportBridge.PageIds.MESSAGE
+        1 -> OfficialReportBridge.PageIds.CONTACTS
+        2 -> OfficialReportBridge.PageIds.DYNAMIC_INFORMATION
+        3 -> OfficialReportBridge.PageIds.SETTINGS
+        else -> null
+    }
+
+    "chat", "chatInput" -> OfficialReportBridge.PageIds.AIO
+    "singleEmotionPicker" -> OfficialReportBridge.PageIds.EXPRESSION
+    "voiceRecord" -> null
+    "qzoneFeedDetail", "qzoneComment" -> OfficialReportBridge.PageIds.DYNAMIC_INFORMATION
+    "qzoneComposer" -> OfficialReportBridge.PageIds.DYNAMIC_PUBLISH
+    "qzoneImagePicker" -> OfficialReportBridge.PageIds.ALBUM_SELECTION
+    "settingsClearChatCache" -> OfficialReportBridge.PageIds.CLEARS_MESSAGES
+    "settings", "appearanceSettings", "interactionSettings", "syncDataSettings",
+    "storageSettings", "packetToolSettings" ->
+        OfficialReportBridge.PageIds.SETTINGS
+    "chatSettings" -> OfficialReportBridge.PageIds.SETTINGS
+    else -> null
 }
 
 @Composable

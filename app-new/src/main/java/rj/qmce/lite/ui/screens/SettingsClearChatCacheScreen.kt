@@ -20,6 +20,8 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
 @Composable
 fun SettingsClearChatCacheScreen(onConfirm: () -> Unit, onBack: () -> Unit) {
@@ -30,14 +32,26 @@ fun SettingsClearChatCacheScreen(onConfirm: () -> Unit, onBack: () -> Unit) {
     ScreenScaffold(
         scrollState = listState,
         edgeButton = {
-            EdgeButton(
-                onClick = onConfirm,
-                buttonSize = EdgeButtonSize.Small,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = scheme.error,
-                    contentColor = scheme.onError,
-                ),
-            ) { Text("清理") }
+            OfficialReportTargetBox(
+                key = "settings-clear-cache:confirm",
+                modifier = Modifier.fillMaxWidth(),
+                elementId = OfficialReportBridge.ElementIds.EMPTY,
+            ) { reportTarget ->
+                EdgeButton(
+                    onClick = {
+                        OfficialReportBridge.reportElementClick(
+                            target = reportTarget,
+                            elementId = OfficialReportBridge.ElementIds.EMPTY,
+                        )
+                        onConfirm()
+                    },
+                    buttonSize = EdgeButtonSize.Small,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.error,
+                        contentColor = scheme.onError,
+                    ),
+                ) { Text("清理") }
+            }
         },
         edgeButtonSpacing = 2.5.dp,
     ) { contentPadding ->

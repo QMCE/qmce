@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -79,12 +80,15 @@ import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_END
 import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_START
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Drawable
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import androidx.compose.material3.TextField as MaterialTextField
 import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 import kotlinx.coroutines.Dispatchers
@@ -126,6 +130,7 @@ fun ChatInputScreen(
     ) -> Unit,
     onSendVideo: (Uri) -> Unit,
     onOpenVoiceRecorder: () -> Unit,
+    onReportingPageChanged: (String?) -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -141,6 +146,7 @@ fun ChatInputScreen(
     val atSlots = remember { mutableStateListOf<AtMention>() }
     val editSendState by vm.editSendState.collectAsState()
     val isEditSending = editSendState is ChatDetailViewModel.EditSendState.Sending
+    val pendingVoiceText by vm.pendingVoiceText.collectAsState()
     var activeReplyTarget by remember(peerUid, chatType) {
         mutableStateOf<ChatDetailViewModel.ReplyTarget?>(null)
     }
@@ -156,6 +162,29 @@ fun ChatInputScreen(
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAtPicker by remember { mutableStateOf(false) }
     var atQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(pendingVoiceText) {
+        val text = pendingVoiceText ?: return@LaunchedEffect
+        textFieldValue = TextFieldValue(text, TextRange(text.length))
+        imageSlots.clear()
+        faceSlots.clear()
+        marketFaceSlots.clear()
+        atSlots.clear()
+        vm.consumePendingVoiceText()
+    }
+
+    LaunchedEffect(showToolPanel, showEmojiPicker) {
+        onReportingPageChanged(
+            when {
+                showEmojiPicker -> OfficialReportBridge.PageIds.EXPRESSION
+                showToolPanel -> OfficialReportBridge.PageIds.RICH_MEDIA
+                else -> null
+            },
+        )
+    }
+    DisposableEffect(Unit) {
+        onDispose { onReportingPageChanged(null) }
+    }
 
     fun addImageUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
@@ -775,7 +804,6 @@ private fun ChatInputToolsScreen(
     var showVideoActions by remember { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-
     BackHandler(onBack = onBack)
     ScreenScaffold(scrollState = listState) { contentPadding ->
         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
@@ -797,24 +825,58 @@ private fun ChatInputToolsScreen(
                 */
             }
             item(key = "image") {
-                ChatInputToolButton(
-                    icon = Icons.Default.Image,
-                    label = "图片",
-                    description = "从本地图片库选择",
-                    onClick = onSelectImage,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("rich_media_type" to 1)
+                OfficialReportTargetBox(
+                    key = "aio-rich-media:image",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.RICH_MEDIA_ENTRIES,
+                    params = params,
+                ) { reportTarget ->
+                    ChatInputToolButton(
+                        icon = Icons.Default.Image,
+                        label = "图片",
+                        description = "从本地图片库选择",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.RICH_MEDIA_ENTRIES,
+                                params = params,
+                            )
+                            onSelectImage()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "photo") {
-                ChatInputToolButton(
-                    icon = Icons.Default.PhotoCamera,
-                    label = "拍照",
-                    description = "拍摄后插入到消息中",
-                    onClick = onCapturePhoto,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                val params = mapOf("rich_media_type" to 2)
+                OfficialReportTargetBox(
+                    key = "aio-rich-media:photo",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.RICH_MEDIA_ENTRIES,
+                    params = params,
+                ) { reportTarget ->
+                    ChatInputToolButton(
+                        icon = Icons.Default.PhotoCamera,
+                        label = "拍照",
+                        description = "拍摄后插入到消息中",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.RICH_MEDIA_ENTRIES,
+                                params = params,
+                            )
+                            onCapturePhoto()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "video") {
                 ChatInputToolButton(
@@ -849,14 +911,28 @@ private fun ChatInputToolsScreen(
                 }
             }
             item(key = "voice") {
-                ChatInputToolButton(
-                    icon = Icons.Default.Mic,
-                    label = "语音",
-                    description = "按住录制语音消息",
-                    onClick = onRecordVoice,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
+                OfficialReportTargetBox(
+                    key = "aio-input:voice",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
+                ) { reportTarget ->
+                    ChatInputToolButton(
+                        icon = Icons.Default.Mic,
+                        label = "语音",
+                        description = "按住录制语音消息",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
+                            )
+                            onRecordVoice()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             if (isGroupChat) {
                 item(key = "mention") {
@@ -908,11 +984,16 @@ fun EmotionPickerScreen(
         }
     }
     ScreenScaffold(scrollState = listState) { contentPadding ->
-        TransformingLazyColumn(
-            state = listState,
+        OfficialReportTargetBox(
+            key = "emotion-picker:column",
             modifier = Modifier.fillMaxSize(),
-            contentPadding = contentPadding,
+            elementId = OfficialReportBridge.ElementIds.EMOTICON_COLUMN,
         ) {
+            TransformingLazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = contentPadding,
+            ) {
             item(key = "emoji-title") {
                 Text(
                     text = if (selectedPack == null) "表情" else selectedPack?.name.orEmpty(),
@@ -944,15 +1025,36 @@ fun EmotionPickerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             row.forEach { face ->
-                                EmotionOptionButton(
-                                    face = face,
-                                    label = face.label,
-                                    fallbackText = remember(face.faceType, face.faceIndex, face.label) {
-                                        EmotionRepository.systemFaceText(face)
-                                    },
-                                    onClick = { onSelectSystemFace(face) },
-                                    modifier = Modifier.weight(1f),
+                                val params = mapOf(
+                                    "sticker_id" to (face.stickerId ?: face.faceIndex.toString()),
+                                    "emoji_type" to "1",
                                 )
+                                val reuseIdentifier = "system:${face.faceType}:${face.faceIndex}"
+                                OfficialReportTargetBox(
+                                    key = "emotion:$reuseIdentifier",
+                                    modifier = Modifier.weight(1f),
+                                    elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                    params = params,
+                                    reuseIdentifier = reuseIdentifier,
+                                ) { reportTarget ->
+                                    EmotionOptionButton(
+                                        face = face,
+                                        label = face.label,
+                                        fallbackText = remember(face.faceType, face.faceIndex, face.label) {
+                                            EmotionRepository.systemFaceText(face)
+                                        },
+                                        onClick = {
+                                            OfficialReportBridge.reportElementClick(
+                                                target = reportTarget,
+                                                elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                                params = params,
+                                                reuseIdentifier = reuseIdentifier,
+                                            )
+                                            onSelectSystemFace(face)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                             }
                             repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
@@ -1026,11 +1128,32 @@ fun EmotionPickerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             row.forEach { face ->
-                                MarketFaceOptionButton(
-                                    face = face,
-                                    onClick = { onSelectMarketFace(face) },
-                                    modifier = Modifier.weight(1f),
+                                val params = mapOf(
+                                    "sticker_id" to face.eId,
+                                    "emoji_type" to "2",
                                 )
+                                val reuseIdentifier = "market:${face.epId}:${face.eId}"
+                                OfficialReportTargetBox(
+                                    key = "emotion:$reuseIdentifier",
+                                    modifier = Modifier.weight(1f),
+                                    elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                    params = params,
+                                    reuseIdentifier = reuseIdentifier,
+                                ) { reportTarget ->
+                                    MarketFaceOptionButton(
+                                        face = face,
+                                        onClick = {
+                                            OfficialReportBridge.reportElementClick(
+                                                target = reportTarget,
+                                                elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                                params = params,
+                                                reuseIdentifier = reuseIdentifier,
+                                            )
+                                            onSelectMarketFace(face)
+                                        },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
                             }
                             repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
@@ -1048,6 +1171,7 @@ fun EmotionPickerScreen(
                     }
                 }
             }
+            }
         }
     }
 }
@@ -1061,10 +1185,12 @@ private fun EmotionOptionButton(
     modifier: Modifier,
 ) {
     var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
+    val loadGeneration = remember { AtomicLong(0L) }
     LaunchedEffect(face) {
+        val generation = loadGeneration.incrementAndGet()
         drawable = null
         EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
-            if (loaded != null || drawable == null) {
+            if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
                 drawable = loaded
             }
         }

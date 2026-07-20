@@ -39,6 +39,7 @@ import mqq.app.IAccountCallback
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.emotion.EmotionAssetBridge
+import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.fix.LegacyKiller
 import rj.qmce.lite.fix.PackageSignatureProvider
 import rj.qmce.lite.fix.SignatureProbe
@@ -301,10 +302,17 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
             ensureRuntime(this)
             initializeOfficialImageRuntime()
             registerLogoutCallback()
+            OfficialReportBridge.initialize(this)
         }
     }
 
     private fun initializeOfficialImageRuntime() {
+        runCatching { System.loadLibrary("apng") }
+            .onSuccess { Log.d("QMCE", "libapng.so loaded") }
+            .onFailure { Log.w("QMCE", "libapng.so unavailable", it) }
+        runCatching { System.loadLibrary("jlottie") }
+            .onSuccess { Log.d("QMCE", "libjlottie.so loaded") }
+            .onFailure { Log.w("QMCE", "libjlottie.so unavailable", it) }
         runCatching {
             val taskClass = Class.forName("com.tencent.qqnt.watch.startup.task.UrlDrawableInitTask")
             val task = taskClass.getDeclaredConstructor().newInstance()

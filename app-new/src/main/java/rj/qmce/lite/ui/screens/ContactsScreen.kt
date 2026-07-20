@@ -48,6 +48,8 @@ import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.avatar.IAvatarLoaderApi
 import com.tencent.qqnt.avatar.WatchAvatarView
 import kotlinx.coroutines.GlobalScope
+import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import java.io.File
 import java.util.Locale
@@ -165,58 +167,71 @@ fun ContactsScreen(
                                     .takeIf { it.isNotBlank() }
                                     ?.let(::File)
                                     ?.takeIf(File::isFile)
-                                Button(
-                                    onClick = {
-                                        onOpenChat(
-                                            buddy.uid,
-                                            buddy.uin.toString(),
-                                            buddy.nick
-                                        )
-                                    },
+                                OfficialReportTargetBox(
+                                    key = "contact:${buddy.categoryId}:${buddy.uid}",
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .transformedHeight(this, transformationSpec)
-                                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                                    colors = ButtonDefaults.filledTonalButtonColors(),
-                                    contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                                    transformation = SurfaceTransformation(transformationSpec),
-                                    icon = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(ButtonDefaults.LargeIconSize)
-                                                .background(scheme.surfaceContainer, CircleShape)
-                                                .clickable { onOpenProfile(buddy) },
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            ContactAvatar(
-                                                localAvatar = avatarModel,
-                                                remoteAvatarUrls = buddy.avatarUrls,
-                                                fallbackText = buddy.nick.take(1).ifEmpty { "?" },
+                                        .transformedHeight(this, transformationSpec),
+                                    elementId = OfficialReportBridge.ElementIds.CONTACT_ENTRY,
+                                    reuseIdentifier = buddy.uid,
+                                ) { reportTarget ->
+                                    Button(
+                                        onClick = {
+                                            OfficialReportBridge.reportElementClick(
+                                                target = reportTarget,
+                                                elementId = OfficialReportBridge.ElementIds.CONTACT_ENTRY,
+                                                reuseIdentifier = buddy.uid,
                                             )
-                                            if (buddy.uin > 0L) {
-                                                AndroidView(
-                                                    factory = { context ->
-                                                        WatchAvatarView(
-                                                            context,
-                                                            null
-                                                        ).also { avatarView ->
-                                                            runCatching {
-                                                                QRoute.api(IAvatarLoaderApi::class.java)
-                                                                    .build(context)
-                                                                    .b(avatarView)
-                                                                    .e(buddy.uin, GlobalScope)
-                                                            }
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .size(1.dp)
-                                                        .alpha(0f),
+                                            onOpenChat(
+                                                buddy.uid,
+                                                buddy.uin.toString(),
+                                                buddy.nick
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(),
+                                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                                        transformation = SurfaceTransformation(transformationSpec),
+                                        icon = {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(ButtonDefaults.LargeIconSize)
+                                                    .background(scheme.surfaceContainer, CircleShape)
+                                                    .clickable { onOpenProfile(buddy) },
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                ContactAvatar(
+                                                    localAvatar = avatarModel,
+                                                    remoteAvatarUrls = buddy.avatarUrls,
+                                                    fallbackText = buddy.nick.take(1).ifEmpty { "?" },
                                                 )
+                                                if (buddy.uin > 0L) {
+                                                    AndroidView(
+                                                        factory = { context ->
+                                                            WatchAvatarView(
+                                                                context,
+                                                                null
+                                                            ).also { avatarView ->
+                                                                runCatching {
+                                                                    QRoute.api(IAvatarLoaderApi::class.java)
+                                                                        .build(context)
+                                                                        .b(avatarView)
+                                                                        .e(buddy.uin, GlobalScope)
+                                                                }
+                                                            }
+                                                        },
+                                                        modifier = Modifier
+                                                            .size(1.dp)
+                                                            .alpha(0f),
+                                                    )
+                                                }
                                             }
-                                        }
-                                    },
-                                    secondaryLabel = { Text(buddy.uin.toString(), maxLines = 1) },
-                                ) { Text(buddy.remark.ifEmpty { buddy.nick }, maxLines = 1) }
+                                        },
+                                        secondaryLabel = { Text(buddy.uin.toString(), maxLines = 1) },
+                                    ) { Text(buddy.remark.ifEmpty { buddy.nick }, maxLines = 1) }
+                                }
                             }
                         }
                     }
@@ -327,43 +342,58 @@ private fun ContactSearchScreen(
                         .takeIf { it.isNotBlank() }
                         ?.let(::File)
                         ?.takeIf(File::isFile)
-                    Button(
-                        onClick = { onOpenChat(buddy) },
+                    OfficialReportTargetBox(
+                        key = result.key,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(),
-                        contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-                        transformation = SurfaceTransformation(transformationSpec),
-                        icon = {
-                            Box(
-                                modifier = Modifier
-                                    .size(ButtonDefaults.LargeIconSize)
-                                    .background(scheme.surfaceContainer, CircleShape)
-                                    .clickable { onOpenProfile(buddy) },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                ContactAvatar(
-                                    localAvatar = avatarModel,
-                                    remoteAvatarUrls = buddy.avatarUrls,
-                                    fallbackText = buddy.nick.take(1).ifEmpty { "?" },
+                            .transformedHeight(this, transformationSpec),
+                        elementId = OfficialReportBridge.ElementIds.CONTACT_ENTRY,
+                        reuseIdentifier = buddy.uid,
+                    ) { reportTarget ->
+                        Button(
+                            onClick = {
+                                OfficialReportBridge.reportElementClick(
+                                    target = reportTarget,
+                                    elementId = OfficialReportBridge.ElementIds.CONTACT_ENTRY,
+                                    reuseIdentifier = buddy.uid,
                                 )
-                            }
-                        },
-                        secondaryLabel = {
+                                onOpenChat(buddy)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(),
+                            contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            transformation = SurfaceTransformation(transformationSpec),
+                            icon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(ButtonDefaults.LargeIconSize)
+                                        .background(scheme.surfaceContainer, CircleShape)
+                                        .clickable { onOpenProfile(buddy) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    ContactAvatar(
+                                        localAvatar = avatarModel,
+                                        remoteAvatarUrls = buddy.avatarUrls,
+                                        fallbackText = buddy.nick.take(1).ifEmpty { "?" },
+                                    )
+                                }
+                            },
+                            secondaryLabel = {
+                                Text(
+                                    buddy.categoryName.ifBlank { buddy.uin.toString() },
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            },
+                        ) {
                             Text(
-                                buddy.categoryName.ifBlank { buddy.uin.toString() },
+                                buddy.remark.ifEmpty { buddy.nick },
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                        },
-                    ) {
-                        Text(
-                            buddy.remark.ifEmpty { buddy.nick },
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        }
                     }
                 }
             }

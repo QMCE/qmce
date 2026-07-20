@@ -1,5 +1,8 @@
 package rj.qmce.lite.data.chat
 
+import com.tencent.qqnt.kernel.nativeinterface.PttElement
+import com.tencent.qqnt.kernel.nativeinterface.MsgElement
+
 data class RichMediaKey(
     val messageId: Long,
     val elementId: Long,
@@ -22,6 +25,22 @@ data class PttMediaRef(
     val importRichMediaContext: ByteArray?,
     val fileUuid: String?,
     val durationSeconds: Int,
+    var playState: Int?,
+    val pttElement: PttElement? = null,
+    val msgElement: MsgElement? = null,
+)
+
+enum class PttTranslationPhase {
+    Idle,
+    Loading,
+    Success,
+    Failed,
+}
+
+data class PttTranslationState(
+    val messageId: Long,
+    val phase: PttTranslationPhase,
+    val error: String? = null,
 )
 
 enum class PttPlaybackPhase {

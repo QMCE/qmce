@@ -23,8 +23,8 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 19
-        versionName = "0.4.4"
+        versionCode = 21
+        versionName = "0.4.6"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -80,6 +80,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // 补药开 开了包大小爆炸
     //packaging { jniLibs { useLegacyPackaging = false } }
 }
 

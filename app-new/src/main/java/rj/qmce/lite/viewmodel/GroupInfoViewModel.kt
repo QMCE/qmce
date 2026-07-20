@@ -27,6 +27,11 @@ class GroupInfoViewModel : ViewModel() {
 
     private var loadedKey: Long? = null
 
+    override fun onCleared() {
+        repository.close()
+        super.onCleared()
+    }
+
     fun load(groupCode: Long, forceRefresh: Boolean = false) {
         if (groupCode <= 0L) {
             _state.value = GroupInfoState(groupCode = groupCode, error = "群号无效")

@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -34,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material3.ButtonDefaults
@@ -51,6 +54,7 @@ import com.tencent.mobileqq.utils.RecordParams
 import com.tencent.mobileqq.utils.RecordParams.RecorderParam
 import com.tencent.qqnt.watch.ptt.AudioFileWriterNT
 import com.tencent.qqnt.watch.ptt.PttRecordCallback
+import com.tencent.qqnt.watch.ptt.api.ITranslateTextService
 import kotlinx.coroutines.delay
 import mqq.app.MobileQQ
 import java.io.File
@@ -61,8 +65,26 @@ private sealed interface VoiceRecordState {
     data object Finalizing : VoiceRecordState
     data class Ready(
         val file: File,
+        val pcmFile: File,
         val durationMillis: Long,
         val formatType: Int,
+        val errorMessage: String? = null,
+    ) : VoiceRecordState
+
+    data class Translating(
+        val file: File,
+        val pcmFile: File,
+        val durationMillis: Long,
+        val formatType: Int,
+        val text: String,
+    ) : VoiceRecordState
+
+    data class Transcribed(
+        val file: File,
+        val pcmFile: File,
+        val durationMillis: Long,
+        val formatType: Int,
+        val text: String,
     ) : VoiceRecordState
 
     data class Error(val message: String) : VoiceRecordState
@@ -72,6 +94,8 @@ private sealed interface VoiceRecordState {
 fun VoiceRecordScreen(
     onSendVoice: (File, Long, Int) -> Unit,
     onBack: () -> Unit,
+    onTranscribedText: (String) -> Unit = {},
+    isGroup: Boolean = false,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -80,6 +104,8 @@ fun VoiceRecordScreen(
     var elapsedMillis by remember { mutableLongStateOf(0L) }
     var startedAt by remember { mutableLongStateOf(0L) }
     var discardWhenFinished by remember { mutableStateOf(false) }
+    var translationTaskKey by remember { mutableStateOf<String?>(null) }
+    var translationRequestId by remember { mutableLongStateOf(0L) }
 
     fun beginRecording() {
         if (recordState !is VoiceRecordState.Idle && recordState !is VoiceRecordState.Error) return
@@ -120,6 +146,7 @@ fun VoiceRecordScreen(
                         } else if (file?.isFile == true && file.length() > 0L) {
                             recordState = VoiceRecordState.Ready(
                                 file = file,
+                                pcmFile = File(pcmPath),
                                 durationMillis = totalTime.toLong().coerceAtLeast(0L),
                                 formatType = if (recorderParam?.d == 1) 1 else 0,
                             )
@@ -173,6 +200,141 @@ fun VoiceRecordScreen(
         }
     }
 
+    fun translationService(): ITranslateTextService? = runCatching {
+        MobileQQ.sMobileQQ.peekAppRuntime()
+            .getRuntimeService(ITranslateTextService::class.java, "")
+    }.getOrNull()
+
+    fun cancelTranslation() {
+        translationRequestId++
+        translationTaskKey?.let { key ->
+            runCatching { translationService()?.cancelTask(key) }
+        }
+        translationTaskKey = null
+        val state = recordState as? VoiceRecordState.Translating ?: return
+        recordState = VoiceRecordState.Ready(
+            file = state.file,
+            pcmFile = state.pcmFile,
+            durationMillis = state.durationMillis,
+            formatType = state.formatType,
+        )
+    }
+
+    fun startTranslation(state: VoiceRecordState.Ready) {
+        if (!state.pcmFile.isFile || state.pcmFile.length() <= 0L) {
+            recordState = state.copy(errorMessage = "转换所需的 PCM 文件不存在")
+            return
+        }
+        val service = translationService()
+        if (service == null) {
+            recordState = state.copy(errorMessage = "语音转文字服务不可用")
+            return
+        }
+        val requestId = translationRequestId + 1L
+        translationRequestId = requestId
+        translationTaskKey = null
+        recordState = VoiceRecordState.Translating(
+            file = state.file,
+            pcmFile = state.pcmFile,
+            durationMillis = state.durationMillis,
+            formatType = state.formatType,
+            text = "",
+        )
+        runCatching {
+            service.translateText(
+                isGroup,
+                state.pcmFile,
+                state.file,
+                object : ITranslateTextService.AbsTranslateTextCallback() {
+                    override fun b(
+                        isSuccess: Boolean,
+                        isLast: Boolean,
+                        text: String,
+                        curKey: String,
+                    ) {
+                        mainHandler.post {
+                            if (requestId != translationRequestId) return@post
+                            val current = recordState as? VoiceRecordState.Translating
+                                ?: return@post
+                            if (!isSuccess) {
+                                translationTaskKey = null
+                                recordState = VoiceRecordState.Ready(
+                                    file = current.file,
+                                    pcmFile = current.pcmFile,
+                                    durationMillis = current.durationMillis,
+                                    formatType = current.formatType,
+                                    errorMessage = "转换失败，可重试或发送原语音",
+                                )
+                                return@post
+                            }
+                            val updatedText = text.trim()
+                            if (isLast) {
+                                translationTaskKey = null
+                                recordState = if (updatedText.isBlank()) {
+                                    VoiceRecordState.Ready(
+                                        file = current.file,
+                                        pcmFile = current.pcmFile,
+                                        durationMillis = current.durationMillis,
+                                        formatType = current.formatType,
+                                        errorMessage = "没有识别到内容，可重试或发送原语音",
+                                    )
+                                } else {
+                                    VoiceRecordState.Transcribed(
+                                        file = current.file,
+                                        pcmFile = current.pcmFile,
+                                        durationMillis = current.durationMillis,
+                                        formatType = current.formatType,
+                                        text = updatedText,
+                                    )
+                                }
+                            } else {
+                                recordState = current.copy(text = updatedText)
+                            }
+                        }
+                    }
+                },
+            ).also { key -> translationTaskKey = key }
+        }.onFailure {
+            if (requestId == translationRequestId) {
+                translationTaskKey = null
+                recordState = VoiceRecordState.Ready(
+                    file = state.file,
+                    pcmFile = state.pcmFile,
+                    durationMillis = state.durationMillis,
+                    formatType = state.formatType,
+                    errorMessage = "转换失败，可重试或发送原语音",
+                )
+            }
+        }
+    }
+
+    fun sendReadyVoice(state: VoiceRecordState.Ready) {
+        onSendVoice(state.file, state.durationMillis, state.formatType)
+        state.pcmFile.delete()
+        onBack()
+    }
+
+    fun useTranscribedText(state: VoiceRecordState.Transcribed) {
+        state.file.delete()
+        state.pcmFile.delete()
+        onTranscribedText(state.text)
+        onBack()
+    }
+
+    fun resetReadyState(state: VoiceRecordState.Ready) {
+        state.file.delete()
+        state.pcmFile.delete()
+        recordState = VoiceRecordState.Idle
+        elapsedMillis = 0L
+    }
+
+    fun resetTranscribedState(state: VoiceRecordState.Transcribed) {
+        state.file.delete()
+        state.pcmFile.delete()
+        recordState = VoiceRecordState.Idle
+        elapsedMillis = 0L
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -193,11 +355,22 @@ fun VoiceRecordScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            translationRequestId++
+            translationTaskKey?.let { key ->
+                runCatching { translationService()?.cancelTask(key) }
+            }
+            translationTaskKey = null
             if (recordState is VoiceRecordState.Recording || recordState is VoiceRecordState.Finalizing) {
                 discardWhenFinished = true
                 val activeRecorder = recorder
                 recorder = null
                 runCatching { activeRecorder?.stop() }
+            }
+            when (val state = recordState) {
+                is VoiceRecordState.Ready -> state.pcmFile.delete()
+                is VoiceRecordState.Translating -> state.pcmFile.delete()
+                is VoiceRecordState.Transcribed -> state.pcmFile.delete()
+                else -> Unit
             }
         }
     }
@@ -218,9 +391,13 @@ fun VoiceRecordScreen(
         VoiceRecordState.Idle -> "点击开始录音"
         VoiceRecordState.Recording -> "正在录音"
         VoiceRecordState.Finalizing -> "正在保存录音"
-        is VoiceRecordState.Ready -> "录音已完成"
+        is VoiceRecordState.Ready -> state.errorMessage ?: "录音已完成"
+        is VoiceRecordState.Translating -> "正在转文字"
+        is VoiceRecordState.Transcribed -> "转写完成"
         is VoiceRecordState.Error -> state.message
     }
+    val hasError = recordState is VoiceRecordState.Error ||
+        (recordState as? VoiceRecordState.Ready)?.errorMessage != null
 
     Column(
         modifier = Modifier
@@ -234,7 +411,7 @@ fun VoiceRecordScreen(
             text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(
                 elapsedMillis
             ) else stateLabel,
-            color = if (recordState is VoiceRecordState.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            color = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,
@@ -252,6 +429,29 @@ fun VoiceRecordScreen(
                 text = formatVoiceRecordDuration(state.durationMillis),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (recordState is VoiceRecordState.Translating) {
+            val state = recordState as VoiceRecordState.Translating
+            if (state.text.isNotBlank()) {
+                Text(
+                    text = state.text,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+        if (recordState is VoiceRecordState.Transcribed) {
+            Text(
+                text = (recordState as VoiceRecordState.Transcribed).text,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
             )
         }
         Spacer(Modifier.height(18.dp))
@@ -300,11 +500,7 @@ fun VoiceRecordScreen(
                 val state = recordState as VoiceRecordState.Ready
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CompactButton(
-                        onClick = {
-                            state.file.delete()
-                            recordState = VoiceRecordState.Idle
-                            elapsedMillis = 0L
-                        },
+                        onClick = { resetReadyState(state) },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
@@ -312,10 +508,15 @@ fun VoiceRecordScreen(
                         icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
                     )
                     CompactButton(
-                        onClick = {
-                            onSendVoice(state.file, state.durationMillis, state.formatType)
-                            onBack()
-                        },
+                        onClick = { startTranslation(state) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ),
+                        icon = { Icon(Icons.Default.TextFields, contentDescription = "转文字") },
+                    )
+                    CompactButton(
+                        onClick = { sendReadyVoice(state) },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary,
                             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -326,6 +527,81 @@ fun VoiceRecordScreen(
                                 contentDescription = "发送"
                             )
                         },
+                    )
+                }
+            }
+
+            is VoiceRecordState.Translating -> {
+                val state = recordState as VoiceRecordState.Translating
+                CircularProgressIndicator(
+                    modifier = Modifier.size(42.dp),
+                    strokeWidth = 3.dp,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactButton(
+                        onClick = { cancelTranslation() },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        icon = { Icon(Icons.Default.Close, contentDescription = "取消转文字") },
+                    )
+                    CompactButton(
+                        onClick = {
+                            sendReadyVoice(
+                                VoiceRecordState.Ready(
+                                    file = state.file,
+                                    pcmFile = state.pcmFile,
+                                    durationMillis = state.durationMillis,
+                                    formatType = state.formatType,
+                                ),
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
+                    )
+                }
+            }
+
+            is VoiceRecordState.Transcribed -> {
+                val state = recordState as VoiceRecordState.Transcribed
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CompactButton(
+                        onClick = { resetTranscribedState(state) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
+                    )
+                    CompactButton(
+                        onClick = { useTranscribedText(state) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                        icon = { Icon(Icons.Default.Check, contentDescription = "使用文字") },
+                    )
+                    CompactButton(
+                        onClick = {
+                            sendReadyVoice(
+                                VoiceRecordState.Ready(
+                                    file = state.file,
+                                    pcmFile = state.pcmFile,
+                                    durationMillis = state.durationMillis,
+                                    formatType = state.formatType,
+                                ),
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                        ),
+                        icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
                     )
                 }
             }
