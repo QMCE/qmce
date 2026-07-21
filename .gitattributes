@@ -1,0 +1,16 @@
+*.jar binary
+*.so binary
+*.jks binary
+*.apk binary
+*.png binary
+*.webp binary
+*.jpg binary
+*.gif binary
+*.aar binary
+*.dex binary
+*.zip binary
+*.7z binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
