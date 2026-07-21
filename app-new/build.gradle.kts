@@ -115,6 +115,7 @@ androidComponents {
 
 val configuredBuildToolsVersion = android.buildToolsVersion
 
+/*
 val ultraCompressReleaseApk = tasks.register("ultraCompressReleaseApk") {
     group = "build"
     description = "Rebuilds the signed release APK with maximum standard ZIP Deflate compression."
@@ -232,6 +233,7 @@ tasks.configureEach {
         finalizedBy(ultraCompressReleaseApk)
     }
 }
+*/
 
 dependencies {
     // AppCenter
