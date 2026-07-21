@@ -35,6 +35,8 @@
 # ── 应用代码 ──
 #-keep class rj.qmce.lite.** { *; }
 -keep class rj.qmce.lite.QmceApplication { *; }
+-keep class com.tencent.qqnt.watch.app.WatchApplicationDelegate { *; }
+-keep class com.tencent.qqnt.watch.app.WatchApplicationDelegate$* { *; }
 -keep class rj.qmce.lite.viewmodel.GroupManagementViewModel { *; }
 -keep class androidx.core.app.CoreComponentFactory { *; }
 
