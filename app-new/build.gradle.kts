@@ -64,11 +64,9 @@ android {
             if (enableCodeShrinks)
             {
                 isMinifyEnabled = true
-                //noinspection NotShrinkingResources
-                isShrinkResources = false
+                isShrinkResources = true
             } else {
                 isMinifyEnabled = false
-                //noinspection NotShrinkingResources
                 isShrinkResources = false
             }
             signingConfig = signingConfigs.getByName("dev")
@@ -81,8 +79,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // 补药开 开了包大小爆炸
-    //packaging { jniLibs { useLegacyPackaging = false } }
+    // APK 内 Deflate 压缩 so，安装时解压；false 会 Store 不压缩导致包体暴涨
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        resources {
+            excludes += setOf("lib/x86/**", "lib/x86_64/**")
+        }
+    }
 }
 
 kotlin {

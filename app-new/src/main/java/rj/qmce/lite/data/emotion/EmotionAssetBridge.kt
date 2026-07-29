@@ -17,7 +17,7 @@ import java.util.zip.ZipInputStream
  */
 object EmotionAssetBridge {
     private const val TAG = "QMCE-EmotionAssets"
-    private const val VERSION = 6
+    private const val VERSION = 7
     private const val RESOURCE_DIR = "qq_emoticon_res"
     private const val CONFIG_ASSET = "face_config.json"
     private const val ZIP_ASSET = "bigface.zip"

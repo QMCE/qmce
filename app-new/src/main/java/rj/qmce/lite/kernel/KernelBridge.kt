@@ -609,7 +609,6 @@ object KernelBridge {
             "djinni_interface_core_public",
             "gprowrapper",
             "wrapper",
-            "kernel",
             "startup",
         )
         var ok = true
