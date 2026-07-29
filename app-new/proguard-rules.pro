@@ -50,6 +50,15 @@
 # ── Flag, called by QLog ──
 -keep class rj.qmce.lite.Flag { *; }
 
+# Keep short-name SDK listener bridges used by 9.0.7 qq-sdk
+-keep class rj.qmce.lite.data.chat.OfficialPttPlayerListenerBridge { *; }
+-keep class * extends rj.qmce.lite.data.chat.OfficialPttPlayerListenerBridge { *; }
+-keep class rj.qmce.lite.data.chat.TranslateTextCallbackBridge { *; }
+-keep class * extends rj.qmce.lite.data.chat.TranslateTextCallbackBridge { *; }
+-keepclassmembers class * implements com.tencent.watch.aio_impl.ui.cell.ptt.AIOPttAudioPlayerStateListener { *; }
+-keepclassmembers class * extends com.tencent.qqnt.watch.ptt.api.ITranslateTextService$AbsTranslateTextCallback { *; }
+-keep class rj.qmce.lite.data.chat.MediaSdkAccess { *; }
+
 # R8 may emit duplicate field_ids for NavOptions after field renaming even when
 # horizontal class merging is disabled. ART rejects the entire containing dex.
 -keep class androidx.navigation.NavOptions { *; }

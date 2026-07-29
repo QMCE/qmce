@@ -64,9 +64,6 @@ fun MainScreen(
     LaunchedEffect(uin, runtime) {
         if (runtime == null) return@LaunchedEffect
         qZoneVm.init(runtime)
-        // QZone 走 MSF，可与 NT kernel 并行
-        qZoneVm.loadFeeds(forceRefresh = true)
-
     }
 
     LaunchedEffect(uin, runtime, kernelRetryNonce) {
@@ -84,6 +81,7 @@ fun MainScreen(
             if (ready) {
                 chatListVm.loadContacts(runtime)
                 contactsVm.loadBuddies(runtime, forceRefresh = true)
+                qZoneVm.loadFeeds(forceRefresh = true)
                 return@LaunchedEffect
             }
             if (index < timeouts.lastIndex) {
@@ -94,6 +92,8 @@ fun MainScreen(
         }
         chatListVm.markKernelInitFailed()
         contactsVm.markKernelInitFailed()
+        // Kernel 失败时仍尝试空间（依赖 MSF ticket，不依赖 NT kernel）
+        qZoneVm.loadFeeds(forceRefresh = true)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {

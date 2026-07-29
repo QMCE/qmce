@@ -13,7 +13,6 @@ import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactListChangedInfo
 import com.tencent.qqnt.kernelpublic.nativeinterface.MsgAbstract
 import com.tencent.qqnt.kernelpublic.nativeinterface.MsgAbstractElement
-import com.tencent.qqnt.kernel.utils.RecentThreadDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
+import rj.qmce.lite.data.chat.MediaSdkAccess
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.kernel.SdkCompat
 
@@ -237,13 +237,41 @@ class ChatListViewModel : ViewModel() {
         }
     }
 
-    private fun replaceCache(contacts: Collection<RecentContactInfo>, source: String) =
+    private fun contactComparator(): Comparator<RecentContactInfo> =
+        compareByDescending<RecentContactInfo> { it.topFlag.toInt() != 0 }
+            .thenByDescending { contact ->
+                val sortField = contact.sortField
+                if (sortField != 0L) sortField else contact.msgTime
+            }
+
+    private fun orderedContactIds(contacts: Collection<RecentContactInfo>): List<Long> =
+        contacts.sortedWith(contactComparator()).map { it.contactId }
+
+    private fun runOnRecentThread(block: () -> Unit) {
+        val dispatched = runCatching {
+            MediaSdkAccess.dispatchOnRecentThread(block)
+            true
+        }.onFailure {
+            Log.w(TAG, "recentDispatcher unavailable, applying inline", it)
+        }.getOrDefault(false)
+        if (!dispatched) {
+            runCatching(block).onFailure {
+                Log.w(TAG, "recent apply fallback failed", it)
+            }
+        }
+    }
+
+    private fun replaceCache(
+        contacts: Collection<RecentContactInfo>,
+        source: String,
+        preferredOrder: List<Long>? = null,
+    ) =
         synchronized(cacheLock) {
             contactsById.clear()
             contacts.forEach { contact -> contactsById[contact.contactId] = contact }
-            sortedContactIds = contacts
-                .sortedByDescending { it.msgTime }
-                .map { it.contactId }
+            sortedContactIds = preferredOrder
+                ?.takeIf { it.isNotEmpty() }
+                ?: orderedContactIds(contactsById.values)
             Log.d(TAG, "recentCache[$source]: replace=${contactsById.size}")
         }
 
@@ -280,11 +308,10 @@ class ChatListViewModel : ViewModel() {
             contactsById[incoming.contactId] = incoming
         }
         val nativeOrder = info.sortedContactList.orEmpty()
-        if (nativeOrder.isNotEmpty()) {
-            sortedContactIds = nativeOrder
-        } else if (info.notificationType == 1) {
-            sortedContactIds =
-                contactsById.values.sortedByDescending { it.msgTime }.map { it.contactId }
+        sortedContactIds = if (nativeOrder.isNotEmpty()) {
+            nativeOrder
+        } else {
+            orderedContactIds(contactsById.values)
         }
         Log.d(
             TAG,
@@ -391,7 +418,7 @@ class ChatListViewModel : ViewModel() {
             }
             contactsById.values
                 .filter { it.contactId !in emittedIds }
-                .sortedByDescending { it.msgTime }
+                .sortedWith(contactComparator())
                 .forEach(ordered::add)
             ordered
         }
@@ -494,7 +521,7 @@ class ChatListViewModel : ViewModel() {
                         "v2Listener: type=${info.notificationType}, changed=${info.changedList?.size}, sorted=${info.sortedContactList?.size}, listType=${info.listType}"
                     )
                     logDebugContacts("v2-changed(type=${info.notificationType})", info.changedList)
-                    RecentThreadDispatcher.dispatch {
+                    runOnRecentThread {
                         applyRecentChange(info)
                         patchSentMessages()
                         publishCache("v2")
@@ -615,7 +642,11 @@ class ChatListViewModel : ViewModel() {
                                 val contacts = info.changedList
                                 if (contacts != null && contacts.isNotEmpty()) {
                                     logDebugContacts("snapshot-initial", contacts)
-                                    replaceCache(contacts, "snapshot-initial")
+                                    replaceCache(
+                                        contacts,
+                                        "snapshot-initial",
+                                        info.sortedContactList,
+                                    )
                                     patchSentMessages()
                                     publishCache("snapshot-initial")
                                 }
@@ -643,7 +674,11 @@ class ChatListViewModel : ViewModel() {
                                 )
                                 if (cacheIsEmpty() && code == 0 && info?.changedList != null && info.changedList.isNotEmpty()) {
                                     logDebugContacts("snapshot-poll[$i]", info.changedList)
-                                    replaceCache(info.changedList, "snapshot-poll[$i]")
+                                    replaceCache(
+                                        info.changedList,
+                                        "snapshot-poll[$i]",
+                                        info.sortedContactList,
+                                    )
                                     patchSentMessages()
                                     publishCache("snapshot-poll[$i]")
                                     got.set(true)

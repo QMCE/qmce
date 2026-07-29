@@ -55,6 +55,7 @@ import com.tencent.mobileqq.utils.RecordParams.RecorderParam
 import com.tencent.qqnt.watch.ptt.AudioFileWriterNT
 import com.tencent.qqnt.watch.ptt.PttRecordCallback
 import com.tencent.qqnt.watch.ptt.api.ITranslateTextService
+import rj.qmce.lite.data.chat.TranslateTextCallbackBridge
 import kotlinx.coroutines.delay
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.emotion.EmotionSdkAccess
@@ -246,7 +247,7 @@ fun VoiceRecordScreen(
                 isGroup,
                 state.pcmFile,
                 state.file,
-                object : ITranslateTextService.AbsTranslateTextCallback() {
+                object : TranslateTextCallbackBridge() {
                     override fun onTranslate(
                         isSuccess: Boolean,
                         isLast: Boolean,

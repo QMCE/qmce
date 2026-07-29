@@ -631,9 +631,118 @@ class ChatDetailViewModel : ViewModel() {
                 notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
             ) {
                 if (!isCurrentSession(session)) return
-                if (RichMediaRepository.consumeDownloadCompletion(notify)) emitMessages()
+                val consumed = RichMediaRepository.consumeDownloadCompletion(notify)
+                val updated = applyRichMediaNotify(notify)
+                if (consumed || updated) emitMessages()
+            }
+
+            override fun onRichMediaProgressUpdate(
+                notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
+            ) {
+                if (!isCurrentSession(session)) return
+                if (applyRichMediaNotify(notify)) emitMessages()
             }
         })
+
+    private fun applyRichMediaNotify(
+        notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
+    ): Boolean {
+        val chatContact = contact
+        notify.msgRecord?.let { record ->
+            if (chatContact != null) {
+                return mergeMessages(listOf(record), chatContact) > 0
+            }
+        }
+        if (notify.msgId <= 0L || notify.msgElementId <= 0L) return false
+        return synchronized(messageLock) {
+            val index = msgList.indexOfFirst { it.msgId == notify.msgId }
+            if (index < 0) return@synchronized false
+            val element = msgList[index].elements
+                ?.firstOrNull { it.elementId == notify.msgElementId }
+                ?: return@synchronized false
+            val progress = when {
+                notify.totalSize > 0L ->
+                    ((notify.fileProgress * 100L) / notify.totalSize).toInt().coerceIn(0, 100)
+                notify.fileProgress in 0L..100L -> notify.fileProgress.toInt()
+                else -> null
+            }
+            val path = notify.filePath?.takeIf { it.isNotBlank() }
+            var changed = false
+            element.pttElement?.let { voice ->
+                progress?.let {
+                    if (voice.progress != it) {
+                        voice.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (voice.filePath != it) {
+                        voice.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && voice.transferStatus != notify.trasferStatus) {
+                    voice.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.picElement?.let { picture ->
+                progress?.let {
+                    if (picture.progress != it) {
+                        picture.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (picture.sourcePath != it) {
+                        picture.sourcePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && picture.transferStatus != notify.trasferStatus) {
+                    picture.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.fileElement?.let { file ->
+                progress?.let {
+                    if (file.progress != it) {
+                        file.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (file.filePath != it) {
+                        file.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && file.transferStatus != notify.trasferStatus) {
+                    file.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.videoElement?.let { video ->
+                progress?.let {
+                    if (video.progress != it) {
+                        video.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (video.filePath != it) {
+                        video.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && video.transferStatus != notify.trasferStatus) {
+                    video.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            changed
+        }
+    }
 
     private fun runWhenMessageServiceReady(action: () -> Unit) {
         if (chatRepository.isConnected()) {

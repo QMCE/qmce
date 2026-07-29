@@ -12,6 +12,7 @@ import com.tencent.watch.qzone_impl.feed.ServiceCallbackWrapper
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
 import com.tencent.watch.qzone_impl.utils.UinUtils
 import kotlinx.coroutines.delay
+import mqq.app.MobileQQ
 import java.lang.ref.WeakReference
 
 class QZoneFeedRepository {
@@ -32,6 +33,12 @@ class QZoneFeedRepository {
         isCurrent: () -> Boolean,
         onFeeds: (List<BusinessFeedData>, finishLoading: Boolean) -> Unit,
     ): RefreshResult {
+        when (val readiness = awaitQZoneReady(isCurrent)) {
+            RefreshResult.Cancelled -> return RefreshResult.Cancelled
+            is RefreshResult.Unavailable -> return readiness
+            RefreshResult.Success -> Unit
+        }
+
         val service = awaitFeedService(isCurrent)
             ?: return if (isCurrent()) {
                 RefreshResult.Unavailable("QZoneFeedService 不可用")
@@ -41,6 +48,9 @@ class QZoneFeedRepository {
         feedService = service
 
         val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
+        if (uin <= 0L) {
+            return RefreshResult.Unavailable("账号未就绪")
+        }
         service.m(uin, uin)
         Log.d(TAG, "feed service initialized, uin=$uin")
         registerFeedObserver(service, onFeeds)
@@ -72,6 +82,29 @@ class QZoneFeedRepository {
             }
         }
         return RefreshResult.Success
+    }
+
+    private suspend fun awaitQZoneReady(isCurrent: () -> Boolean): RefreshResult {
+        repeat(READY_POLL_COUNT) {
+            if (!isCurrent()) return RefreshResult.Cancelled
+            val runtime = runCatching { MobileQQ.sMobileQQ?.peekAppRuntime() }.getOrNull()
+            val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
+            val a2 = runCatching { UinUtils.a() }.getOrNull()
+            if (runtime != null && uin > 0L && a2 != null && a2.isNotEmpty()) {
+                Log.d(TAG, "qzone ready: uin=$uin, a2Bytes=${a2.size}")
+                return RefreshResult.Success
+            }
+            delay(READY_POLL_INTERVAL_MILLIS)
+        }
+        val runtime = runCatching { MobileQQ.sMobileQQ?.peekAppRuntime() }.getOrNull()
+        val uin = runCatching { UinUtils.b() }.getOrDefault(0L)
+        val a2 = runCatching { UinUtils.a() }.getOrNull()
+        return when {
+            runtime == null -> RefreshResult.Unavailable("Runtime 未就绪")
+            uin <= 0L -> RefreshResult.Unavailable("账号未就绪")
+            a2 == null || a2.isEmpty() -> RefreshResult.Unavailable("A2 票据未就绪")
+            else -> RefreshResult.Success
+        }
     }
 
     private suspend fun awaitFeedService(isCurrent: () -> Boolean): QZoneFeedService? {
@@ -177,5 +210,7 @@ class QZoneFeedRepository {
         private const val FEED_EVENT_REFRESHED = 4
         private const val POLL_COUNT = 30
         private const val POLL_INTERVAL_MILLIS = 400L
+        private const val READY_POLL_COUNT = 40
+        private const val READY_POLL_INTERVAL_MILLIS = 250L
     }
 }

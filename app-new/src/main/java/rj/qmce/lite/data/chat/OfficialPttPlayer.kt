@@ -80,15 +80,18 @@ object OfficialPttPlayer {
         ownedMessageIds.add(messageId)
     }
 
-    private fun createListener(expectedMessageId: Long) = object : AIOPttAudioPlayerStateListener {
-        override fun onNearToEar(msgId: Long, isNearToEar: Boolean) = Unit
-
+    private fun createListener(expectedMessageId: Long) = object : OfficialPttPlayerListenerBridge() {
         override fun onStart(msgId: Long, path: String) {
             if (msgId != expectedMessageId) return
             publish(msgId) { it.copy(phase = PttPlaybackPhase.Playing, error = null) }
         }
 
-        override fun onComplete(msgId: Long, speed: Float) = Unit
+        override fun onComplete(msgId: Long, speed: Float) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) {
+                it.copy(phase = PttPlaybackPhase.Idle, positionMillis = 0, error = null)
+            }
+        }
 
         override fun onProgressChanged(
             msgId: Long,
@@ -120,7 +123,7 @@ object OfficialPttPlayer {
         override fun onStop(msgId: Long, path: String) {
             if (msgId != expectedMessageId) return
             publish(msgId) {
-                it.copy(phase = PttPlaybackPhase.Failed, error = "无法播放此语音")
+                it.copy(phase = PttPlaybackPhase.Idle, error = null)
             }
         }
     }

@@ -7,7 +7,6 @@ import com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaElementGetReq
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
-import com.tencent.watch.aio_impl.ext.AIOPicDownloader
 import rj.qmce.lite.kernel.KernelBridge
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -213,7 +212,7 @@ object RichMediaRepository {
     fun resolveLocalPicturePaths(element: MsgElement): List<String> =
         PicSize.values().mapNotNull { size ->
             runCatching {
-                AIOPicDownloader.getPicImagePath(element, size)
+                MediaSdkAccess.getPicImagePath(element, size)
             }.getOrNull()
                 ?.let(LocalMediaResolver::resolveFile)
                 ?.absolutePath

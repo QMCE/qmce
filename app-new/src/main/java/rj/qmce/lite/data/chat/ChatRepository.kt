@@ -47,6 +47,7 @@ class ChatRepository {
         fun onReceived(messages: ArrayList<MsgRecord>)
         fun onAddedSendMessage(message: MsgRecord)
         fun onRichMediaDownloadComplete(notify: FileTransNotifyInfo)
+        fun onRichMediaProgressUpdate(notify: FileTransNotifyInfo) = Unit
     }
 
     private var service: IMsgService? = null
@@ -195,6 +196,12 @@ class ChatRepository {
 
                 "onRichMediaDownloadComplete" -> {
                     (args?.getOrNull(0) as? FileTransNotifyInfo)?.let(listener::onRichMediaDownloadComplete)
+                    null
+                }
+
+                // SDK spelling: Progerss
+                "onRichMediaProgerssUpdate" -> {
+                    (args?.getOrNull(0) as? FileTransNotifyInfo)?.let(listener::onRichMediaProgressUpdate)
                     null
                 }
 
