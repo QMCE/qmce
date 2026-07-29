@@ -5,7 +5,7 @@ import com.tencent.common.app.AppInterface
 import com.tencent.mobileqq.pb.ByteStringMicro
 import com.tencent.qphone.base.remote.ToServiceMsg
 import com.tencent.qqnt.kernel.nativeinterface.ArkElement
-import com.tencent.qqnt.kernel.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import mqq.app.AppRuntime
 import rj.qmce.lite.QmceApplication
@@ -22,6 +22,8 @@ class PacketSender(
             val message = ToServiceMsg("mobileqq.service", app.currentAccountUin, normalizedCommand)
             message.putWupBuffer(payload)
             message.addAttribute("req_pb_protocol_flag", true)
+            // ToServiceMsg.extraData is the official side-channel for PB flag; no non-deprecated twin.
+            @Suppress("DEPRECATION")
             message.extraData.putBoolean("req_pb_protocol_flag", true)
             app.sendToService(message)
             Log.d(TAG, "packet: queued PB command=$normalizedCommand bytes=${payload.size}")
@@ -52,6 +54,7 @@ class PacketSender(
             val message = ToServiceMsg("mobileqq.service", app.currentAccountUin, normalizedCommand)
             message.putWupBuffer(pkg.toByteArray())
             message.addAttribute("req_pb_protocol_flag", true)
+            @Suppress("DEPRECATION")
             message.extraData.putBoolean("req_pb_protocol_flag", true)
             app.sendToService(message)
             Log.d(

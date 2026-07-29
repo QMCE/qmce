@@ -40,6 +40,7 @@ import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.emotion.EmotionAssetBridge
 import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.fix.LegacyKiller
 import rj.qmce.lite.fix.PackageSignatureProvider
 import rj.qmce.lite.fix.SignatureProbe
@@ -93,6 +94,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         /**
          * 登录完成后重启主进程，让 MobileQQ、KernelService 和 MsgService 从全新生命周期初始化。
          * 账号必须在调用前落盘；旧进程只负责安排启动并退出，不再尝试复用半初始化的 NT 对象。
+         *
+         * Wear 上 exact alarm / 后台启动可能失败，因此以 Handler startActivity 为主路径，Alarm 仅作备份。
          */
         fun restartAfterLogin(context: Context): Boolean {
             if (!loginRestartScheduled.compareAndSet(false, true)) return false
@@ -109,61 +112,73 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     loginRestartScheduled.set(false)
                     return false
                 }
+            val appContext = context.applicationContext
             val pendingOptions = if (Build.VERSION.SDK_INT >= 34) {
                 ActivityOptions.makeBasic().apply {
                     setPendingIntentCreatorBackgroundActivityStartMode(
-                        if (Build.VERSION.SDK_INT >= 35) {
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS
-                        } else {
-                            ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
-                        },
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
                     )
                 }.toBundle()
             } else {
                 null
             }
             val pendingIntent = PendingIntent.getActivity(
-                context,
+                appContext,
                 0x514D,
                 launchIntent,
                 PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 pendingOptions,
             )
-            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-                ?: run {
-                    loginRestartScheduled.set(false)
-                    return false
-                }
-            val triggerAt = SystemClock.elapsedRealtime() + 1_500L
-            val scheduled = runCatching {
-                if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
+            val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            if (alarmManager != null) {
+                val triggerAt = SystemClock.elapsedRealtime() + 1_500L
+                val scheduled = runCatching {
+                    if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            triggerAt,
+                            pendingIntent,
+                        )
+                    } else {
+                        alarmManager.setExactAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            triggerAt,
+                            pendingIntent,
+                        )
+                    }
+                }.isSuccess
+                if (scheduled) {
+                    Log.i(
+                        "QMCE",
+                        "login restart: alarm scheduled " +
+                                "${triggerAt - SystemClock.elapsedRealtime()}ms " +
+                                "component=${launchIntent.component}",
                     )
                 } else {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
-                    )
+                    Log.w("QMCE", "login restart: alarm schedule failed; relying on startActivity")
                 }
-            }.isSuccess
-            if (!scheduled) {
-                loginRestartScheduled.set(false)
-                Log.e("QMCE", "login restart: failed to schedule alarm")
-                return false
+            } else {
+                Log.w("QMCE", "login restart: AlarmManager unavailable; relying on startActivity")
             }
-            Log.i(
-                "QMCE",
-                "login restart: scheduled ${triggerAt - SystemClock.elapsedRealtime()}ms " +
-                        "component=${launchIntent.component}",
-            )
-            Handler(Looper.getMainLooper()).postDelayed({
-                runCatching { (context as? Activity)?.finishAndRemoveTask() }
-                Process.killProcess(Process.myPid())
-            }, 700L)
+
+            val mainHandler = Handler(Looper.getMainLooper())
+            mainHandler.postDelayed({
+                Log.i("QMCE", "login restart: startActivity component=${launchIntent.component}")
+                runCatching {
+                    if (pendingOptions != null) {
+                        appContext.startActivity(launchIntent, pendingOptions)
+                    } else {
+                        appContext.startActivity(launchIntent)
+                    }
+                }.onFailure { error ->
+                    Log.e("QMCE", "login restart: startActivity failed", error)
+                }
+                mainHandler.postDelayed({
+                    Log.i("QMCE", "login restart: killing pid=${Process.myPid()}")
+                    runCatching { (context as? Activity)?.finishAndRemoveTask() }
+                    Process.killProcess(Process.myPid())
+                }, 300L)
+            }, 1_200L)
             return true
         }
 
@@ -277,14 +292,20 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
     override fun onCreate() {
         Log.d("QMCE", "onCreate start")
         super.onCreate()
+        runCatching { KernelBridge.ensureEarlyNativeBootstrap() }
+            .onFailure { Log.e("QMCE", "early native bootstrap failed", it) }
         Log.d("QMCE", "onCreate super done")
-        AppCenter.start(
-            this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
-            Analytics::class.java, Crashes::class.java
-        )
+        if (BuildConfig.DEBUG) {
+            AppCenter.start(
+                this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
+                Analytics::class.java, Crashes::class.java
+            )
+        }
         CrashCatcher.install(this)
         Log.d("QMCE", "crashcatcher init done")
-        SignatureProbe.dump(this)
+        if (BuildConfig.DEBUG) {
+            SignatureProbe.dump(this)
+        }
         // MMKVInitTask ：必须在 getLastLoginUin 等调用前完成
         synchronized(QMMKV::class.java) {
             if (!QMMKV.d) {
@@ -395,11 +416,19 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         return Thread.currentThread().stackTrace.any { frame ->
             val c = frame.className
             c.startsWith("oicq.wlogin_sdk.") ||
-                    c.startsWith("com.tencent.mobileqq.msf.core.auth.") ||
-                    c.startsWith("com.tencent.mobileqq.msf.core.net.") ||
-                    c.contains("WtLogin") ||
-                    c.contains("wlogin") ||
-                    c == "rj.qmce.lite.fix.SignatureProbe"
+                c.startsWith("com.tencent.mobileqq.msf.core.auth") ||
+                c.startsWith("com.tencent.mobileqq.msf.core.net.") ||
+                c.startsWith("com.tencent.turingfd.") ||
+                c.startsWith("com.tencent.secprotocol.") ||
+                c.startsWith("com.tencent.qimei.") ||
+                c.startsWith("com.tencent.beacon.") ||
+                c == "com.tencent.mobileqq.utils.KidInfoUtil" ||
+                c.startsWith("com.tencent.mobileqq.utils.KidInfoUtil$") ||
+                c == "com.tencent.mobileqq.utils.HexUtil" ||
+                c.startsWith("com.tencent.mobileqq.utils.HexUtil$") ||
+                c.contains("WtLogin") ||
+                c.contains("wlogin") ||
+                c == "rj.qmce.lite.fix.SignatureProbe"
         }
     }
 
@@ -445,8 +474,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         return runtime
     }
 
-    override fun getAppId(processName: String?): Int = 537243416
-    override fun getAppId(): Int = 537243416
+    override fun getAppId(processName: String?): Int = 537282233
+    override fun getAppId(): Int = 537282233
 
     override fun getCustomGuid(): ByteArray? = runCatching {
         val guid = com.tencent.mobileqq.utils.KidInfoUtil.getGuid(this)

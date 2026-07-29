@@ -72,3 +72,30 @@
 # ── 通用 ──
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# ── R8 9.3.16 + 已混淆 qq-sdk：Kotlin companion 链路 NPE；双 jar strip 仍触发 ──
+# 保留 shrink/obfuscate，关掉 optimize 以避开 metadata rewrite 崩溃路径
+-dontoptimize
+
+# ── R8 missing classes (qq-sdk 引用但 jar/依赖未提供；Wear 路径不依赖) ──
+# 来源: app-new/build/outputs/mapping/release/missing_rules.txt
+-dontwarn NS_COMM.COMM$BytesEntry
+-dontwarn NS_COMM.COMM$Entry
+-dontwarn NS_COMM.COMM$StCommonExt
+-dontwarn com.airbnb.lottie.ImageAssetDelegate
+-dontwarn com.airbnb.lottie.LottieAnimationView
+-dontwarn com.airbnb.lottie.LottieComposition
+-dontwarn com.airbnb.lottie.LottieDrawable
+-dontwarn com.airbnb.lottie.OnCompositionLoadedListener
+-dontwarn com.google.android.material.appbar.AppBarLayout$OnOffsetChangedListener
+-dontwarn com.google.android.material.appbar.AppBarLayout
+-dontwarn com.google.android.material.button.MaterialButton
+-dontwarn com.google.android.material.progressindicator.BaseProgressIndicator
+-dontwarn com.google.zxing.Binarizer
+-dontwarn com.google.zxing.BinaryBitmap
+-dontwarn com.google.zxing.DecodeHintType
+-dontwarn com.google.zxing.LuminanceSource
+-dontwarn com.google.zxing.MultiFormatReader
+-dontwarn com.google.zxing.RGBLuminanceSource
+-dontwarn com.google.zxing.Result
+-dontwarn com.google.zxing.common.HybridBinarizer

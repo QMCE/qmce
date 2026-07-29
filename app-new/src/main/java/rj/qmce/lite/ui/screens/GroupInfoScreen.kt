@@ -44,7 +44,7 @@ import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import com.tencent.qqnt.kernel.nativeinterface.MemberRole
+import com.tencent.qqnt.kernelpublic.nativeinterface.MemberRole
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

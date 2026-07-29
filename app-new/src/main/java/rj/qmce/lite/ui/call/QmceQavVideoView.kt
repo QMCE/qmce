@@ -29,12 +29,12 @@ internal class QmceQavVideoView(
         runCatching {
             val currentOperator = currentOperator() ?: return@runCatching
             if (localTarget) {
-                currentOperator.p(true, this)
+                currentOperator.l(true, this)
                 if (!previewOnly) {
-                    currentOperator.f(true)
+                    currentOperator.p(true)
                 }
             } else {
-                currentOperator.r(renderKey, this)
+                currentOperator.v(renderKey, this)
             }
         }
     }
@@ -43,8 +43,8 @@ internal class QmceQavVideoView(
         runCatching {
             val currentOperator = currentOperator() ?: return@runCatching
             if (localTarget) {
-                currentOperator.q()
-                currentOperator.f(false)
+                currentOperator.u()
+                currentOperator.p(false)
             } else if (renderKey.isNotBlank()) {
                 currentOperator.e(renderKey)
             }

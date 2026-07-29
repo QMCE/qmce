@@ -7,9 +7,11 @@ import com.tencent.qqnt.kernel.api.IProfileService
 import com.tencent.qqnt.kernel.api.impl.ProfileService
 import com.tencent.qqnt.kernel.nativeinterface.CoreInfo
 import com.tencent.qqnt.kernel.nativeinterface.IKernelProfileListener
+import com.tencent.qqnt.kernel.nativeinterface.IKernelProfileService
 import com.tencent.qqnt.kernel.nativeinterface.StatusInfo
 import com.tencent.qqnt.kernel.nativeinterface.UserDetailInfo
 import com.tencent.qqnt.kernel.nativeinterface.UserSimpleInfo
+import rj.qmce.lite.kernel.SdkCompat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -60,22 +62,29 @@ object OnlineStatus {
         if (started) return
         selfUid = uid
         try {
-            profileService.H(Listener)
-            val native = (profileService as? ProfileService)?.service
+            SdkCompat.addProfileListener(profileService, Listener)
+            val native = readNativeProfileService(profileService)
             native?.startStatusPolling(true)
-            // 预热缓存
             val map = native?.getStatusInfo("qmce", arrayListOf(uid))
             if (!map.isNullOrEmpty()) merge(map)
             started = true
             Log.d(TAG, "OnlineStatus: started, uid=$uid")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "OnlineStatus: start failed", e)
         }
     }
 
+    private fun readNativeProfileService(profileService: IProfileService): IKernelProfileService? {
+        return runCatching {
+            profileService.javaClass.getMethod("getService").invoke(profileService) as? IKernelProfileService
+        }.getOrNull() ?: runCatching {
+            (profileService as? ProfileService)?.service
+        }.getOrNull()
+    }
+
     private fun merge(map: HashMap<String, StatusInfo>) {
         for ((uid, info) in map) {
-            if (!uid.isNullOrEmpty() && info != null) cache[uid] = info
+            if (!uid.isNullOrEmpty()) cache[uid] = info
         }
     }
 

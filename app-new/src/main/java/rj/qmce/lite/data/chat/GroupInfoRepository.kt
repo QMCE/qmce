@@ -3,12 +3,14 @@ package rj.qmce.lite.data.chat
 import android.util.Log
 import com.tencent.qqnt.kernel.api.IGroupService
 import com.tencent.qqnt.kernel.nativeinterface.*
+import com.tencent.qqnt.kernelpublic.nativeinterface.MemberRole
 import com.tencent.qqnt.watch.troop.api.ITroopRuntimeService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.kernel.SdkCompat
 import java.util.concurrent.ConcurrentHashMap
 
 class GroupInfoRepository {
@@ -25,7 +27,9 @@ class GroupInfoRepository {
         pendingBulletins.clear()
         synchronized(listenerLock) {
             if (listenerRegistered) {
-                runCatching { listenerService?.u(groupListener) }
+                runCatching {
+                    listenerService?.let { SdkCompat.removeGroupListener(it, groupListener) }
+                }
             }
             listenerService = null
             listenerRegistered = false
@@ -166,12 +170,14 @@ class GroupInfoRepository {
     private fun ensureListener(service: IGroupService): Boolean = synchronized(listenerLock) {
         if (listenerRegistered && listenerService === service) return@synchronized true
         if (listenerRegistered) {
-            runCatching { listenerService?.u(groupListener) }
+            runCatching {
+                listenerService?.let { SdkCompat.removeGroupListener(it, groupListener) }
+            }
             listenerRegistered = false
             listenerService = null
         }
         runCatching {
-            service.m(groupListener)
+            SdkCompat.addGroupListener(service, groupListener)
             listenerService = service
             listenerRegistered = true
             true
@@ -219,10 +225,43 @@ class GroupInfoRepository {
             notifies: ArrayList<GroupNotifyMsg>,
         ) = Unit
 
+        override fun onGroupEssenceListChange(groupCode: Long) = Unit
+        override fun onGroupListInited(inited: Boolean) = Unit
+        override fun onGroupMemberLevelInfoChange(
+            groupCode: Long,
+            info: GroupMemberLevelInfo?,
+        ) = Unit
+
+        override fun onGroupNotifiesUnreadCountUpdatedV2(
+            isGroup: Boolean,
+            groupCode: Long,
+            p2: Int,
+            p3: Int,
+            p4: Int,
+            p5: Int,
+        ) = Unit
+
+        override fun onGroupNotifiesUpdatedV2(
+            isGroup: Boolean,
+            groupCode: Long,
+            notifies: ArrayList<GroupNotifyMsg>?,
+            templates: ArrayList<GroupNotifyTemplateItem>?,
+        ) = Unit
+
         override fun onGroupSingleScreenNotifies(
             isGroup: Boolean,
             groupCode: Long,
             notifies: ArrayList<GroupNotifyMsg>,
+        ) = Unit
+
+        override fun onGroupSingleScreenNotifiesV2(
+            isGroup: Boolean,
+            groupCode: Long,
+            p2: Long,
+            p3: Boolean,
+            p4: Int,
+            notifies: ArrayList<GroupNotifyMsg>?,
+            templates: ArrayList<GroupNotifyTemplateItem>?,
         ) = Unit
 
         override fun onGroupStatisticInfoChange(groupCode: Long, info: GroupStatisticInfo) = Unit

@@ -19,6 +19,8 @@ app/dist/output-metadata.json
 app/decompiled/
 # QQPro investigation scratch (pulled device artifacts)
 work/
+# Gradle/Kotlin JVM temp (also under work/; kept explicit for clarity)
+work/.tmp/
 /app-new/build/
 /app/build
 /app/dist
@@ -29,3 +31,6 @@ work/
 /tools
 # AI
 .claude
+# Local Gradle cache (do not commit)
+.gradle_home/
+gradle.properties.local

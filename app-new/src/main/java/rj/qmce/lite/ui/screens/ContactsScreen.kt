@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,19 +47,22 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.avatar.IAvatarLoaderApi
-import com.tencent.qqnt.avatar.WatchAvatarView
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.fix.WatchAvatarViews
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import java.io.File
 import java.util.Locale
 
+@OptIn(DelicateCoroutinesApi::class)
 @Composable
 fun ContactsScreen(
     vm: ContactsViewModel,
     onOpenChat: (String, String, String) -> Unit, // uid, uin, name
     onOpenProfile: (ContactsViewModel.UiBuddy) -> Unit,
+    onRetryKernel: () -> Unit,
 ) {
     val categories by vm.categories.collectAsState()
     val statusText by vm.statusText.collectAsState()
@@ -114,12 +118,19 @@ fun ContactsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center,
                 ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人",
+                                statusText.ifBlank {
+                                    if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人"
+                                },
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.outline,
                         modifier = Modifier.padding(16.dp),
                     )
+                    if (!loading && statusText.contains("内核")) {
+                        CompactButton(onClick = onRetryKernel) { Text("重试") }
+                    }
+                    }
                 }
             }
 
@@ -136,12 +147,10 @@ fun ContactsScreen(
                             transformation = SurfaceTransformation(transformationSpec),
                         ) {
                             Icon(Icons.Default.Search, contentDescription = "搜索联系人")
-                            // Text("搜索联系人")
                         }
                     }
                     visibleCategories.forEach { category ->
                         item(key = "category:${category.id}") {
-                            // 分组标题
                             val transformation = SurfaceTransformation(transformationSpec)
                             Text(
                                 text = category.name + " (${category.buddies.size})",
@@ -210,15 +219,12 @@ fun ContactsScreen(
                                                 if (buddy.uin > 0L) {
                                                     AndroidView(
                                                         factory = { context ->
-                                                            WatchAvatarView(
-                                                                context,
-                                                                null
-                                                            ).also { avatarView ->
+                                                            WatchAvatarViews.create(context).also { avatarView ->
                                                                 runCatching {
                                                                     QRoute.api(IAvatarLoaderApi::class.java)
                                                                         .build(context)
-                                                                        .b(avatarView)
-                                                                        .e(buddy.uin, GlobalScope)
+                                                                        .target(avatarView)
+                                                                        .loadAvatarByGroupCode(buddy.uin, GlobalScope)
                                                                 }
                                                             }
                                                         },

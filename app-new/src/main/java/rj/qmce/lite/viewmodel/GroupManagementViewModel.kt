@@ -3,7 +3,7 @@ package rj.qmce.lite.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tencent.qqnt.kernel.nativeinterface.GroupDetailInfo
-import com.tencent.qqnt.kernel.nativeinterface.MemberRole
+import com.tencent.qqnt.kernelpublic.nativeinterface.MemberRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

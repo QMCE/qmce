@@ -253,6 +253,7 @@ private fun loadVideoThumbnail(context: Context, video: LocalGalleryVideo): Bitm
         return runCatching { resolver.loadThumbnail(video.uri, Size(320, 320), null) }.getOrNull()
     }
     return runCatching {
+        @Suppress("DEPRECATION")
         MediaStore.Video.Thumbnails.getThumbnail(
             resolver,
             video.id,

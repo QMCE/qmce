@@ -176,7 +176,7 @@ private fun WearApp() {
 
     DisposableEffect(isLoggedIn) {
         if (isLoggedIn) {
-            val ps = KernelBridge.getKernelService()?.profileService
+            val ps = KernelBridge.getKernelService()?.getProfileService()
             if (ps != null && loggedUin.isNotEmpty()) {
                 OnlineStatus.start(ps, loggedUin)
             }
@@ -202,10 +202,20 @@ private fun WearApp() {
             if (saved != null) {
                 val uin = saved.uin
                 val result = KernelBridge.bindLoggedInAccount(uin, saved)
-                if (result == "ok") {
-                    KernelBridge.awaitCoreServices(runtimeOverride = r)
+                if (result == "ok" || result == "kernel-not-ready") {
+                    if (result == "kernel-not-ready") {
+                        Log.w(
+                            "QMCE",
+                            "bind: account ok but kernel session not ready; awaiting services",
+                        )
+                    }
+                    KernelBridge.awaitCoreServices(
+                        timeoutMillis = 30_000,
+                        runtimeOverride = r,
+                    )
                     withContext(Dispatchers.Main) { loggedUin = uin; isLoggedIn = true }
                 } else {
+                    Log.e("QMCE", "bindLoggedInAccount failed: $result")
                     withContext(Dispatchers.Main) { LoginPrefs.clear(context) }
                 }
             }

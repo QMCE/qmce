@@ -11,7 +11,9 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.aio.api.IAIOFileTransfer
-import com.tencent.qqnt.kernel.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.CalendarElement
+import com.tencent.qqnt.kernelpublic.nativeinterface.TextGiftElement
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
 import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
@@ -2033,7 +2035,7 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun resolveReplyNicknameFromProfile(identifiers: List<String>): String? {
-        val profileService = KernelBridge.getKernelService()?.profileService ?: return null
+        val profileService = KernelBridge.getKernelService()?.getProfileService() ?: return null
         val directInfo = runCatching {
             profileService.getCoreAndBaseInfo("QMCE-Reply", ArrayList(identifiers))
         }.getOrNull().orEmpty()
@@ -2122,7 +2124,7 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun extractCalendarCard(
-        calendar: com.tencent.qqnt.kernel.nativeinterface.CalendarElement,
+        calendar: CalendarElement,
     ): MessageContent.Calendar = MessageContent.Calendar(
         title = firstNonBlank(calendar.summary, calendar.msg) ?: "日程提醒",
         description = calendar.msg?.takeIf { it.isNotBlank() }
@@ -2132,7 +2134,7 @@ class ChatDetailViewModel : ViewModel() {
     )
 
     private fun extractTextGiftCard(
-        gift: com.tencent.qqnt.kernel.nativeinterface.TextGiftElement,
+        gift: TextGiftElement,
     ): MessageContent.Card {
         val sender = gift.senderNick?.takeIf { it.isNotBlank() }
         val receiver = gift.receiverNick?.takeIf { it.isNotBlank() }

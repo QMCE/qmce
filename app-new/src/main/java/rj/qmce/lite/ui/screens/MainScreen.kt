@@ -9,6 +9,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -17,13 +20,15 @@ import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.HorizontalPageIndicator
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.settingsVm
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
-
 @OptIn(
     androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class,
 )
@@ -50,6 +55,7 @@ fun MainScreen(
     onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
+    var kernelRetryNonce by remember(uin) { mutableIntStateOf(0) }
 
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
@@ -58,9 +64,36 @@ fun MainScreen(
     LaunchedEffect(uin, runtime) {
         if (runtime == null) return@LaunchedEffect
         qZoneVm.init(runtime)
-        chatListVm.loadContacts(runtime)
-        contactsVm.loadBuddies(runtime, forceRefresh = true)
+        // QZone 走 MSF，可与 NT kernel 并行
         qZoneVm.loadFeeds(forceRefresh = true)
+
+    }
+
+    LaunchedEffect(uin, runtime, kernelRetryNonce) {
+        if (runtime == null) return@LaunchedEffect
+        val timeouts = listOf(30_000L, 10_000L, 6_000L)
+        timeouts.forEachIndexed { index, timeoutMillis ->
+            val ready = withContext(Dispatchers.IO) {
+                if (kernelRetryNonce == 0 && index == 0) {
+                    KernelBridge.awaitCoreServices(timeoutMillis, runtime)
+                } else {
+                    KernelBridge.retryCoreServices(timeoutMillis, runtime)
+                }
+            }
+            android.util.Log.d("QMCE", "MainScreen: core services ready=$ready attempt=${index + 1}")
+            if (ready) {
+                chatListVm.loadContacts(runtime)
+                contactsVm.loadBuddies(runtime, forceRefresh = true)
+                return@LaunchedEffect
+            }
+            if (index < timeouts.lastIndex) {
+                chatListVm.markWaitingForKernel()
+                contactsVm.markWaitingForKernel()
+                kotlinx.coroutines.delay(2_000L)
+            }
+        }
+        chatListVm.markKernelInitFailed()
+        contactsVm.markKernelInitFailed()
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -77,6 +110,7 @@ fun MainScreen(
                     isPageVisible = page == pagerState.currentPage,
                     onLogout = onLogout,
                     onOpenChat = onOpenChat,
+                    onRetryKernel = { kernelRetryNonce++ },
                     vm = chatListVm,
                 )
 
@@ -84,6 +118,7 @@ fun MainScreen(
                     vm = contactsVm,
                     onOpenChat = onOpenChatFromContacts,
                     onOpenProfile = onOpenContactProfile,
+                    onRetryKernel = { kernelRetryNonce++ },
                 )
 
                 2 -> QZoneScreen(

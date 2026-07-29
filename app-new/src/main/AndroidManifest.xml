@@ -31,6 +31,7 @@
         android:roundIcon="@drawable/ic_launcher_qq"
         android:allowBackup="true"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.AppCompat.NoActionBar">
         <uses-library android:name="org.apache.http.legacy" android:required="false" />
         <uses-library android:name="com.google.wear" android:required="false" />

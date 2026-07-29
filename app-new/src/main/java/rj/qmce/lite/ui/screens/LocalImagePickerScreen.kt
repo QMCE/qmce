@@ -306,6 +306,7 @@ private fun loadSystemThumbnail(context: Context, image: LocalGalleryImage): Bit
         return runCatching { resolver.loadThumbnail(image.uri, Size(320, 320), null) }.getOrNull()
     }
     return runCatching {
+        @Suppress("DEPRECATION")
         MediaStore.Images.Thumbnails.getThumbnail(
             resolver,
             image.id,

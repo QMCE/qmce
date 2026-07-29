@@ -2,6 +2,7 @@ package rj.qmce.lite.fix;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -27,8 +28,9 @@ public final class LegacyKiller {
 
     private static final String CURRENT_PACKAGE_NAME = BuildConfig.APPLICATION_ID;
     private static final String ORIGIN_PACKAGE_NAME = "com.tencent.qqlite";
-    private static final String ORIGIN_VERSION_NAME = "9.0.3";
-    private static final int ORIGIN_VERSION_CODE = 2465;
+    // Must match official QQ Watch 9.0.7 identity (see work/apk-907/BASELINE.md).
+    private static final String ORIGIN_VERSION_NAME = "9.0.7";
+    private static final int ORIGIN_VERSION_CODE = 2563;
 
     @SuppressWarnings("TextBlockMigration")
     private static final String ORIGIN_SIGNATURE_BASE64 = "MIICUzCCAbygAwIBAgIES7sDYTANBgkqhkiG9w0BAQUFADBtMQ4wDAYDVQQGEwVDaGluYTEPMA0G\n" +
@@ -127,7 +129,7 @@ public final class LegacyKiller {
         );
         sPackageManagerField.set(null, proxy);
         pmProxyInstalled = true;
-        Log.d(TAG, "sPackageManager proxied: " + rawPm.getClass().getName());
+        debugLog("sPackageManager proxied: " + rawPm.getClass().getName());
         hookCurrentApplicationPackageManager(proxy);
     }
 
@@ -160,8 +162,15 @@ public final class LegacyKiller {
             Field mPM = a(pm.getClass(), "mPM");
             Object before = mPM.get(pm);
             mPM.set(pm, proxy);
-            Log.d(TAG, "context PackageManager hooked: " + pm.getClass().getName() + " mPM=" + (before == null ? "null" : before.getClass().getName()));
+            debugLog("context PackageManager hooked: " + pm.getClass().getName()
+                    + " mPM=" + (before == null ? "null" : before.getClass().getName()));
         } catch (Throwable ignored) {
+        }
+    }
+
+    private static void debugLog(String message) {
+        if (BuildConfig.DEBUG) {
+            Log.d(TAG, message);
         }
     }
 
@@ -176,27 +185,42 @@ public final class LegacyKiller {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             String originalPackage = firstPackageArg(args);
-            if (method.getName().startsWith("getPackageInfo") || "getPackagesForUid".equals(method.getName())) {
-                Log.d(TAG, "PM call " + method.getName() + " firstPkg=" + originalPackage + " args=" + describeArgs(args));
+            String methodName = method.getName();
+            if (BuildConfig.DEBUG && (methodName.startsWith("getPackageInfo")
+                    || "getPackagesForUid".equals(methodName)
+                    || "getApplicationInfo".equals(methodName)
+                    || "getInstallerPackageName".equals(methodName))) {
+                debugLog("PM call " + methodName + " firstPkg=" + originalPackage
+                        + " args=" + describeArgs(args));
             }
             Object[] callArgs = maybeMapOriginPackageArgs(method, args);
             Object result = method.invoke(delegate, callArgs);
-            if ("getPackagesForUid".equals(method.getName()) && result instanceof String[] packages) {
+            if ("getInstallerPackageName".equals(methodName)
+                    && shouldSpoofPackage(originalPackage != null ? originalPackage : firstPackageArg(callArgs))) {
+                // Avoid exposing adb / unknown installers to risk probes.
+                return null;
+            }
+            if ("getPackagesForUid".equals(methodName) && result instanceof String[] packages) {
                 if (contains(packages) && isSignatureCheckStack()) {
-                    Log.d(TAG, "fix getPackagesForUid -> origin package");
+                    debugLog("fix getPackagesForUid -> origin package");
                     return new String[]{ORIGIN_PACKAGE_NAME};
                 }
             }
-            if (result instanceof PackageInfo && shouldSpoofPackage(originalPackage)) {
+            if (result instanceof PackageInfo) {
                 PackageInfo packageInfo = (PackageInfo) result;
-                if (isAppCenterDeviceInfoStack()) {
-                    fixAppCenterPackageInfoVersion(packageInfo);
-                } else {
-                    fixPackageInfoVersion(packageInfo);
+                if (shouldSpoofPackage(originalPackage) || shouldSpoofPackage(packageInfo.packageName)) {
+                    if (isAppCenterDeviceInfoStack()) {
+                        fixAppCenterPackageInfoVersion(packageInfo);
+                    } else {
+                        fixPackageInfoVersion(packageInfo);
+                        PackageSignatureProvider.rewritePackageInfo(packageInfo);
+                    }
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
-                    // another way to rewrite sign on a17
-                    PackageSignatureProvider.rewritePackageInfo(packageInfo);
+            }
+            if (result instanceof ApplicationInfo) {
+                ApplicationInfo applicationInfo = (ApplicationInfo) result;
+                if (shouldSpoofPackage(originalPackage) || shouldSpoofPackage(applicationInfo.packageName)) {
+                    fixApplicationInfo(applicationInfo, originalPackage != null ? originalPackage : applicationInfo.packageName);
                 }
             }
             return result;
@@ -208,10 +232,15 @@ public final class LegacyKiller {
         StackTraceElement[] frames = Thread.currentThread().getStackTrace();
         for (StackTraceElement frame : frames) {
             String c = frame.getClassName();
-            if ("com.tencent.mobileqq.msf.core.auth.c".equals(c) || c.startsWith("oicq.wlogin_sdk.")) {
+            if (c.startsWith("oicq.wlogin_sdk.")
+                    || c.startsWith("com.tencent.mobileqq.msf.core.auth")
+                    || c.startsWith("com.tencent.turingfd.")
+                    || c.startsWith("com.tencent.secprotocol.")
+                    || c.startsWith("com.tencent.qimei.")
+                    || c.startsWith("com.tencent.beacon.")) {
                 return true;
             }
-            if ("com.tencent.mobileqq.msf.service.MsfService".equals(c) || c.startsWith("com.tencent.mobileqq.msf.service.")) {
+            if (c.startsWith("com.tencent.mobileqq.msf.service.")) {
                 return false;
             }
         }
@@ -296,8 +325,20 @@ public final class LegacyKiller {
         if (Build.VERSION.SDK_INT >= 28) {
             info.setLongVersionCode(ORIGIN_VERSION_CODE);
         }
-        if (info.applicationInfo != null && ORIGIN_PACKAGE_NAME.equals(info.packageName)) {
-            info.applicationInfo.packageName = ORIGIN_PACKAGE_NAME;
+        if (info.applicationInfo != null) {
+            fixApplicationInfo(info.applicationInfo, info.packageName);
+        }
+    }
+
+    private static void fixApplicationInfo(ApplicationInfo info, String packageName) {
+        if (info == null) return;
+        if (ORIGIN_PACKAGE_NAME.equals(packageName) || CURRENT_PACKAGE_NAME.equals(packageName)
+                || ORIGIN_PACKAGE_NAME.equals(info.packageName)
+                || CURRENT_PACKAGE_NAME.equals(info.packageName)) {
+            info.flags &= ~ApplicationInfo.FLAG_DEBUGGABLE;
+        }
+        if (ORIGIN_PACKAGE_NAME.equals(packageName) || ORIGIN_PACKAGE_NAME.equals(info.packageName)) {
+            info.packageName = ORIGIN_PACKAGE_NAME;
         }
     }
 
@@ -341,7 +382,7 @@ public final class LegacyKiller {
                         m.setAccessible(true);
                         m.invoke(null);
                     }
-                    Log.d(TAG, "PropertyInvalidatedCache." + methodName + " ok");
+                    debugLog("PropertyInvalidatedCache." + methodName + " ok");
                 } catch (Throwable ignored) {
                 }
             }
@@ -355,7 +396,7 @@ public final class LegacyKiller {
                     Method m = cache.getClass().getDeclaredMethod(methodName);
                     m.setAccessible(true);
                     m.invoke(cache);
-                    Log.d(TAG, "sPackageInfoCache." + methodName + " ok");
+                    debugLog("sPackageInfoCache." + methodName + " ok");
                 } catch (Throwable ignored) {
                 }
             }

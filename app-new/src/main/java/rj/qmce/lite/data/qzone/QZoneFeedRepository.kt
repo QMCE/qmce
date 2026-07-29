@@ -45,7 +45,7 @@ class QZoneFeedRepository {
         Log.d(TAG, "feed service initialized, uin=$uin")
         registerFeedObserver(service, onFeeds)
 
-        val feedManager = service.h ?: return RefreshResult.Unavailable("FeedManager 不可用")
+        val feedManager = service.i ?: return RefreshResult.Unavailable("FeedManager 不可用")
         val cached = feedManager.n()
         if (!cached.isNullOrEmpty()) {
             Log.d(TAG, "loaded ${cached.size} cached feeds")
@@ -55,7 +55,7 @@ class QZoneFeedRepository {
         val callback = ServiceCallbackWrapper().apply {
             a = WeakReference(Handler(Looper.getMainLooper()))
         }
-        feedManager.b(0, callback, false)
+        feedManager.j(0, callback, false)
         Log.d(TAG, "requested network feed refresh")
 
         var lastFingerprint = feedFingerprint(cached.orEmpty())
@@ -91,10 +91,10 @@ class QZoneFeedRepository {
         service.n(Handler(Looper.getMainLooper()))
 
         var fresh: List<BusinessFeedData>? = null
-        var lastFingerprint = feedFingerprint(service.h?.n().orEmpty())
+        var lastFingerprint = feedFingerprint(service.i?.n().orEmpty())
         repeat(POLL_COUNT) {
             delay(POLL_INTERVAL_MILLIS)
-            val candidate = service.h?.n()
+            val candidate = service.i?.n()
             if (!candidate.isNullOrEmpty()) {
                 fresh = candidate
                 val fingerprint = feedFingerprint(candidate)
@@ -127,10 +127,10 @@ class QZoneFeedRepository {
                 runCatching { EventCenter.b().g(observer) }
             }
             val observer = object : IObserver.main {
-                override fun s(event: Event) {
+                override fun n(event: Event) {
                     Log.d(TAG, "feed event: type=${event.a}")
                     if (event.a != FEED_EVENT_UPDATED && event.a != FEED_EVENT_REFRESHED) return
-                    val feeds = service.h?.n()
+                    val feeds = service.i?.n()
                     if (!feeds.isNullOrEmpty()) onFeeds(feeds, true)
                 }
             }

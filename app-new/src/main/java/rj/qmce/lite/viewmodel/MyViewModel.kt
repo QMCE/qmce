@@ -49,7 +49,7 @@ class MyViewModel : ViewModel() {
             val selfProfileService = KernelBridge.getSelfProfileService()
             val localNickname = selfProfileService?.getCurrentAccountNickName(uin).orEmpty()
             val localAvatarPath = selfProfileService?.getCurrentAccountAvatarPath(uin).orEmpty()
-            val profileService = KernelBridge.getKernelService()?.profileService
+            val profileService = KernelBridge.getKernelService()?.getProfileService()
             val uid = profileService
                 ?.getUidByUin("QMCE-My", arrayListOf(uin.toLongOrNull() ?: 0L))
                 ?.values
@@ -58,9 +58,9 @@ class MyViewModel : ViewModel() {
             val info = profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
             applyProfile(uin, localNickname, localAvatarPath, info)
 
-            if (forceRefresh) {
+            if (forceRefresh && profileService != null) {
                 runCatching {
-                    profileService?.getUserSimpleInfo(
+                    profileService.getUserSimpleInfo(
                         true,
                         arrayListOf(uid.ifBlank { uin }),
                         object : IOperateCallback {
@@ -72,7 +72,7 @@ class MyViewModel : ViewModel() {
                 }.onFailure { error -> Log.w(TAG, "profile refresh request failed", error) }
                 Thread.sleep(700)
                 val refreshed =
-                    profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
+                    profileService.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
                 applyProfile(
                     uin = uin,
                     localNickname = selfProfileService?.getCurrentAccountNickName(uin).orEmpty(),
@@ -91,7 +91,7 @@ class MyViewModel : ViewModel() {
     }
 
     fun clearChatCache() {
-        val storageService = KernelBridge.getKernelService()?.storageCleanService
+        val storageService = KernelBridge.getKernelService()?.getStorageCleanService()
         if (storageService == null) {
             _operationStatus.value = "缓存服务暂不可用"
             return

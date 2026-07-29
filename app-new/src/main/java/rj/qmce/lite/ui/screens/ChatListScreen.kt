@@ -6,9 +6,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -21,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
@@ -36,6 +40,7 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
@@ -44,12 +49,10 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.ui.components.ChatItem
 import rj.qmce.lite.viewmodel.ChatListViewModel
-import kotlin.time.Duration.Companion.seconds
 
 private const val KERNEL_INIT_ACTION = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
 
@@ -61,6 +64,7 @@ fun ChatListScreen(
     isPageVisible: Boolean,
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
+    onRetryKernel: () -> Unit,
     vm: ChatListViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -96,17 +100,15 @@ fun ChatListScreen(
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         Log.d("QMCE", "ChatList: registered ON_KERNEL_INIT_COMPLETE receiver")
-        vm.loadContacts(runtime)
-        val fallback = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            kotlinx.coroutines.delay(3.seconds)
-            vm.loadContacts(runtime)
-        }
+        // 列表主加载由 MainScreen 在 awaitCoreServices 后触发；此处仅响应 kernel init 广播，
+        // 避免与 MainScreen 并发抢 loading 门闩。
         onDispose {
             Log.d("QMCE", "ChatListScreen: DisposableEffect disposed")
-            fallback.cancel()
             runCatching { context.unregisterReceiver(receiver) }
         }
     }
+
+    val statusText by vm.statusText.collectAsState()
 
     LaunchedEffect(listState, uin, runtime, isPageVisible) {
         if (!isPageVisible) return@LaunchedEffect
@@ -227,6 +229,36 @@ fun ChatListScreen(
                             transformation = SurfaceTransformation(transformationSpec),
                         )
                     }
+                }
+            }
+        }
+    } else {
+        ScreenScaffold(overscrollEffect = null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (statusText.isBlank() || statusText.contains("加载")) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 3.dp,
+                        )
+                    }
+                    Text(
+                        text = statusText.ifBlank { "加载会话..." },
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
+                    )
+                    Text(
+                        text = "重试",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(top = 8.dp)
+                            .clickable { onRetryKernel() }
+                            .padding(8.dp),
+                    )
                 }
             }
         }

@@ -67,7 +67,7 @@ private fun GalleryMediaPage(media: ViewerMedia) {
     var offsetX by remember(media.key) { mutableFloatStateOf(0f) }
     var offsetY by remember(media.key) { mutableFloatStateOf(0f) }
     var loaded by remember(media.key) { mutableStateOf(false) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+    val transformState = rememberTransformableState { _, zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 4f)
         if (scale == 1f) {
             offsetX = 0f

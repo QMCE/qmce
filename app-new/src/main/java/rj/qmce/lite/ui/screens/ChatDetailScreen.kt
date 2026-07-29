@@ -1538,23 +1538,21 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
         )
     }
     val isAnimated = remember(face) {
-        face != null && (face.faceType == 3 || (face.stickerType ?: 0) > 0)
+        face.faceType == 3 || (face.stickerType ?: 0) > 0
     }
     var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
     val loadGeneration = remember { AtomicLong(0L) }
     LaunchedEffect(face) {
         val generation = loadGeneration.incrementAndGet()
         drawable = null
-        face?.let { value ->
-            EmotionRepository.loadSystemFaceDrawable(value) { loaded ->
-                if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
-                    drawable = loaded
-                }
+        EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
+            if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
+                drawable = loaded
             }
         }
     }
     val fallbackText = remember(face, content.text) {
-        face?.let(EmotionRepository::systemFaceText) ?: content.text
+        EmotionRepository.systemFaceText(face).ifBlank { content.text }
     }
     if (drawable == null) {
         MessageFallback(fallbackText)

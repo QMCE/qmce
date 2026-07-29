@@ -213,9 +213,7 @@ object RichMediaRepository {
     fun resolveLocalPicturePaths(element: MsgElement): List<String> =
         PicSize.values().mapNotNull { size ->
             runCatching {
-                val downloader =
-                    AIOPicDownloader::class.java.getField("a").get(null) as AIOPicDownloader
-                downloader.d(element, size)
+                AIOPicDownloader.getPicImagePath(element, size)
             }.getOrNull()
                 ?.let(LocalMediaResolver::resolveFile)
                 ?.absolutePath

@@ -16,6 +16,7 @@ autosize = "1.2.1"
 junit = "4.13.2"
 truth = "1.4.5"
 wear = "1.4.0"
+commonsLang3 = "3.17.0"
 
 [libraries]
 androidx-multidex = { module = "androidx.multidex:multidex", version.ref = "multidex" }
@@ -58,6 +59,7 @@ androidx-compose-ui-util = { module = "androidx.compose.ui:ui-util" }
 
 # AndroidX Wear
 androidx-wear = { module = "androidx.wear:wear", version.ref = "wear" }
+commons-lang3 = { module = "org.apache.commons:commons-lang3", version.ref = "commonsLang3" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

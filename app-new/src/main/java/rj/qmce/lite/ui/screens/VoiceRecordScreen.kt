@@ -57,6 +57,7 @@ import com.tencent.qqnt.watch.ptt.PttRecordCallback
 import com.tencent.qqnt.watch.ptt.api.ITranslateTextService
 import kotlinx.coroutines.delay
 import mqq.app.MobileQQ
+import rj.qmce.lite.data.emotion.EmotionSdkAccess
 import java.io.File
 
 private sealed interface VoiceRecordState {
@@ -119,8 +120,11 @@ fun VoiceRecordScreen(
 
             val callback = object : IQQRecorder.OnQQRecorderListener {
                 override fun a() = Unit
+                override fun b(path: String?, recorderParam: RecorderParam?) = Unit
+                override fun c(): Int = 250
+                override fun d(state: Int) = Unit
 
-                override fun b(
+                override fun e(
                     path: String?,
                     slice: ByteArray?,
                     size: Int,
@@ -129,12 +133,10 @@ fun VoiceRecordScreen(
                     recorderParam: RecorderParam?,
                 ) = Unit
 
-                override fun c(path: String?, recorderParam: RecorderParam?) = Unit
-                override fun d(path: String?, recorderParam: RecorderParam?) = Unit
-                override fun e(path: String?, recorderParam: RecorderParam?) = Unit
-                override fun f(): Int = 250
+                override fun f(path: String?, recorderParam: RecorderParam?) = Unit
+                override fun g(path: String?, recorderParam: RecorderParam?) = Unit
 
-                override fun g(path: String?, recorderParam: RecorderParam?, totalTime: Double) {
+                override fun h(path: String?, recorderParam: RecorderParam?, totalTime: Double) {
                     mainHandler.post {
                         recorder = null
                         val file = path?.let(::File)
@@ -156,7 +158,7 @@ fun VoiceRecordScreen(
                     }
                 }
 
-                override fun h(path: String?, recorderParam: RecorderParam?, error: String?) {
+                override fun i(path: String?, recorderParam: RecorderParam?, error: String?) {
                     mainHandler.post {
                         if (recordState is VoiceRecordState.Recording || recordState is VoiceRecordState.Finalizing) {
                             recorder = null
@@ -167,15 +169,14 @@ fun VoiceRecordScreen(
                     }
                 }
 
-                override fun i(path: String?, recorderParam: RecorderParam?): Int = -1
-                override fun j(state: Int) = Unit
+                override fun j(path: String?, recorderParam: RecorderParam?): Int = -1
             }
-            val pttCallback = PttRecordCallback(null, AudioFileWriterNT(null)).apply {
-                c = callback
+            val pttCallback = PttRecordCallback(null, AudioFileWriterNT(null)).also { callbackHolder ->
+                EmotionSdkAccess.setPttRecordPanel(callbackHolder, callback)
             }
             val newRecorder = QRoute.api(IQQRecorderUtils::class.java).createQQRecorder(context)
-            newRecorder.c(recorderParam)
-            newRecorder.d(pcmPath)
+            newRecorder.d(recorderParam)
+            newRecorder.c(pcmPath)
             newRecorder.f(pttCallback)
             newRecorder.a(outputPath)
             recorder = newRecorder
@@ -246,7 +247,7 @@ fun VoiceRecordScreen(
                 state.pcmFile,
                 state.file,
                 object : ITranslateTextService.AbsTranslateTextCallback() {
-                    override fun b(
+                    override fun onTranslate(
                         isSuccess: Boolean,
                         isLast: Boolean,
                         text: String,
