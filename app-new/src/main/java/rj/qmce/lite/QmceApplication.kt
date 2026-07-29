@@ -95,7 +95,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
          * 登录完成后重启主进程，让 MobileQQ、KernelService 和 MsgService 从全新生命周期初始化。
          * 账号必须在调用前落盘；旧进程只负责安排启动并退出，不再尝试复用半初始化的 NT 对象。
          *
-         * Wear 上 exact alarm / 后台启动可能失败，因此以 Handler startActivity 为主路径，Alarm 仅作备份。
+         * Alarm 调度成功才允许杀进程（Wear 上后台 startActivity 常失败）；成功后再用
+         * startActivity 加速拉起，Alarm 作备份。
          */
         fun restartAfterLogin(context: Context): Boolean {
             if (!loginRestartScheduled.compareAndSet(false, true)) return false
@@ -130,36 +131,38 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 pendingOptions,
             )
             val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            if (alarmManager != null) {
-                val triggerAt = SystemClock.elapsedRealtime() + 1_500L
-                val scheduled = runCatching {
-                    if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
-                        alarmManager.setAndAllowWhileIdle(
-                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                            triggerAt,
-                            pendingIntent,
-                        )
-                    } else {
-                        alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                            triggerAt,
-                            pendingIntent,
-                        )
-                    }
-                }.isSuccess
-                if (scheduled) {
-                    Log.i(
-                        "QMCE",
-                        "login restart: alarm scheduled " +
-                                "${triggerAt - SystemClock.elapsedRealtime()}ms " +
-                                "component=${launchIntent.component}",
+            if (alarmManager == null) {
+                loginRestartScheduled.set(false)
+                Log.e("QMCE", "login restart: AlarmManager unavailable")
+                return false
+            }
+            val triggerAt = SystemClock.elapsedRealtime() + 1_500L
+            val alarmScheduled = runCatching {
+                if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent,
                     )
                 } else {
-                    Log.w("QMCE", "login restart: alarm schedule failed; relying on startActivity")
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerAt,
+                        pendingIntent,
+                    )
                 }
-            } else {
-                Log.w("QMCE", "login restart: AlarmManager unavailable; relying on startActivity")
+            }.isSuccess
+            if (!alarmScheduled) {
+                loginRestartScheduled.set(false)
+                Log.e("QMCE", "login restart: failed to schedule alarm")
+                return false
             }
+            Log.i(
+                "QMCE",
+                "login restart: alarm scheduled " +
+                        "${triggerAt - SystemClock.elapsedRealtime()}ms " +
+                        "component=${launchIntent.component}",
+            )
 
             val mainHandler = Handler(Looper.getMainLooper())
             mainHandler.postDelayed({
@@ -171,14 +174,14 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                         appContext.startActivity(launchIntent)
                     }
                 }.onFailure { error ->
-                    Log.e("QMCE", "login restart: startActivity failed", error)
+                    Log.e("QMCE", "login restart: startActivity failed; alarm will relaunch", error)
                 }
                 mainHandler.postDelayed({
                     Log.i("QMCE", "login restart: killing pid=${Process.myPid()}")
                     runCatching { (context as? Activity)?.finishAndRemoveTask() }
                     Process.killProcess(Process.myPid())
                 }, 300L)
-            }, 1_200L)
+            }, 700L)
             return true
         }
 
@@ -295,12 +298,12 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         runCatching { KernelBridge.ensureEarlyNativeBootstrap() }
             .onFailure { Log.e("QMCE", "early native bootstrap failed", it) }
         Log.d("QMCE", "onCreate super done")
-        if (BuildConfig.DEBUG) {
-            AppCenter.start(
-                this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
-                Analytics::class.java, Crashes::class.java
-            )
-        }
+        AppCenter.start(
+            this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
+            Analytics::class.java, Crashes::class.java
+        )
+        Analytics.setEnabled(true)
+        Crashes.setEnabled(true)
         CrashCatcher.install(this)
         Log.d("QMCE", "crashcatcher init done")
         if (BuildConfig.DEBUG) {

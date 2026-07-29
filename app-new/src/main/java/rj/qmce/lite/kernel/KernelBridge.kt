@@ -162,7 +162,7 @@ object KernelBridge {
         runtimeOverride: AppRuntime? = null,
     ): Boolean {
         synchronized(coreInitLock) {
-            if (activeCoreInit?.isDone == false) return false
+            activeCoreInit?.cancel(true)
             lastForcedStartKs = null
             activeCoreInit = null
             _coreServicesStatus.value = CoreServicesStatus(CoreServicesPhase.Idle)
@@ -174,6 +174,7 @@ object KernelBridge {
         timeoutMillis: Long,
         runtimeOverride: AppRuntime?,
     ): Boolean {
+        val myTask = synchronized(coreInitLock) { activeCoreInit }
         val startedAt = System.currentTimeMillis()
         val attempt = synchronized(coreInitLock) { ++coreInitAttempt }
         publishCoreStatus(CoreServicesPhase.Starting, attempt = attempt)
@@ -185,6 +186,10 @@ object KernelBridge {
         )
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
+            if (Thread.interrupted() || synchronized(coreInitLock) { activeCoreInit !== myTask }) {
+                Log.i(TAG, "KernelBridge: core init interrupted/superseded attempt=$attempt")
+                return false
+            }
             val runtime = runtimeOverride ?: QmceApplication.ensureRuntime()
             val kernelService = cachedKs ?: runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
@@ -212,7 +217,17 @@ object KernelBridge {
                     return true
                 }
             }
-            Thread.sleep(250)
+            try {
+                Thread.sleep(250)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                Log.i(TAG, "KernelBridge: core init sleep interrupted attempt=$attempt")
+                return false
+            }
+        }
+        if (Thread.interrupted() || synchronized(coreInitLock) { activeCoreInit !== myTask }) {
+            Log.i(TAG, "KernelBridge: core init superseded after timeout attempt=$attempt")
+            return false
         }
         val ks = cachedKs
         // 允许后续重试再次 force start

@@ -57,7 +57,9 @@ import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.kernel.KernelBridge
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The data and NT bridge for system faces and market-face stickers.
@@ -107,6 +109,12 @@ object EmotionRepository {
     )
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val emotionIoThreadSeq = AtomicInteger(0)
+    private val ioExecutor = Executors.newFixedThreadPool(2) { runnable ->
+        Thread(runnable, "QMCE-Emotion-IO-${emotionIoThreadSeq.getAndIncrement()}").apply {
+            isDaemon = true
+        }
+    }
     private val marketJsonPaths = ConcurrentHashMap<Int, String>()
     private val marketPreviewPathCache = ConcurrentHashMap<String, String>()
     private val animatedDrawableCache = ConcurrentHashMap<String, IAniStickerLottieDrawable>()
@@ -445,25 +453,14 @@ object EmotionRepository {
         face: Selection.SystemFace,
         onResult: (Drawable?) -> Unit,
     ) {
-        Thread {
-            val drawable = runCatching {
-                val info = animatedStickerInfo(face) ?: return@runCatching null
-                val svgPath = QQSysAndEmojiResMgr.getInstance()
-                    .getAniStickerResPath(info.e, info.b, info.c)
-                    .takeIf(::isReadableFile)
-                    ?: return@runCatching null
-                val context = BaseApplication.getContext()
-                val size = (64f * context.resources.displayMetrics.density)
-                    .toInt()
-                    .coerceAtLeast(1)
-                null as Drawable?
-            }.onFailure {
-                Log.d(TAG, "animated face svg thumb unavailable face=${face.faceIndex}", it)
-            }.getOrNull()
+        // 9.0.7 已无 AniStickerSvgHelper；Lottie 失败时回退本地静态/APNG 缩略图
+        ioExecutor.execute {
+            val drawable = runCatching { localSystemFaceDrawable(face) }
+                .onFailure {
+                    Log.d(TAG, "animated face static thumb unavailable face=${face.faceIndex}", it)
+                }
+                .getOrNull()
             mainHandler.post { onResult(drawable) }
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
