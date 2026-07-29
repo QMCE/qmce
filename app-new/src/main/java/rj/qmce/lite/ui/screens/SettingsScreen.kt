@@ -249,7 +249,7 @@ fun AppearanceSettingsScreen(
                     checked = settings.autoScale,
                     onCheckedChange = settingsVm::setAutoScale,
                     title = "自动缩放",
-                    subtitle = "使用手表的原生尺寸和密度",
+                    subtitle = "按屏幕尺寸自动调整",
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
                 )
@@ -277,7 +277,7 @@ fun AppearanceSettingsScreen(
                         )
                     }
                     Text(
-                        if (settings.autoScale) "关闭自动缩放后可调整" else "调整界面缩放倍率",
+                        if (settings.autoScale) "关闭自动缩放后可手动调整倍率" else "调整界面缩放倍率",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )

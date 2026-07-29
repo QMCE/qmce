@@ -77,7 +77,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val KEY_FULLSCREEN_DIALOGS = "fullscreen_dialogs"
         const val KEY_AUTO_SCALE = "auto_scale"
         const val KEY_MANUAL_SCALE = "manual_scale"
-        const val DEFAULT_MANUAL_SCALE = 1.1f
+        const val DEFAULT_MANUAL_SCALE = 1.50f
         const val MIN_MANUAL_SCALE = 0.75f
         const val MAX_MANUAL_SCALE = 2.0f
     }

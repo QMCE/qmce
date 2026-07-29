@@ -39,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,6 +52,7 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 
 private data class LocalGalleryVideo(
     val id: Long,
@@ -109,7 +109,7 @@ fun LocalVideoPickerScreen(
                 buttonSize = EdgeButtonSize.Small,
             ) { Text("发送") }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         when (val state = galleryState) {
             VideoGalleryLoadState.Loading -> Box(
@@ -163,7 +163,7 @@ fun LocalVideoPickerScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .background(Color(0x66000000)),
+                                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.4f)),
                                         )
                                         Box(
                                             modifier = Modifier

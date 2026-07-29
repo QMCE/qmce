@@ -3,6 +3,7 @@ package rj.qmce.lite.ui.components
 import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Flag
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,6 +20,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
@@ -29,7 +35,7 @@ import java.util.Locale
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 
-// 消息列表的单个联系人
+/** Recent-contact row for the chat list (Wear M3 Button). */
 @Composable
 fun ChatItem(
     contact: RecentContactInfo,
@@ -41,6 +47,7 @@ fun ChatItem(
 ) {
     val scheme = MaterialTheme.colorScheme
     val isGroup = contact.chatType == 2
+    val pinned = contact.topFlag.toInt() != 0
     val name = if (isGroup) {
         contact.peerName?.takeIf { it.isNotBlank() } ?: contact.id ?: "未知群"
     } else {
@@ -49,9 +56,15 @@ fun ChatItem(
             ?: contact.memberName?.takeIf { it.isNotBlank() }
             ?: contact.id ?: "未知"
     }
-    val preview = contact.abstractContent
-        ?.joinToString("") { it.content ?: "" }
-        ?.takeIf { it.isNotBlank() } ?: ""
+    val preview = buildString {
+        if (pinned) append("置顶 · ")
+        append(
+            contact.abstractContent
+                ?.joinToString("") { it.content ?: "" }
+                ?.takeIf { it.isNotBlank() }
+                .orEmpty(),
+        )
+    }
     val timeStr = formatTime(contact.msgTime)
     val fallbackAvatarUrl = if (isGroup) {
         "https://p.qlogo.cn/gh/${contact.id}/${contact.id}/100"
@@ -80,29 +93,58 @@ fun ChatItem(
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 2.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = scheme.surfaceContainerHigh,
-                contentColor = scheme.onSurface,
-                secondaryContentColor = scheme.onSurfaceVariant,
+                containerColor = if (pinned) {
+                    scheme.primaryContainer
+                } else {
+                    scheme.surfaceContainerHigh
+                },
+                contentColor = if (pinned) scheme.onPrimaryContainer else scheme.onSurface,
+                secondaryContentColor = if (pinned) {
+                    scheme.onPrimaryContainer.copy(alpha = 0.8f)
+                } else {
+                    scheme.onSurfaceVariant
+                },
             ),
             transformation = transformation,
             contentPadding = ButtonDefaults.ButtonWithExtraLargeIconContentPadding,
             icon = {
-                AsyncImage(
-                    model = avatarModel,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(ButtonDefaults.ExtraLargeIconSize)
-                        .clip(CircleShape)
-                        .background(scheme.surfaceContainer, CircleShape),
-                    contentScale = ContentScale.Crop,
-                )
+                val hasUnread = (contact.unreadCnt ?: 0) > 0
+                Box {
+                    AsyncImage(
+                        model = avatarModel,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(ButtonDefaults.ExtraLargeIconSize)
+                            .clip(CircleShape)
+                            .background(scheme.surfaceContainer, CircleShape),
+                        contentScale = ContentScale.Crop,
+                    )
+                    if (hasUnread) {
+                        Box(
+                            modifier = Modifier
+                                .size(14.dp)
+                                .align(Alignment.BottomEnd)
+                                .background(scheme.primary, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.Flag,
+                                contentDescription = "未读",
+                                tint = scheme.onPrimary,
+                                modifier = Modifier.size(9.dp),
+                            )
+                        }
+                    }
+                }
             },
             secondaryLabel = {
-                Text(
-                    text = preview,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (preview.isNotBlank()) {
+                    Text(
+                        text = preview,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             },
         ) {
             Row(

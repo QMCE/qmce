@@ -34,6 +34,7 @@ import androidx.compose.material3.TextField as MaterialTextField
 import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 
 @Composable
 fun QZoneComposerScreen(
@@ -79,7 +80,7 @@ fun QZoneComposerScreen(
                 ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
             }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -105,11 +106,11 @@ fun QZoneComposerScreen(
                             }
                         }
                         .padding(horizontal = 10.dp)
-                        .defaultMinSize(minHeight = 112.dp),
+                        .defaultMinSize(minHeight = 80.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
                     placeholder = { Text("写点什么…", style = MaterialTheme.typography.bodySmall) },
-                    minLines = 3,
-                    maxLines = 6,
+                    minLines = 2,
+                    maxLines = 4,
                     shape = RoundedCornerShape(20.dp),
                     colors = MaterialTextFieldDefaults.colors(
                         focusedContainerColor = scheme.surfaceContainerHigh,

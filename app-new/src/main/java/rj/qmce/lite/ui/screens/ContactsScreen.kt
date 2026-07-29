@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -35,9 +34,9 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListSubHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -52,6 +51,8 @@ import kotlinx.coroutines.GlobalScope
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.fix.WatchAvatarViews
+import rj.qmce.lite.ui.wear.QmceEmptyOrErrorState
+import rj.qmce.lite.ui.wear.QmceLoadingState
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import java.io.File
 import java.util.Locale
@@ -102,39 +103,25 @@ fun ContactsScreen(
         return
     }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
-        when {
-            loading && categories.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                }
-            }
+    when {
+        loading && categories.isEmpty() -> {
+            QmceLoadingState(message = statusText.ifBlank { "加载联系人…" })
+        }
 
-            visibleCategories.isEmpty() -> {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                                statusText.ifBlank {
-                                    if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人"
-                                },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.outline,
-                        modifier = Modifier.padding(16.dp),
-                    )
-                    if (!loading && statusText.contains("内核")) {
-                        CompactButton(onClick = onRetryKernel) { Text("重试") }
-                    }
-                    }
-                }
-            }
+        visibleCategories.isEmpty() -> {
+            val isKernelIssue = !loading && statusText.contains("内核")
+            QmceEmptyOrErrorState(
+                message = statusText.ifBlank {
+                    if (categories.isEmpty()) "暂无联系人" else "没有匹配联系人"
+                },
+                actionLabel = if (isKernelIssue) "重试" else null,
+                onAction = if (isKernelIssue) onRetryKernel else null,
+                isError = isKernelIssue,
+            )
+        }
 
-            else -> {
+        else -> {
+            ScreenScaffold(scrollState = listState) { contentPadding ->
                 TransformingLazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
@@ -151,22 +138,17 @@ fun ContactsScreen(
                     }
                     visibleCategories.forEach { category ->
                         item(key = "category:${category.id}") {
-                            val transformation = SurfaceTransformation(transformationSpec)
-                            Text(
-                                text = category.name + " (${category.buddies.size})",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = scheme.primary,
-                                fontWeight = FontWeight.Medium,
+                            ListSubHeader(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .transformedHeight(this, transformationSpec)
-                                    .graphicsLayer {
-                                        with(transformation) {
-                                            applyContainerTransformation()
-                                            applyContentTransformation()
-                                        }
-                                    }
-                                    .padding(horizontal = 14.dp, vertical = 4.dp)
+                                    .transformedHeight(this, transformationSpec),
+                                transformation = SurfaceTransformation(transformationSpec),
+                                label = {
+                                    Text(
+                                        text = "${category.name} (${category.buddies.size})",
+                                        fontWeight = FontWeight.Medium,
+                                    )
+                                },
                             )
                         }
                         category.buddies.forEach { buddy ->

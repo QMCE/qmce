@@ -74,11 +74,15 @@ fun ChatMessageSearchScreen(
                     colors = MaterialTextFieldDefaults.colors(
                         focusedContainerColor = scheme.surfaceContainerHigh,
                         unfocusedContainerColor = scheme.surfaceContainerHigh,
+                        disabledContainerColor = scheme.surfaceContainerHigh,
                         focusedTextColor = scheme.onSurface,
                         unfocusedTextColor = scheme.onSurface,
                         cursorColor = scheme.primary,
                         focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                         unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedPlaceholderColor = scheme.onSurfaceVariant,
+                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
                     ),
                 )
             }

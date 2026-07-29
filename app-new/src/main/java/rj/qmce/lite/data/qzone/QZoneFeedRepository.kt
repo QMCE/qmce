@@ -210,7 +210,7 @@ class QZoneFeedRepository {
         private const val FEED_EVENT_REFRESHED = 4
         private const val POLL_COUNT = 30
         private const val POLL_INTERVAL_MILLIS = 400L
-        private const val READY_POLL_COUNT = 40
+        private const val READY_POLL_COUNT = 80
         private const val READY_POLL_INTERVAL_MILLIS = 250L
     }
 }

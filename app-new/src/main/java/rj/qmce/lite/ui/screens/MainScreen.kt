@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.HorizontalPageIndicator
+import androidx.wear.compose.material3.HorizontalPagerScaffold
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -53,6 +54,7 @@ fun MainScreen(
     onOpenChat: (RecentContactInfo) -> Unit,
     onOpenChatFromContacts: (String, String, String) -> Unit, // uid, uin, name
     onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
+    onOpenNotificationCenter: () -> Unit = {},
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
     var kernelRetryNonce by remember(uin) { mutableIntStateOf(0) }
@@ -96,44 +98,53 @@ fun MainScreen(
         qZoneVm.loadFeeds(forceRefresh = true)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (showPageIndicator) TopPageIndicator(pagerState, pointsUp = !showTimeText)
+    HorizontalPagerScaffold(
+        pagerState = pagerState,
+        // The app renders its own top-aligned indicator below (see TopPageIndicator), so the
+        // scaffold's default bottom indicator is disabled here. HorizontalPagerScaffold is still
+        // used to coordinate TimeText visibility with page-swipe gestures.
+        pageIndicator = null,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showPageIndicator) TopPageIndicator(pagerState, pointsUp = !showTimeText)
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f),
-        ) { page ->
-            when (page) {
-                0 -> ChatListScreen(
-                    uin = uin,
-                    runtime = runtime,
-                    isPageVisible = page == pagerState.currentPage,
-                    onLogout = onLogout,
-                    onOpenChat = onOpenChat,
-                    onRetryKernel = { kernelRetryNonce++ },
-                    vm = chatListVm,
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+            ) { page ->
+                when (page) {
+                    0 -> ChatListScreen(
+                        uin = uin,
+                        runtime = runtime,
+                        isPageVisible = page == pagerState.currentPage,
+                        onLogout = onLogout,
+                        onOpenChat = onOpenChat,
+                        onRetryKernel = { kernelRetryNonce++ },
+                        onOpenNotificationCenter = onOpenNotificationCenter,
+                        vm = chatListVm,
+                    )
 
-                1 -> ContactsScreen(
-                    vm = contactsVm,
-                    onOpenChat = onOpenChatFromContacts,
-                    onOpenProfile = onOpenContactProfile,
-                    onRetryKernel = { kernelRetryNonce++ },
-                )
+                    1 -> ContactsScreen(
+                        vm = contactsVm,
+                        onOpenChat = onOpenChatFromContacts,
+                        onOpenProfile = onOpenContactProfile,
+                        onRetryKernel = { kernelRetryNonce++ },
+                    )
 
-                2 -> QZoneScreen(
-                    vm = qZoneVm,
-                    onOpenComposer = onOpenQZoneComposer,
-                    onOpenDetail = onOpenQZoneDetail,
-                )
+                    2 -> QZoneScreen(
+                        vm = qZoneVm,
+                        onOpenComposer = onOpenQZoneComposer,
+                        onOpenDetail = onOpenQZoneDetail,
+                    )
 
-                3 -> MyScreen(
-                    uin = uin,
-                    onOpenSettings = onOpenSettings,
-                    onOpenLogoutConfirmation = onOpenLogoutConfirmation,
-                    onForceExit = onForceExit,
-                    vm = myVm,
-                )
+                    3 -> MyScreen(
+                        uin = uin,
+                        onOpenSettings = onOpenSettings,
+                        onOpenLogoutConfirmation = onOpenLogoutConfirmation,
+                        onForceExit = onForceExit,
+                        vm = myVm,
+                    )
+                }
             }
         }
     }

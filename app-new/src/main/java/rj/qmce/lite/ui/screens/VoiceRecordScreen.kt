@@ -8,11 +8,12 @@ import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,12 +40,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.wear.compose.material3.ArcProgressIndicator
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.ButtonGroup
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.KeepScreenOn
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import com.tencent.mobileqq.ptt.IQQRecorder
@@ -401,210 +405,241 @@ fun VoiceRecordScreen(
     val hasError = recordState is VoiceRecordState.Error ||
         (recordState as? VoiceRecordState.Ready)?.errorMessage != null
 
-    Column(
+    // Prevent the watch screen from sleeping while the user is recording/reviewing a voice message.
+    KeepScreenOn()
+
+    ScreenScaffold(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(
-            text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(
-                elapsedMillis
-            ) else stateLabel,
-            color = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-        )
-        if (recordState is VoiceRecordState.Recording) {
+            .background(MaterialTheme.colorScheme.background),
+    ) { contentPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
             Text(
-                "再次点击结束录音",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall
+                text = if (recordState is VoiceRecordState.Recording) formatVoiceRecordDuration(
+                    elapsedMillis
+                ) else stateLabel,
+                color = if (hasError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
             )
-        }
-        if (recordState is VoiceRecordState.Ready) {
-            val state = recordState as VoiceRecordState.Ready
-            Text(
-                text = formatVoiceRecordDuration(state.durationMillis),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        if (recordState is VoiceRecordState.Translating) {
-            val state = recordState as VoiceRecordState.Translating
-            if (state.text.isNotBlank()) {
+            if (recordState is VoiceRecordState.Recording) {
                 Text(
-                    text = state.text,
+                    "再次点击结束录音",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (recordState is VoiceRecordState.Ready) {
+                val state = recordState as VoiceRecordState.Ready
+                Text(
+                    text = formatVoiceRecordDuration(state.durationMillis),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            if (recordState is VoiceRecordState.Translating) {
+                val state = recordState as VoiceRecordState.Translating
+                if (state.text.isNotBlank()) {
+                    Text(
+                        text = state.text,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+            if (recordState is VoiceRecordState.Transcribed) {
+                Text(
+                    text = (recordState as VoiceRecordState.Transcribed).text,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 4,
+                    maxLines = 5,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                 )
             }
-        }
-        if (recordState is VoiceRecordState.Transcribed) {
-            Text(
-                text = (recordState as VoiceRecordState.Transcribed).text,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 5,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
-        }
-        Spacer(Modifier.height(18.dp))
-        when (recordState) {
-            VoiceRecordState.Idle, is VoiceRecordState.Error -> {
-                FilledIconButton(
-                    onClick = ::requestOrStartRecording,
-                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
-                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-                ) {
-                    Icon(Icons.Default.Mic, contentDescription = "开始录音")
+            Spacer(Modifier.height(18.dp))
+            when (recordState) {
+                VoiceRecordState.Idle, is VoiceRecordState.Error -> {
+                    FilledIconButton(
+                        onClick = ::requestOrStartRecording,
+                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
+                        colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                        ),
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "开始录音")
+                    }
                 }
-            }
 
-            VoiceRecordState.Recording -> {
-                FilledIconButton(
-                    onClick = { stopRecording(discard = false) },
-                    modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
-                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                        contentColor = MaterialTheme.colorScheme.onError,
-                    ),
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = "结束录音")
+                VoiceRecordState.Recording -> {
+                    FilledIconButton(
+                        onClick = { stopRecording(discard = false) },
+                        modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.LargeButtonSize),
+                        colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = "结束录音")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    CompactButton(
+                        onClick = { stopRecording(discard = true) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
+                        icon = { Icon(Icons.Default.Close, contentDescription = "取消录音") },
+                    )
                 }
-                Spacer(Modifier.height(8.dp))
-                CompactButton(
-                    onClick = { stopRecording(discard = true) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    icon = { Icon(Icons.Default.Close, contentDescription = "取消录音") },
+
+                VoiceRecordState.Finalizing -> ArcProgressIndicator(
+                    modifier = Modifier.size(48.dp),
                 )
-            }
 
-            VoiceRecordState.Finalizing -> CircularProgressIndicator(
-                modifier = Modifier.size(42.dp),
-                strokeWidth = 3.dp
-            )
-
-            is VoiceRecordState.Ready -> {
-                val state = recordState as VoiceRecordState.Ready
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CompactButton(
-                        onClick = { resetReadyState(state) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
-                    )
-                    CompactButton(
-                        onClick = { startTranslation(state) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ),
-                        icon = { Icon(Icons.Default.TextFields, contentDescription = "转文字") },
-                    )
-                    CompactButton(
-                        onClick = { sendReadyVoice(state) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        icon = {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = "发送"
-                            )
-                        },
-                    )
+                is VoiceRecordState.Ready -> {
+                    val state = recordState as VoiceRecordState.Ready
+                    ButtonGroup(modifier = Modifier.fillMaxWidth()) {
+                        val retryInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { resetReadyState(state) },
+                            modifier = Modifier.weight(1f).animateWidth(retryInteraction),
+                            interactionSource = retryInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
+                        )
+                        val translateInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { startTranslation(state) },
+                            modifier = Modifier.weight(1f).animateWidth(translateInteraction),
+                            interactionSource = translateInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
+                            icon = { Icon(Icons.Default.TextFields, contentDescription = "转文字") },
+                        )
+                        val sendInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { sendReadyVoice(state) },
+                            modifier = Modifier.weight(1f).animateWidth(sendInteraction),
+                            interactionSource = sendInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                            icon = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = "发送"
+                                )
+                            },
+                        )
+                    }
                 }
-            }
 
-            is VoiceRecordState.Translating -> {
-                val state = recordState as VoiceRecordState.Translating
-                CircularProgressIndicator(
-                    modifier = Modifier.size(42.dp),
-                    strokeWidth = 3.dp,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CompactButton(
-                        onClick = { cancelTranslation() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        icon = { Icon(Icons.Default.Close, contentDescription = "取消转文字") },
+                is VoiceRecordState.Translating -> {
+                    val state = recordState as VoiceRecordState.Translating
+                    ArcProgressIndicator(
+                        modifier = Modifier.size(48.dp),
                     )
-                    CompactButton(
-                        onClick = {
-                            sendReadyVoice(
-                                VoiceRecordState.Ready(
-                                    file = state.file,
-                                    pcmFile = state.pcmFile,
-                                    durationMillis = state.durationMillis,
-                                    formatType = state.formatType,
-                                ),
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
-                    )
+                    Spacer(Modifier.height(8.dp))
+                    ButtonGroup(modifier = Modifier.fillMaxWidth()) {
+                        val cancelInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { cancelTranslation() },
+                            modifier = Modifier.weight(1f).animateWidth(cancelInteraction),
+                            interactionSource = cancelInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            icon = { Icon(Icons.Default.Close, contentDescription = "取消转文字") },
+                        )
+                        val sendOriginalInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = {
+                                sendReadyVoice(
+                                    VoiceRecordState.Ready(
+                                        file = state.file,
+                                        pcmFile = state.pcmFile,
+                                        durationMillis = state.durationMillis,
+                                        formatType = state.formatType,
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.weight(1f).animateWidth(sendOriginalInteraction),
+                            interactionSource = sendOriginalInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                            icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
+                        )
+                    }
                 }
-            }
 
-            is VoiceRecordState.Transcribed -> {
-                val state = recordState as VoiceRecordState.Transcribed
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    CompactButton(
-                        onClick = { resetTranscribedState(state) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                            contentColor = MaterialTheme.colorScheme.onSurface,
-                        ),
-                        icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
-                    )
-                    CompactButton(
-                        onClick = { useTranscribedText(state) },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                        icon = { Icon(Icons.Default.Check, contentDescription = "使用文字") },
-                    )
-                    CompactButton(
-                        onClick = {
-                            sendReadyVoice(
-                                VoiceRecordState.Ready(
-                                    file = state.file,
-                                    pcmFile = state.pcmFile,
-                                    durationMillis = state.durationMillis,
-                                    formatType = state.formatType,
-                                ),
-                            )
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        ),
-                        icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
-                    )
+                is VoiceRecordState.Transcribed -> {
+                    val state = recordState as VoiceRecordState.Transcribed
+                    ButtonGroup(modifier = Modifier.fillMaxWidth()) {
+                        val retryInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { resetTranscribedState(state) },
+                            modifier = Modifier.weight(1f).animateWidth(retryInteraction),
+                            interactionSource = retryInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            icon = { Icon(Icons.Default.Refresh, contentDescription = "重录") },
+                        )
+                        val useTextInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = { useTranscribedText(state) },
+                            modifier = Modifier.weight(1f).animateWidth(useTextInteraction),
+                            interactionSource = useTextInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary,
+                            ),
+                            icon = { Icon(Icons.Default.Check, contentDescription = "使用文字") },
+                        )
+                        val sendOriginalInteraction = remember { MutableInteractionSource() }
+                        CompactButton(
+                            onClick = {
+                                sendReadyVoice(
+                                    VoiceRecordState.Ready(
+                                        file = state.file,
+                                        pcmFile = state.pcmFile,
+                                        durationMillis = state.durationMillis,
+                                        formatType = state.formatType,
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.weight(1f).animateWidth(sendOriginalInteraction),
+                            interactionSource = sendOriginalInteraction,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            ),
+                            icon = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送原语音") },
+                        )
+                    }
                 }
             }
         }

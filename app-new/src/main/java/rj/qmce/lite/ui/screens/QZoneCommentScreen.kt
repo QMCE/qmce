@@ -34,6 +34,7 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.QZoneViewModel
 
 @Composable
@@ -79,7 +80,7 @@ fun QZoneCommentScreen(
                 ) { Text("发送") }
             }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,

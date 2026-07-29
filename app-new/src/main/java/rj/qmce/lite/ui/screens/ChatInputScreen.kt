@@ -82,6 +82,7 @@ import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_START
 import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -118,6 +119,7 @@ fun ChatInputScreen(
     chatType: Int = 1,
     editingText: String = "",
     replyTarget: ChatDetailViewModel.ReplyTarget? = null,
+    openToolsOnLaunch: Boolean = false,
     onConsumeReplyTarget: () -> Unit = {},
     onSend: (String, ChatDetailViewModel.ReplyTarget?) -> Unit,
     onSendEdited: (String) -> Unit,
@@ -158,7 +160,7 @@ fun ChatInputScreen(
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
     var showVideoPicker by remember { mutableStateOf(false) }
-    var showToolPanel by remember { mutableStateOf(false) }
+    var showToolPanel by remember { mutableStateOf(openToolsOnLaunch) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAtPicker by remember { mutableStateOf(false) }
     var atQuery by remember { mutableStateOf("") }
@@ -584,7 +586,7 @@ fun ChatInputScreen(
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
             }
         },
-        edgeButtonSpacing = 2.5.dp
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing
     ) {
         TransformingLazyColumn(
             state = listState,
@@ -736,7 +738,7 @@ fun ChatInputScreen(
                             }
                         }
                         .padding(horizontal = 10.dp)
-                        .defaultMinSize(minHeight = 100.dp),
+                        .defaultMinSize(minHeight = 72.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
                     visualTransformation = imgMarkerTransformation(
                         imageCount = imageSlots.size,
@@ -748,8 +750,8 @@ fun ChatInputScreen(
                     placeholder = {
                         Text("输入消息", style = MaterialTheme.typography.bodySmall)
                     },
-                    minLines = 3,
-                    maxLines = 6,
+                    minLines = 2,
+                    maxLines = 4,
                     shape = RoundedCornerShape(20.dp),
                     colors = MaterialTextFieldDefaults.colors(
                         focusedContainerColor = scheme.surfaceContainerHigh,
@@ -811,18 +813,29 @@ private fun ChatInputToolsScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            // TODO: enable it
             item(key = "emoji") {
-                /*
-                ChatInputToolButton(
-                    icon = Icons.Default.EmojiEmotions,
-                    label = "表情",
-                    description = "插入常用表情",
-                    onClick = onSelectEmoji,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-                */
+                OfficialReportTargetBox(
+                    key = "aio-input:expression",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+                ) { reportTarget ->
+                    ChatInputToolButton(
+                        icon = Icons.Default.EmojiEmotions,
+                        label = "表情",
+                        description = "插入常用表情",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+                            )
+                            onSelectEmoji()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "image") {
                 val params = mapOf("rich_media_type" to 1)

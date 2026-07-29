@@ -5,38 +5,31 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshState
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
@@ -44,14 +37,18 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.ui.components.ChatItem
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
+import rj.qmce.lite.ui.wear.QmceEmptyOrErrorState
+import rj.qmce.lite.ui.wear.QmceLoadingState
 import rj.qmce.lite.viewmodel.ChatListViewModel
 
 private const val KERNEL_INIT_ACTION = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
@@ -65,25 +62,19 @@ fun ChatListScreen(
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
     onRetryKernel: () -> Unit,
+    onOpenNotificationCenter: () -> Unit = {},
     vm: ChatListViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val contactsSnapshot by vm.contacts.collectAsState()
     val contacts = contactsSnapshot.contacts
     val isRefreshing by vm.isRefreshing.collectAsState()
+    val statusText by vm.statusText.collectAsState()
     val listState = rememberTransformingLazyColumnState()
+    val scope = rememberCoroutineScope()
     val transformationSpec = rememberTransformationSpec()
-    val pullRefreshState = rememberPullToRefreshState()
     val latestContacts by rememberUpdatedState(contacts)
     val reportUid = runCatching { runtime?.currentUid.orEmpty() }.getOrDefault("")
-
-    Log.d(
-        "QMCE",
-        "ChatListScreen: recompose, revision=${contactsSnapshot.revision}, contacts.size=${contacts.size}, top1=${
-            contacts.firstOrNull()
-                ?.let { "${it.id}:${it.msgTime}:${it.abstractContent?.firstOrNull()?.content}" }
-        }"
-    )
 
     DisposableEffect(runtime) {
         val receiver = object : BroadcastReceiver() {
@@ -92,23 +83,16 @@ fun ChatListScreen(
                 vm.loadContacts(runtime)
             }
         }
-        val filter = IntentFilter(KERNEL_INIT_ACTION)
         ContextCompat.registerReceiver(
             context,
             receiver,
-            filter,
+            IntentFilter(KERNEL_INIT_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        Log.d("QMCE", "ChatList: registered ON_KERNEL_INIT_COMPLETE receiver")
-        // 列表主加载由 MainScreen 在 awaitCoreServices 后触发；此处仅响应 kernel init 广播，
-        // 避免与 MainScreen 并发抢 loading 门闩。
         onDispose {
-            Log.d("QMCE", "ChatListScreen: DisposableEffect disposed")
             runCatching { context.unregisterReceiver(receiver) }
         }
     }
-
-    val statusText by vm.statusText.collectAsState()
 
     LaunchedEffect(listState, uin, runtime, isPageVisible) {
         if (!isPageVisible) return@LaunchedEffect
@@ -179,29 +163,47 @@ fun ChatListScreen(
         }
     }
 
-    if (contacts.isNotEmpty()) {
-        ScreenScaffold(
-            scrollState = listState,
-            overscrollEffect = null,
-        ) { contentPadding ->
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = vm::refreshContacts,
-                modifier = Modifier.fillMaxSize(),
-                state = pullRefreshState,
-                indicator = {
-                    WearPullRefreshIndicator(
-                        state = pullRefreshState,
-                        isRefreshing = isRefreshing,
-                    )
-                }, // fixme: sometimes wrong state (or caused by scrcpy?)
-            ) {
+    when {
+        contacts.isNotEmpty() -> {
+            ScreenScaffold(
+                scrollState = listState,
+                edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+                edgeButton = {
+                    EdgeButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        modifier = Modifier.fillMaxWidth(),
+                        buttonSize = EdgeButtonSize.Large,
+                    ) {
+                        Icon(
+                            Icons.Default.ExpandLess,
+                            contentDescription = "滚动到顶部",
+                        )
+                    }
+                },
+            ) { contentPadding ->
                 TransformingLazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,
                     contentPadding = contentPadding,
-                    overscrollEffect = null,
                 ) {
+                    item(key = "notification-bell") {
+                        Button(
+                            onClick = onOpenNotificationCenter,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                            icon = {
+                                Icon(
+                                    Icons.Outlined.Notifications,
+                                    contentDescription = "通知中心",
+                                )
+                            },
+                        ) {
+                            Text("通知中心")
+                        }
+                    }
                     items(
                         items = contacts,
                         key = { contact ->
@@ -232,35 +234,26 @@ fun ChatListScreen(
                 }
             }
         }
-    } else {
-        ScreenScaffold(overscrollEffect = null) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (statusText.isBlank() || statusText.contains("加载")) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp),
-                            strokeWidth = 3.dp,
-                        )
-                    }
-                    Text(
-                        text = statusText.ifBlank { "加载会话..." },
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(top = 8.dp, start = 12.dp, end = 12.dp),
-                    )
-                    Text(
-                        text = "重试",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier
-                            .padding(top = 8.dp)
-                            .clickable { onRetryKernel() }
-                            .padding(8.dp),
-                    )
-                }
-            }
+
+        statusText.contains("失败") || statusText.contains("不可用") -> {
+            QmceEmptyOrErrorState(
+                message = statusText.ifBlank { "会话加载失败" },
+                actionLabel = "重试",
+                onAction = onRetryKernel,
+                isError = true,
+            )
+        }
+
+        statusText.isBlank() || statusText.contains("加载") || statusText.contains("等待") -> {
+            QmceLoadingState(message = statusText.ifBlank { "加载会话…" })
+        }
+
+        else -> {
+            QmceEmptyOrErrorState(
+                message = statusText.ifBlank { "暂无会话" },
+                actionLabel = "刷新",
+                onAction = { vm.refreshContacts() },
+            )
         }
     }
 }
@@ -274,37 +267,4 @@ private fun chatListExposureKey(contact: RecentContactInfo): String? {
     return contact.contactId.takeIf { it > 0L }?.toString()
         ?: contact.id?.takeIf { it.isNotBlank() }
         ?: contact.peerUid?.takeIf { it.isNotBlank() }
-}
-
-@Composable
-private fun BoxScope.WearPullRefreshIndicator(
-    state: PullToRefreshState,
-    isRefreshing: Boolean,
-) {
-    val diameter = 38.dp
-    val density = LocalDensity.current
-    val distance = state.distanceFraction.coerceIn(0f, 1f)
-    val translation = with(density) { diameter.toPx() * (distance - 1f) }
-    Box(
-        modifier = Modifier
-            .align(androidx.compose.ui.Alignment.TopCenter)
-            .graphicsLayer {
-                alpha = distance
-                translationY = translation
-            }
-            .size(diameter)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
-        contentAlignment = androidx.compose.ui.Alignment.Center,
-    ) {
-        if (isRefreshing) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 3.dp)
-        } else {
-            CircularProgressIndicator(
-                progress = { distance },
-                modifier = Modifier.size(22.dp),
-                strokeWidth = 3.dp,
-            )
-        }
-    }
 }

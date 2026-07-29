@@ -3,6 +3,7 @@
 package rj.qmce.lite.ui.screens
 
 import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
 import android.text.format.Formatter
 import android.widget.ImageView
 import android.widget.Toast
@@ -10,12 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,30 +32,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -100,20 +96,27 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonDefaults
+import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
 import androidx.wear.compose.material3.LocalContentColor
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
-import android.graphics.drawable.Drawable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -132,13 +135,13 @@ import rj.qmce.lite.data.chat.PttTranslationState
 import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-
 private val MessageBubbleCornerRadius = 8.dp
 private val MessageBubbleLeadingCornerRadius = 4.dp
 private const val ConsecutiveMessageWindowMillis = 5 * 60 * 1000L
@@ -154,6 +157,11 @@ private sealed interface ChatTimelineItem {
     val key: String
 
     data class DateDivider(
+        val label: String,
+        override val key: String,
+    ) : ChatTimelineItem
+
+    data class TimeDivider(
         val label: String,
         override val key: String,
     ) : ChatTimelineItem
@@ -201,6 +209,7 @@ fun ChatDetailScreen(
     myUin: String = "",
     onBack: () -> Unit,
     onOpenInput: () -> Unit = {},
+    onOpenComposerMenu: () -> Unit = {},
     onOpenSingleEmotion: () -> Unit = {},
     onOpenVoiceRecorder: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
@@ -246,8 +255,12 @@ fun ChatDetailScreen(
             )
         }
     }
-    val listState = rememberLazyListState()
-    var composerActionsVisible by remember(peerUid, chatType) { mutableStateOf(true) }
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    var showMultiSelectActions by remember(peerUid, chatType) { mutableStateOf(false) }
+    LaunchedEffect(multiSelectMode) {
+        if (!multiSelectMode) showMultiSelectActions = false
+    }
     var initialPositioned by remember(peerUid, chatType) { mutableStateOf(false) }
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var followNewMessages by remember(peerUid, chatType) { mutableStateOf(true) }
@@ -369,8 +382,7 @@ fun ChatDetailScreen(
     }
     val lastMessageKey = messages.lastOrNull()?.stableKey
     val requestOlderAtTop: () -> Unit = {
-        val atTop = listState.firstVisibleItemIndex == 0 &&
-                listState.firstVisibleItemScrollOffset == 0
+        val atTop = !listState.canScrollBackward
         if (
             initialPositioned &&
             atTop &&
@@ -378,7 +390,7 @@ fun ChatDetailScreen(
             !isLoadingOlder &&
             !isHistoryRequestPending
         ) {
-            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            val visibleItems = listState.layoutInfo.visibleItems
             val anchorItem = visibleItems.firstOrNull { item ->
                 timelineItems.getOrNull(item.index) is ChatTimelineItem.Message
             } ?: visibleItems.firstOrNull()
@@ -462,12 +474,15 @@ fun ChatDetailScreen(
         var previousState: TimelineScrollState? = null
         var reachedTopFromUpwardScroll = false
         snapshotFlow {
+            val visible = listState.layoutInfo.visibleItems
+            val firstVisible = visible.minByOrNull { it.index }
             TimelineScrollState(
                 isScrolling = listState.isScrollInProgress,
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemOffset = listState.firstVisibleItemScrollOffset,
-                firstVisibleMessageSequence = listState.layoutInfo.visibleItemsInfo
+                firstVisibleItemIndex = firstVisible?.index ?: 0,
+                firstVisibleItemOffset = firstVisible?.offset ?: 0,
+                firstVisibleMessageSequence = visible
                     .asSequence()
+                    .sortedBy { it.index }
                     .mapNotNull { visibleItem ->
                         (currentTimelineItems.value.getOrNull(visibleItem.index) as? ChatTimelineItem.Message)
                             ?.message
@@ -475,8 +490,7 @@ fun ChatDetailScreen(
                             ?.takeIf { it > 0L }
                     }
                     .firstOrNull(),
-                atTop = listState.firstVisibleItemIndex == 0 &&
-                        listState.firstVisibleItemScrollOffset == 0,
+                atTop = !listState.canScrollBackward,
                 atBottom = !listState.canScrollForward,
             )
         }.collect { state ->
@@ -507,15 +521,6 @@ fun ChatDetailScreen(
                 state.firstVisibleMessageSequence?.let(vm::onFirstVisibleMessageSequence)
             }
             previousState = state
-        }
-    }
-
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
-            composerActionsVisible = false
-        } else {
-            delay(2_000)
-            if (!listState.isScrollInProgress) composerActionsVisible = true
         }
     }
 
@@ -622,25 +627,83 @@ fun ChatDetailScreen(
                                 .fillMaxWidth()
                                 .weight(1f)
                                 .nestedScroll(topHistoryNestedScrollConnection),
-                            contentPadding = PaddingValues(
-                                start = 10.dp,
-                                end = 10.dp,
-                                top = 6.dp,
-                                bottom = 52.dp,
-                            ),
+                            contentPadding = LocalQmceAdaptive.current.screenContentPadding,
+                            edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+                            edgeButton = {
+                                if (multiSelectMode) {
+                                    EdgeButton(
+                                        onClick = { showMultiSelectActions = true },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        buttonSize = EdgeButtonSize.Small,
+                                        enabled = selectedMsgIds.isNotEmpty(),
+                                    ) {
+                                        Text("操作 (${selectedMsgIds.size})")
+                                    }
+                                } else {
+                                    EdgeButton(
+                                        onClick = onOpenComposerMenu,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        buttonSize = EdgeButtonSize.Small,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Keyboard,
+                                            contentDescription = "输入",
+                                            modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
+                                        )
+                                    }
+                                }
+                            },
                         ) { contentPadding ->
-                            LazyColumn(
+                            TransformingLazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
                                 contentPadding = contentPadding,
                             ) {
-                                items(timelineItems, key = { item -> item.key }) { item ->
+                                items(
+                                    items = timelineItems,
+                                    key = { item -> item.key },
+                                ) { item ->
                                     when (item) {
-                                        is ChatTimelineItem.DateDivider -> ChatDateDivider(item.label)
+                                        is ChatTimelineItem.DateDivider -> {
+                                            ChatDateDivider(
+                                                item.label,
+                                                modifier = Modifier
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            )
+                                        }
+                                        is ChatTimelineItem.TimeDivider -> {
+                                            ChatDateDivider(
+                                                item.label,
+                                                modifier = Modifier
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            )
+                                        }
                                         is ChatTimelineItem.Message -> {
                                             val isSelected =
                                                 multiSelectMode && item.message.msgId in selectedMsgIds
-                                            Box(modifier = Modifier.fillMaxWidth()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            ) {
                                                 MessageBubble(
                                                     message = item.message,
                                                     isContinuation = item.isContinuation,
@@ -789,53 +852,44 @@ fun ChatDetailScreen(
                 },
             )
         }
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            if (multiSelectMode) {
-                MultiSelectBottomBar(
-                    selectedCount = selectedMsgIds.size,
-                    onExit = { vm.exitMultiSelect() },
-                    onSummary = { vm.summarizeSelected() },
-                    onCopy = {
-                        val text = vm.batchCopySelected()
-                        if (text.isNotBlank()) copyMessageText(context, text)
-                        else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
-                    },
-                    onForward = {
-                        if (vm.prepareBatchForward()) onOpenContactPicker()
-                    },
-                    onShare = {
-                        val selectedMessages = messages.filter { it.msgId in selectedMsgIds }
-                        val text = vm.batchCopySelected()
-                        val mediaFiles = selectedMessages.flatMap { it.localMediaFiles() }
-                        if (text.isNotBlank() || mediaFiles.isNotEmpty()) {
-                            shareMessageBatch(context, text, mediaFiles)
-                        } else {
-                            Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onDelete = {
-                        if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
-                    },
-                )
-            } else if (pagerState.currentPage == 0) {
-                AnimatedVisibility(
-                    visible = composerActionsVisible,
-                    modifier = Modifier.padding(bottom = 2.dp),
-                    enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                            slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-                    exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                            slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-                ) {
-                    ChatComposerActions(
-                        onOpenSingleEmotion = onOpenSingleEmotion,
-                        onOpenInput = onOpenInput,
-                        onOpenVoiceRecorder = onOpenVoiceRecorder,
-                    )
-                }
-            }
+        if (showMultiSelectActions && multiSelectMode) {
+            MultiSelectActionsScreen(
+                selectedCount = selectedMsgIds.size,
+                onDismiss = { showMultiSelectActions = false },
+                onExit = {
+                    showMultiSelectActions = false
+                    vm.exitMultiSelect()
+                },
+                onSummary = {
+                    showMultiSelectActions = false
+                    vm.summarizeSelected()
+                },
+                onCopy = {
+                    showMultiSelectActions = false
+                    val text = vm.batchCopySelected()
+                    if (text.isNotBlank()) copyMessageText(context, text)
+                    else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
+                },
+                onForward = {
+                    showMultiSelectActions = false
+                    if (vm.prepareBatchForward()) onOpenContactPicker()
+                },
+                onShare = {
+                    showMultiSelectActions = false
+                    val selectedMessages = messages.filter { it.msgId in selectedMsgIds }
+                    val text = vm.batchCopySelected()
+                    val mediaFiles = selectedMessages.flatMap { it.localMediaFiles() }
+                    if (text.isNotBlank() || mediaFiles.isNotEmpty()) {
+                        shareMessageBatch(context, text, mediaFiles)
+                    } else {
+                        Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onDelete = {
+                    showMultiSelectActions = false
+                    if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
+                },
+            )
         }
         if (messageSummaryState !is ChatDetailViewModel.MessageSummaryState.Idle) {
             MessageSummaryScreen(
@@ -995,6 +1049,8 @@ fun ChatDetailScreen(
 
 private val transientChatStatuses = setOf("正在等待消息服务...", "加载中...")
 
+private val TimeDividerWindowMillis = 5 * 60 * 1000L // 5 分钟
+
 private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimelineItem> = buildList {
     var previousDayKey: String? = null
     var previousMessage: ChatDetailViewModel.UiMsg? = null
@@ -1004,6 +1060,13 @@ private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimeline
             add(ChatTimelineItem.DateDivider(formatChatDate(message.time), "date:$dayKey"))
             previousDayKey = dayKey
             previousMessage = null
+        } else {
+            val prev = previousMessage
+            if (prev != null && (message.time - prev.time) >= TimeDividerWindowMillis) {
+                val timeLabel = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    .format(java.util.Date(message.time * 1000))
+                add(ChatTimelineItem.TimeDivider(timeLabel, "time:${message.time}"))
+            }
         }
         val isContinuation = previousMessage?.let { previous ->
             val sameSender = if (message.isSelf && previous.isSelf) {
@@ -1026,106 +1089,255 @@ private fun CallPage(
     onRequestCall: (CallMode) -> Unit,
     onOpenPacketTool: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "发起通话",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(6.dp))
-        // Text(peerName, color = Color(0xFFD1CBD7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = { onRequestCall(CallMode.Voice) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    ScreenScaffold(
+        scrollState = listState,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+        edgeButton = {
+            EdgeButton(
+                onClick = { onRequestCall(CallMode.Voice) },
+                modifier = Modifier.fillMaxWidth(),
+                buttonSize = EdgeButtonSize.Small,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = null,
+                    modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("语音通话")
+            }
+        },
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Text("语音通话")
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { onRequestCall(CallMode.Video) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-        ) {
-            Text("视频通话")
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onOpenPacketTool,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-        ) {
-            Text("发包工具")
+            item(key = "call-title") {
+                Text(
+                    "发起通话",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+            }
+            item(key = "call-peer") {
+                Text(
+                    peerName,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 4.dp),
+                )
+            }
+            item(key = "call-video") {
+                Button(
+                    onClick = { onRequestCall(CallMode.Video) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Videocam, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("视频通话")
+                }
+            }
+            item(key = "call-packet") {
+                Button(
+                    onClick = onOpenPacketTool,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Text("发包工具")
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ChatComposerActions(
-    onOpenSingleEmotion: () -> Unit,
-    onOpenInput: () -> Unit,
-    onOpenVoiceRecorder: () -> Unit,
+private fun MultiSelectActionsScreen(
+    selectedCount: Int,
+    onDismiss: () -> Unit,
+    onExit: () -> Unit,
+    onSummary: () -> Unit,
+    onCopy: () -> Unit,
+    onForward: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    Row (modifier = Modifier.padding(bottom = 30.dp),) {
-        OfficialReportTargetBox(
-            key = "aio-composer:expression",
-            modifier = Modifier.padding(horizontal = 5.dp),
-            elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
-            reportImpression = true,
-        ) { reportTarget ->
-            CompactButton(
-                onClick = {
-                    OfficialReportBridge.reportElementClick(
-                        target = reportTarget,
-                        elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
-                    )
-                    onOpenSingleEmotion()
-                },
-                icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
-            )
-        }
-        CompactButton(
-            onClick = onOpenInput,
-            modifier = Modifier.padding(horizontal = 5.dp),
-            icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
-        )
-        OfficialReportTargetBox(
-            key = "aio-composer:voice",
-            modifier = Modifier.padding(horizontal = 5.dp),
-            elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
-            reportImpression = true,
-        ) { reportTarget ->
-            CompactButton(
-                onClick = {
-                    OfficialReportBridge.reportElementClick(
-                        target = reportTarget,
-                        elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
-                    )
-                    onOpenVoiceRecorder()
-                },
-                icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
-            )
+    BackHandler(onBack = onDismiss)
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val scheme = MaterialTheme.colorScheme
+    ScreenScaffold(
+        scrollState = listState,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+        edgeButton = {
+            EdgeButton(
+                onClick = onForward,
+                modifier = Modifier.fillMaxWidth(),
+                buttonSize = EdgeButtonSize.Small,
+                enabled = selectedCount > 0,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Forward,
+                    contentDescription = null,
+                    modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("转发 ($selectedCount)")
+            }
+        },
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "ms-title") {
+                Text(
+                    "已选 $selectedCount 条",
+                    style = MaterialTheme.typography.titleSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                )
+            }
+            item(key = "ms-summary") {
+                Button(
+                    onClick = onSummary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("AI 总结")
+                }
+            }
+            item(key = "ms-copy") {
+                Button(
+                    onClick = onCopy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("复制")
+                }
+            }
+            item(key = "ms-share") {
+                Button(
+                    onClick = onShare,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("系统分享")
+                }
+            }
+            item(key = "ms-delete") {
+                Button(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.error,
+                        contentColor = scheme.onError,
+                    ),
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("删除")
+                }
+            }
+            item(key = "ms-exit") {
+                Button(
+                    onClick = onExit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("退出多选")
+                }
+            }
         }
     }
 }
@@ -1158,12 +1370,12 @@ internal fun MessageBubble(
         return
     }
     val containerColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.primaryContainer
+        MaterialTheme.colorScheme.secondaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainer
     }
     val messageContentColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.onPrimaryContainer
+        MaterialTheme.colorScheme.onSecondaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }
@@ -1392,30 +1604,62 @@ private fun LocalMessageImage(
         LaunchedEffect(content.elementId, content.isLoading, content.loadError) {
             if (!content.isLoading && content.loadError == null) ensureCached()
         }
-        MediaPlaceholder(
-            size = size,
-            label = when {
-                content.isLoading -> "图片加载中"
-                content.loadError != null -> "图片加载失败，点击重试"
-                else -> "点击加载图片"
-            },
-            onClick = if (content.isLoading) null else ensureCached,
-        )
-    } else {
-        Card(
-            onClick = { onOpen(localFile) },
-            modifier = Modifier.size(size.width, size.height),
-            colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-                containerColor = Color.Transparent,
-            ),
-            contentPadding = PaddingValues(0.dp),
-        ) {
-            AsyncImage(
-                model = localFile,
-                contentDescription = "图片",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+        Box {
+            MediaPlaceholder(
+                size = size,
+                label = when {
+                    content.isLoading -> "图片加载中"
+                    content.loadError != null -> "图片加载失败"
+                    else -> "图片"
+                },
+                onClick = if (content.isLoading) null else ensureCached,
             )
+            if (!content.isLoading) {
+                androidx.wear.compose.material3.FilledIconButton(
+                    onClick = ensureCached,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .align(Alignment.BottomEnd)
+                        .padding(bottom = 4.dp, end = 4.dp),
+                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    Icon(
+                        if (content.loadError != null) Icons.Default.Download else Icons.Default.Download,
+                        contentDescription = "加载图片",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+        }
+    } else {
+        Box {
+            Card(
+                onClick = { onOpen(localFile) },
+                modifier = Modifier.size(size.width, size.height),
+                colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+                    containerColor = Color.Transparent,
+                ),
+                contentPadding = PaddingValues(0.dp),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    AsyncImage(
+                        model = localFile,
+                        contentDescription = "图片",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Icon(
+                        Icons.Outlined.Image,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier
+                            .size(22.dp)
+                            .align(Alignment.Center),
+                    )
+                }
+            }
         }
     }
 }
@@ -2138,10 +2382,10 @@ private fun VideoMessageContent(
                 )
             }
             Icon(
-                Icons.Default.PlayArrow,
+                Icons.Outlined.Movie,
                 contentDescription = "视频",
-                tint = LocalContentColor.current,
-                modifier = Modifier.size(34.dp),
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(30.dp),
             )
             Text(
                 text = buildList {
@@ -2155,14 +2399,23 @@ private fun VideoMessageContent(
                 style = MaterialTheme.typography.bodySmall,
             )
             if (localFile == null) {
-                Text(
-                    text = "视频未缓存",
+                androidx.wear.compose.material3.FilledIconButton(
+                    onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
+                    enabled = false,
                     modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(7.dp),
-                    color = LocalContentColor.current,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                        .size(30.dp)
+                        .align(Alignment.BottomEnd)
+                        .padding(4.dp),
+                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    ),
+                ) {
+                    Icon(
+                        Icons.Default.Download,
+                        contentDescription = "视频未缓存",
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
             }
         }
     }
@@ -2472,74 +2725,6 @@ private fun InlineKeyboardMessageContent(
 }
 
 @Composable
-private fun MultiSelectBottomBar(
-    selectedCount: Int,
-    onExit: () -> Unit,
-    onSummary: () -> Unit,
-    onCopy: () -> Unit,
-    onForward: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onExit,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "退出多选")
-        }
-        Text(
-            text = selectedCount.toString(),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Medium,
-        )
-        IconButton(
-            onClick = onSummary,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = "AI总结")
-        }
-        IconButton(
-            onClick = onCopy,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.ContentCopy, contentDescription = "复制")
-        }
-        IconButton(
-            onClick = onForward,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "转发")
-        }
-        IconButton(
-            onClick = onShare,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.Share, contentDescription = "系统分享")
-        }
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.error
-            )
-        }
-    }
-}
-
-@Composable
 private fun SystemTipLine(text: String) {
     Text(
         text = text,
@@ -2634,9 +2819,12 @@ private fun formatDuration(seconds: Int): String {
 }
 
 @Composable
-private fun ChatDateDivider(date: String) {
+private fun ChatDateDivider(
+    date: String,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,

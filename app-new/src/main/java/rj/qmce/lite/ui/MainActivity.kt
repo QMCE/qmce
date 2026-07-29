@@ -69,6 +69,7 @@ import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.AboutScreen
 import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
+import rj.qmce.lite.ui.screens.ChatComposerMenuScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.EmotionPickerScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
@@ -80,6 +81,7 @@ import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
 import rj.qmce.lite.ui.screens.LogoutConfirmationScreen
 import rj.qmce.lite.ui.screens.MainScreen
+import rj.qmce.lite.ui.screens.NotificationCenterScreen
 import rj.qmce.lite.ui.screens.PacketToolScreen
 import rj.qmce.lite.ui.screens.QZoneCommentScreen
 import rj.qmce.lite.ui.screens.QZoneComposerScreen
@@ -372,8 +374,18 @@ private fun WearApp() {
                                         launchSingleTop = true
                                     }
                                 },
+                                onOpenNotificationCenter = {
+                                    navController.navigate("notificationCenter") {
+                                        launchSingleTop = true
+                                    }
+                                },
                             )
                         }
+                    composable("notificationCenter") {
+                        NotificationCenterScreen(
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
                     composable("contactProfile") {
                         selectedProfileBuddy?.let { buddy ->
                             ProfileScreen(
@@ -416,6 +428,11 @@ private fun WearApp() {
                                 onBack = { navController.popBackStack() },
                                 onOpenInput = {
                                     navController.navigate("chatInput") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                onOpenComposerMenu = {
+                                    navController.navigate("chatComposerMenu") {
                                         launchSingleTop = true
                                     }
                                 },
@@ -482,37 +499,42 @@ private fun WearApp() {
                             },
                         )
                     }
-                    composable("chatInput") {
-                        val editingText by chatDetailVm.editingText.collectAsState()
-                        val pendingReplyTarget by chatDetailVm.pendingReplyTarget.collectAsState()
-                        ChatInputScreen(
-                            vm = chatDetailVm,
-                            peerUid = chatDetailVm.currentPeerUid,
-                            chatType = chatDetailVm.currentChatType,
-                            editingText = editingText,
-                            replyTarget = pendingReplyTarget,
-                            onConsumeReplyTarget = chatDetailVm::consumePendingReplyTarget,
-                            onSend = { text, target -> chatDetailVm.sendText(text, target) },
-                            onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
-                            peerUin = chatDetailVm.currentPeerUin,
-                            onSendMixed = { mixedText, uriMap, atMap, emotionMap, target ->
-                                chatDetailVm.sendMixed(
-                                    context,
-                                    mixedText,
-                                    uriMap,
-                                    atMap,
-                                    target,
-                                    emotionMap,
-                                )
+                    composable("chatComposerMenu") {
+                        ChatComposerMenuScreen(
+                            onOpenText = {
+                                navController.navigate("chatInput") {
+                                    launchSingleTop = true
+                                }
                             },
-                            onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
-                            onOpenVoiceRecorder = {
+                            onOpenVoice = {
                                 navController.navigate("voiceRecord") {
                                     launchSingleTop = true
                                 }
                             },
+                            onOpenMedia = {
+                                navController.navigate("chatInputMedia") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("chatInput") {
+                        ChatInputRoute(
+                            chatDetailVm = chatDetailVm,
+                            context = context,
+                            openToolsOnLaunch = false,
+                            navController = navController,
                             onReportingPageChanged = { nestedOfficialPageId = it },
-                            onBack = { navController.popBackStack() }
+                        )
+                    }
+                    composable("chatInputMedia") {
+                        ChatInputRoute(
+                            chatDetailVm = chatDetailVm,
+                            context = context,
+                            openToolsOnLaunch = true,
+                            navController = navController,
+                            onReportingPageChanged = { nestedOfficialPageId = it },
                         )
                     }
                     composable("singleEmotionPicker") {
@@ -888,6 +910,48 @@ private fun officialPageId(route: String?, mainPage: Int): String? = when (route
         OfficialReportBridge.PageIds.SETTINGS
     "chatSettings" -> OfficialReportBridge.PageIds.SETTINGS
     else -> null
+}
+
+@Composable
+private fun ChatInputRoute(
+    chatDetailVm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
+    context: android.content.Context,
+    openToolsOnLaunch: Boolean,
+    navController: androidx.navigation.NavHostController,
+    onReportingPageChanged: (String?) -> Unit,
+) {
+    val editingText by chatDetailVm.editingText.collectAsState()
+    val pendingReplyTarget by chatDetailVm.pendingReplyTarget.collectAsState()
+    ChatInputScreen(
+        vm = chatDetailVm,
+        peerUid = chatDetailVm.currentPeerUid,
+        chatType = chatDetailVm.currentChatType,
+        editingText = editingText,
+        replyTarget = pendingReplyTarget,
+        openToolsOnLaunch = openToolsOnLaunch,
+        onConsumeReplyTarget = chatDetailVm::consumePendingReplyTarget,
+        onSend = { text, target -> chatDetailVm.sendText(text, target) },
+        onSendEdited = { text -> chatDetailVm.sendEditedText(text) },
+        peerUin = chatDetailVm.currentPeerUin,
+        onSendMixed = { mixedText, uriMap, atMap, emotionMap, target ->
+            chatDetailVm.sendMixed(
+                context,
+                mixedText,
+                uriMap,
+                atMap,
+                target,
+                emotionMap,
+            )
+        },
+        onSendVideo = { uri -> chatDetailVm.sendVideo(context, uri) },
+        onOpenVoiceRecorder = {
+            navController.navigate("voiceRecord") {
+                launchSingleTop = true
+            }
+        },
+        onReportingPageChanged = onReportingPageChanged,
+        onBack = { navController.popBackStack() },
+    )
 }
 
 @Composable

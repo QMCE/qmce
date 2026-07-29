@@ -465,14 +465,24 @@ class QZoneViewModel : ViewModel() {
                 )) {
                     QZoneFeedRepository.RefreshResult.Success -> {
                         val hasFeeds = _feeds.value.isNotEmpty()
-                        finishFeedLoad(generation, hasFeeds)
-                        if (hasFeeds) cancelFeedRetry()
-                        else scheduleFeedRetry("empty-success")
+                        if (hasFeeds) {
+                            finishFeedLoad(generation, success = true)
+                            cancelFeedRetry()
+                        } else {
+                            // Empty space is a valid success — do not retry as failure.
+                            if (_statusText.value.isBlank() ||
+                                _statusText.value == "加载空间动态..."
+                            ) {
+                                _statusText.value = "暂无动态"
+                            }
+                            finishFeedLoad(generation, success = true, preserveStatus = true)
+                            cancelFeedRetry()
+                        }
                     }
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit
                     is QZoneFeedRepository.RefreshResult.Unavailable -> {
                         _statusText.value = result.reason
-                        finishFeedLoad(generation, false)
+                        finishFeedLoad(generation, success = false, preserveStatus = true)
                         scheduleFeedRetry("unavailable-${result.reason}")
                     }
                 }
@@ -480,7 +490,7 @@ class QZoneViewModel : ViewModel() {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "loadFeeds error", e)
                 _statusText.value = "加载失败: ${e.message}"
-                finishFeedLoad(generation, false)
+                finishFeedLoad(generation, success = false, preserveStatus = true)
                 scheduleFeedRetry("exception-${e.javaClass.simpleName}")
             } finally {
                 synchronized(feedLoadLock) {
@@ -602,13 +612,19 @@ class QZoneViewModel : ViewModel() {
         Log.d(TAG, "processed ${distinctItems.size} feeds")
     }
 
-    private fun finishFeedLoad(generation: Long, success: Boolean) {
+    private fun finishFeedLoad(
+        generation: Long,
+        success: Boolean,
+        preserveStatus: Boolean = false,
+    ) {
         if (!isCurrentFeedLoad(generation)) return
         _loading.value = false
         synchronized(feedLoadLock) {
             if (feedLoadGeneration == generation) loaded = success
         }
-        if (!success && _feeds.value.isEmpty()) _statusText.value = "加载失败，请重试"
+        if (!success && _feeds.value.isEmpty() && !preserveStatus && _statusText.value.isBlank()) {
+            _statusText.value = "加载失败，请重试"
+        }
     }
 
     private fun isCurrentFeedLoad(generation: Long): Boolean = synchronized(feedLoadLock) {

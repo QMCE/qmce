@@ -34,10 +34,11 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.AppCard
+import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -49,6 +50,7 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -68,6 +70,9 @@ fun QZoneScreen(
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
+    val isFeedError = feeds.isEmpty() && !loading && statusText.isNotBlank() &&
+        statusText != "暂无动态" &&
+        statusText != "加载空间动态..."
 
     LaunchedEffect(listState.canScrollForward, feeds.isNotEmpty(), loading, isLoadingMore) {
         if (!listState.canScrollForward && feeds.isNotEmpty() && !loading && !isLoadingMore && vm.hasMoreData()) {
@@ -75,21 +80,26 @@ fun QZoneScreen(
         }
     }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
-        TransformingLazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            state = listState,
-            contentPadding = contentPadding,
-        ) {
-            item(key = "qzone-compose") {
+    ScreenScaffold(
+        scrollState = listState,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+        edgeButton = {
+            if (isFeedError) {
+                EdgeButton(
+                    onClick = { vm.loadFeeds(forceRefresh = true) },
+                    modifier = Modifier.fillMaxWidth(),
+                    buttonSize = EdgeButtonSize.Small,
+                    enabled = !loading,
+                ) {
+                    Text(if (loading) "重试中…" else "重试")
+                }
+            } else {
                 OfficialReportTargetBox(
                     key = "qzone-compose",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec),
+                    modifier = Modifier.fillMaxWidth(),
                     elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
                 ) { reportTarget ->
-                    CompactButton(
+                    EdgeButton(
                         onClick = {
                             OfficialReportBridge.reportElementClick(
                                 target = reportTarget,
@@ -97,16 +107,27 @@ fun QZoneScreen(
                             )
                             onOpenComposer()
                         },
-                        modifier = Modifier.padding(vertical = 3.dp),
-                        colors = ButtonDefaults.filledVariantButtonColors(),
-                        transformation = SurfaceTransformation(transformationSpec),
-                        icon = { Icon(Icons.Default.Add, contentDescription = "发表动态") },
-                    )
+                        modifier = Modifier.fillMaxWidth(),
+                        buttonSize = EdgeButtonSize.Small,
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "发表动态")
+                    }
                 }
             }
-            if (statusText.isNotEmpty()) {
+        },
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = contentPadding,
+        ) {
+            if (statusText.isNotEmpty() && statusText != "暂无动态") {
                 item(key = "qzone-status") {
-                    QZoneListNotice(statusText, scheme.outline, transformationSpec)
+                    QZoneListNotice(
+                        statusText,
+                        if (isFeedError) scheme.error else scheme.outline,
+                        transformationSpec,
+                    )
                 }
             }
             if (operationStatus.isNotEmpty()) {
@@ -135,7 +156,7 @@ fun QZoneScreen(
                     }
                 }
 
-                feeds.isEmpty() -> {
+                feeds.isEmpty() && !isFeedError -> {
                     item(key = "qzone-empty") {
                         QZoneListNotice(
                             "暂无动态",
@@ -146,7 +167,7 @@ fun QZoneScreen(
                     }
                 }
 
-                else -> {
+                feeds.isNotEmpty() -> {
                     feeds.forEach { feed ->
                         item(key = "feed:${feed.feedId}") {
                             OfficialReportTargetBox(
@@ -268,57 +289,39 @@ private fun FeedPreviewCard(
         feed.displayTime,
         feed.time
     ) { feed.displayTime.ifBlank { feedTimeText(feed.time) } }
-    Card(
+    AppCard(
         onClick = onOpenDetail,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp),
         transformation = transformation,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(scheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AsyncImage(
-                        model = avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(
-                        feed.nick,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                    Text(
-                        timeText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.outline
-                    )
-                }
-            }
-            if (feed.content.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    feed.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
+        appImage = {
+            Box(
+                modifier = Modifier
+                    .size(CardDefaults.AppImageSize)
+                    .clip(CircleShape)
+                    .background(scheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
             }
+        },
+        appName = { Text(feed.nick, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        time = { Text(timeText) },
+        title = {
+            Text(
+                feed.content.ifBlank { "该动态没有文字内容" },
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             feed.forward?.let {
                 Spacer(Modifier.height(6.dp))
                 ForwardFeedContent(it, hasMedia = feed.picUrls.isNotEmpty())

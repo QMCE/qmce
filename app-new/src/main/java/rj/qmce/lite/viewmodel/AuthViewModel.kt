@@ -70,6 +70,10 @@ class AuthViewModel : ViewModel() {
     val loginUiState: StateFlow<LoginUiState> = _loginUiState
 
     private val _logText = MutableStateFlow("")
+    val logText: StateFlow<String> = _logText
+
+    private val _scannedAccount = MutableStateFlow<String?>(null)
+    val scannedAccount: StateFlow<String?> = _scannedAccount
 
     private val _isBusy = MutableStateFlow(false)
     val isBusy: StateFlow<Boolean> = _isBusy
@@ -92,6 +96,7 @@ class AuthViewModel : ViewModel() {
     private var ticketAccount: String? = null
     private var ticketAttempt = 0
     private var requestGeneration = 0L
+    private var agreementsAccepted = false
 
     fun initWtService() {
         viewModelScope.launch {
@@ -183,12 +188,26 @@ class AuthViewModel : ViewModel() {
     fun reset() {
         invalidateRequest(clearQr = true)
         _logText.value = ""
+        _scannedAccount.value = null
+        agreementsAccepted = false
         buildTime = 0L
         expireTimeSec = 0L
         remainingSec = 0L
         _statusText.value = if (wtService != null) "就绪" else "未初始化"
         _loginUiState.value = LoginUiState.Idle
         _isBusy.value = false
+    }
+
+    /** User accepted agreements on the watch confirm screen; exchange ticket when account is ready. */
+    fun confirmLogin() {
+        agreementsAccepted = true
+        val account = ticketAccount ?: _scannedAccount.value
+        if (!account.isNullOrBlank()) {
+            ticketAccount = account
+            requestTicket(requestGeneration)
+        } else {
+            setState(LoginUiState.Scanned, "已同意，等待手机确认", busy = false)
+        }
     }
 
     private suspend fun awaitLoginServices(): LoginServices? = serviceInitMutex.withLock {
@@ -232,6 +251,8 @@ class AuthViewModel : ViewModel() {
 
     private fun beginRequest(): Long {
         invalidateRequest(clearQr = true)
+        agreementsAccepted = false
+        _scannedAccount.value = null
         requestGeneration += 1L
         return requestGeneration
     }
@@ -505,7 +526,16 @@ class AuthViewModel : ViewModel() {
                                     callbackWatchdogJob?.cancel()
                                     ticketAccount = cleanAccount
                                     ticketAttempt = 0
-                                    requestTicket(generation)
+                                    _scannedAccount.value = cleanAccount
+                                    if (agreementsAccepted) {
+                                        requestTicket(generation)
+                                    } else {
+                                        setState(
+                                            LoginUiState.Scanned,
+                                            "确认登录 $cleanAccount",
+                                            busy = false,
+                                        )
+                                    }
                                 }
                                 48 -> Unit
                                 53 -> {
