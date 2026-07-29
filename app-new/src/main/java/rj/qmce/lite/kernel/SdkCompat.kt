@@ -16,7 +16,8 @@ import com.tencent.qqnt.kernel.nativeinterface.RecentContactListChangedInfo
 import kotlin.jvm.functions.Function1
 
 /**
- * Bridges compile-time qq-sdk.jar Kotlin names to runtime qq-sdk-runtime.jar JVM names.
+ * Prefers readable Kotlin method names on the single qq-sdk.jar; short JVM
+ * names remain as a compatibility fallback.
  */
 object SdkCompat {
 

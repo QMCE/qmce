@@ -53,7 +53,7 @@ android {
     }
 
     buildTypes {
-        // R8：runtime 用 strip Metadata 的 qq-sdk-runtime.jar；编译仍用含 Metadata 的 qq-sdk.jar
+        // QQ SDK 单 jar（含 Metadata）；R8 靠 -dontoptimize 规避大 Metadata NPE
         val enableCodeShrinks = true
         debug {
             isDebuggable = true
@@ -242,9 +242,8 @@ dependencies {
     implementation(libs.appcenter.analytics)
     implementation(libs.appcenter.crashes)
 
-    // QQ API：compile 保留 Kotlin Metadata 可读名；runtime/R8 用全量 strip 版避免 R8 NPE
-    compileOnly(files("libs/qq-sdk.jar"))
-    runtimeOnly(files("libs/qq-sdk-runtime.jar"))
+    // QQ API：单 jar（含 Metadata）；R8 靠 -dontoptimize 规避大 Metadata NPE
+    implementation(files("libs/qq-sdk.jar"))
     implementation(libs.commons.lang3)
     // 新版jar不需要这个了
     //implementation(files("libs/qav-runtime.jar"))
