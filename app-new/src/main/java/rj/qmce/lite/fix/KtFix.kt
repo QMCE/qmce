@@ -391,6 +391,30 @@ object KtFix {
     fun lastOrNull(list: List<Any?>): Any? = if (list.isEmpty()) null else list[list.size - 1]
 
     @JvmStatic
+    fun last(iterable: Iterable<Any?>): Any? {
+        if (iterable is List<*>) return last(iterable)
+        val it = iterable.iterator()
+        if (!it.hasNext()) throw NoSuchElementException("Collection is empty.")
+        var last: Any? = null
+        while (it.hasNext()) {
+            last = it.next()
+        }
+        return last
+    }
+
+    @JvmStatic
+    fun lastOrNull(iterable: Iterable<Any?>): Any? {
+        if (iterable is List<*>) return lastOrNull(iterable)
+        val it = iterable.iterator()
+        if (!it.hasNext()) return null
+        var last: Any? = null
+        while (it.hasNext()) {
+            last = it.next()
+        }
+        return last
+    }
+
+    @JvmStatic
     fun minus(iterable: Iterable<Any?>, other: Iterable<Any?>): List<Any?> {
         val remove = toMutableSetFromIterable(other)
         val out = ArrayList<Any?>()

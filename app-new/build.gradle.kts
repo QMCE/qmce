@@ -24,7 +24,7 @@ android {
         minSdk = 23
         targetSdk = 37
         versionCode = 23
-        versionName = "0.5.1"
+        versionName = "0.5.1-fix"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
