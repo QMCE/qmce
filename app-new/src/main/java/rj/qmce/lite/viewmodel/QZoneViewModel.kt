@@ -112,6 +112,15 @@ class QZoneViewModel : ViewModel() {
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
 
+    private val _feedError = MutableStateFlow<String?>(null)
+    val feedError: StateFlow<String?> = _feedError
+
+    private val _loadMoreError = MutableStateFlow<String?>(null)
+    val loadMoreError: StateFlow<String?> = _loadMoreError
+
+    private val _noMoreData = MutableStateFlow(false)
+    val noMoreData: StateFlow<Boolean> = _noMoreData
+
     private var runtime: AppRuntime? = null
     private var loaded = false
     private val feedLoadLock = Any()
@@ -119,7 +128,6 @@ class QZoneViewModel : ViewModel() {
     private var activeFeedLoad: Job? = null
     private var loadingMore = false
     private var lastLoadMoreTime = 0L
-    private var noMoreData = false
     private val _loadingMore = MutableStateFlow(false)
     val loadingMoreFlow: StateFlow<Boolean> = _loadingMore
     private var loadMoreStartTime = 0L
@@ -158,10 +166,10 @@ class QZoneViewModel : ViewModel() {
 
     fun isLoadingMore(): Boolean = loadingMore
 
-    fun hasMoreData(): Boolean = !noMoreData
+    fun hasMoreData(): Boolean = !_noMoreData.value
 
     fun resetNoMoreData() {
-        noMoreData = false
+        _noMoreData.value = false
     }
 
     fun publishText(text: String) {
@@ -408,35 +416,37 @@ class QZoneViewModel : ViewModel() {
     }
 
     fun loadMore() {
-        if (loadingMore || noMoreData) return
+        if (loadingMore || _noMoreData.value) return
         if (System.currentTimeMillis() - lastLoadMoreTime < 3000) return
         loadingMore = true
         _loadingMore.value = true
+        _loadMoreError.value = null
         lastLoadMoreTime = System.currentTimeMillis()
         loadMoreStartTime = System.currentTimeMillis()
         Log.d(TAG, "loadMore via svc.n()")
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val prevSize = _feeds.value.size
-                val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds) ?: run {
-                    Log.w(TAG, "loadMore ignored: feed service unavailable")
-                    return@launch
-                }
+                val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds)
+                    ?: run {
+                        val message = "加载更多失败：动态服务不可用"
+                        Log.w(TAG, message)
+                        _loadMoreError.value = message
+                        return@launch
+                    }
                 val elapsed = System.currentTimeMillis() - loadMoreStartTime
                 if (elapsed < 500) Thread.sleep(500 - elapsed)
-                loadingMore = false
-                _loadingMore.value = false
                 Log.d(TAG, "loadMore done: prev=$prevSize, now=$newSize")
-                if (newSize > prevSize) {
-                    noMoreData = false
-                    Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
+                _noMoreData.value = newSize <= prevSize
+                if (_noMoreData.value) {
+                    Log.d(TAG, "loadMore produced no new page; reached end of feed")
                 } else {
-                    noMoreData = false
-                    Log.d(TAG, "loadMore produced no new page; keeping pagination retryable")
+                    Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "loadMore error", e)
+                _loadMoreError.value = "加载更多失败：${e.message ?: "未知错误"}"
             } finally {
                 loadingMore = false
                 _loadingMore.value = false
@@ -453,7 +463,9 @@ class QZoneViewModel : ViewModel() {
             loaded = false
             activeFeedLoad = null
         }
-        noMoreData = false
+        if (forceRefresh) cancelFeedRetry()
+        _noMoreData.value = false
+        _feedError.value = null
         _loading.value = true
         _statusText.value = "加载空间动态..."
 
@@ -482,6 +494,7 @@ class QZoneViewModel : ViewModel() {
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit
                     is QZoneFeedRepository.RefreshResult.Unavailable -> {
                         _statusText.value = result.reason
+                        _feedError.value = result.reason
                         finishFeedLoad(generation, success = false, preserveStatus = true)
                         scheduleFeedRetry("unavailable-${result.reason}")
                     }
@@ -490,6 +503,7 @@ class QZoneViewModel : ViewModel() {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "loadFeeds error", e)
                 _statusText.value = "加载失败: ${e.message}"
+                _feedError.value = _statusText.value
                 finishFeedLoad(generation, success = false, preserveStatus = true)
                 scheduleFeedRetry("exception-${e.javaClass.simpleName}")
             } finally {

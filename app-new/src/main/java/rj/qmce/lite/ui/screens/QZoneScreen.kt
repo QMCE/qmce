@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -37,8 +38,8 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.AppCard
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -50,7 +51,6 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
-import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,14 +65,15 @@ fun QZoneScreen(
     val feeds by vm.feeds.collectAsState()
     val statusText by vm.statusText.collectAsState()
     val loading by vm.loading.collectAsState()
+    val feedError by vm.feedError.collectAsState()
     val isLoadingMore by vm.loadingMoreFlow.collectAsState()
+    val loadMoreError by vm.loadMoreError.collectAsState()
+    val noMoreData by vm.noMoreData.collectAsState()
     val operationStatus by vm.operationStatus.collectAsState()
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val isFeedError = feeds.isEmpty() && !loading && statusText.isNotBlank() &&
-        statusText != "暂无动态" &&
-        statusText != "加载空间动态..."
+    val isFeedError = feedError != null
 
     LaunchedEffect(listState.canScrollForward, feeds.isNotEmpty(), loading, isLoadingMore) {
         if (!listState.canScrollForward && feeds.isNotEmpty() && !loading && !isLoadingMore && vm.hasMoreData()) {
@@ -80,47 +81,40 @@ fun QZoneScreen(
         }
     }
 
-    ScreenScaffold(
-        scrollState = listState,
-        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
-        edgeButton = {
-            if (isFeedError) {
-                EdgeButton(
-                    onClick = { vm.loadFeeds(forceRefresh = true) },
-                    modifier = Modifier.fillMaxWidth(),
-                    buttonSize = EdgeButtonSize.Small,
-                    enabled = !loading,
-                ) {
-                    Text(if (loading) "重试中…" else "重试")
-                }
-            } else {
-                OfficialReportTargetBox(
-                    key = "qzone-compose",
-                    modifier = Modifier.fillMaxWidth(),
-                    elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
-                ) { reportTarget ->
-                    EdgeButton(
-                        onClick = {
-                            OfficialReportBridge.reportElementClick(
-                                target = reportTarget,
-                                elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
-                            )
-                            onOpenComposer()
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        buttonSize = EdgeButtonSize.Small,
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = "发表动态")
-                    }
-                }
-            }
-        },
-    ) { contentPadding ->
+    ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
             contentPadding = contentPadding,
         ) {
+            item(key = "qzone-compose") {
+                OfficialReportTargetBox(
+                    key = "qzone-compose",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
+                ) { reportTarget ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CompactButton(
+                            onClick = {
+                                OfficialReportBridge.reportElementClick(
+                                    target = reportTarget,
+                                    elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
+                                )
+                                onOpenComposer()
+                            },
+                            transformation = SurfaceTransformation(transformationSpec),
+                            icon = {
+                                Icon(Icons.Default.Add, contentDescription = "发表动态")
+                            },
+                        )
+                    }
+                }
+            }
             if (statusText.isNotEmpty() && statusText != "暂无动态") {
                 item(key = "qzone-status") {
                     QZoneListNotice(
@@ -128,6 +122,25 @@ fun QZoneScreen(
                         if (isFeedError) scheme.error else scheme.outline,
                         transformationSpec,
                     )
+                }
+            }
+            if (isFeedError) {
+                item(key = "qzone-retry-feed") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Button(
+                            onClick = { vm.loadFeeds(forceRefresh = true) },
+                            enabled = !loading,
+                            transformation = SurfaceTransformation(transformationSpec),
+                        ) {
+                            Text(if (loading) "重试中…" else "重试")
+                        }
+                    }
                 }
             }
             if (operationStatus.isNotEmpty()) {
@@ -238,7 +251,26 @@ fun QZoneScreen(
                         )
                     }
                 }
-            } else if (feeds.isNotEmpty() && !vm.hasMoreData()) {
+            } else if (loadMoreError != null) {
+                item(key = "qzone-load-more-error") {
+                    QZoneListNotice(loadMoreError.orEmpty(), scheme.error, transformationSpec)
+                }
+                item(key = "qzone-retry-load-more") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CompactButton(
+                            onClick = vm::loadMore,
+                            transformation = SurfaceTransformation(transformationSpec),
+                            label = { Text("重试加载") },
+                        )
+                    }
+                }
+            } else if (feeds.isNotEmpty() && noMoreData) {
                 item(key = "qzone-end") {
                     QZoneListNotice(
                         "— 已经到底了 —",
@@ -263,6 +295,7 @@ private fun TransformingLazyColumnItemScope.QZoneListNotice(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = color,
+        textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
             .transformedHeight(this, transformationSpec)
