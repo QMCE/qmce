@@ -25,6 +25,11 @@ class QZoneViewModel : ViewModel() {
     companion object {
         private const val TAG = "QMCE-QZone"
         private const val AVATAR_BASE = "https://thirdqq.qlogo.cn/headimg_dl?spec=100&dst_uin="
+
+        // A refresh can return "success" while the first page has not arrived yet (slow
+        // backend). Retry a couple of times before settling on an empty space.
+        private const val MAX_EMPTY_REFRESH_RETRIES = 2
+        private const val EMPTY_REFRESH_RETRY_DELAY_MS = 2_500L
     }
 
     data class FeedItem(
@@ -133,6 +138,9 @@ class QZoneViewModel : ViewModel() {
     private var loadMoreStartTime = 0L
     private val feedRetryLock = Any()
     private var feedRetryJob: Job? = null
+    private val emptyRetryLock = Any()
+    private var emptyRetryJob: Job? = null
+    private var emptyRefreshAttempts = 0
     private val feedDataById = HashMap<String, BusinessFeedData>()
     private var lastSubmittedFingerprint = ""
     private val qZoneFeedRepository = QZoneFeedRepository()
@@ -161,6 +169,39 @@ class QZoneViewModel : ViewModel() {
         synchronized(feedRetryLock) {
             feedRetryJob?.cancel()
             feedRetryJob = null
+        }
+    }
+
+    /**
+     * A feed refresh can report success before the first page has actually landed (slow
+     * backend / cold cache). Rather than permanently showing 暂无动态, re-run the refresh a
+     * bounded number of times. The counter is reset to 0 in [processFeeds] the moment real
+     * feeds arrive, so this never loops once data exists.
+     */
+    private fun scheduleEmptyRefreshRetry() {
+        synchronized(emptyRetryLock) {
+            if (emptyRefreshAttempts >= MAX_EMPTY_REFRESH_RETRIES) {
+                Log.d(TAG, "empty feed refresh retry budget exhausted; keeping empty state")
+                return
+            }
+            if (emptyRetryJob?.isActive == true) return
+            emptyRefreshAttempts++
+            val attempt = emptyRefreshAttempts
+            emptyRetryJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(EMPTY_REFRESH_RETRY_DELAY_MS)
+                synchronized(emptyRetryLock) { emptyRetryJob = null }
+                if (!_loading.value && _feeds.value.isEmpty()) {
+                    Log.d(TAG, "retrying empty feed refresh, attempt=$attempt")
+                    loadFeeds(forceRefresh = true)
+                }
+            }
+        }
+    }
+
+    private fun cancelEmptyRefreshRetry() {
+        synchronized(emptyRetryLock) {
+            emptyRetryJob?.cancel()
+            emptyRetryJob = null
         }
     }
 
@@ -427,26 +468,28 @@ class QZoneViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val prevSize = _feeds.value.size
-                val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds)
-                    ?: run {
-                        val message = "加载更多失败：动态服务不可用"
-                        Log.w(TAG, message)
-                        _loadMoreError.value = message
-                        return@launch
-                    }
+                val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds) ?: run {
+                    // Feed service not ready yet — a normal cold-start race. The original
+                    // implementation ignored this silently; surfacing it as an error made
+                    // ordinary launches show a spurious "加载更多失败".
+                    Log.w(TAG, "loadMore ignored: feed service unavailable")
+                    return@launch
+                }
                 val elapsed = System.currentTimeMillis() - loadMoreStartTime
                 if (elapsed < 500) Thread.sleep(500 - elapsed)
                 Log.d(TAG, "loadMore done: prev=$prevSize, now=$newSize")
-                _noMoreData.value = newSize <= prevSize
-                if (_noMoreData.value) {
-                    Log.d(TAG, "loadMore produced no new page; reached end of feed")
-                } else {
+                if (newSize > prevSize) {
                     Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
+                } else {
+                    // The feed backend exposes no terminal "end of list" signal: a page
+                    // with no new items only means nothing arrived within the poll window.
+                    // Keep pagination retryable (do NOT flip _noMoreData) so a slow page
+                    // does not permanently stop further loading.
+                    Log.d(TAG, "loadMore produced no new page; keeping pagination retryable")
                 }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "loadMore error", e)
-                _loadMoreError.value = "加载更多失败：${e.message ?: "未知错误"}"
             } finally {
                 loadingMore = false
                 _loadingMore.value = false
@@ -464,6 +507,7 @@ class QZoneViewModel : ViewModel() {
             activeFeedLoad = null
         }
         if (forceRefresh) cancelFeedRetry()
+        cancelEmptyRefreshRetry()
         _noMoreData.value = false
         _feedError.value = null
         _loading.value = true
@@ -481,7 +525,9 @@ class QZoneViewModel : ViewModel() {
                             finishFeedLoad(generation, success = true)
                             cancelFeedRetry()
                         } else {
-                            // Empty space is a valid success — do not retry as failure.
+                            // Empty space is a valid success — do not retry as failure. It may
+                            // also be a slow backend; give it a bounded number of extra tries
+                            // before settling on the empty state.
                             if (_statusText.value.isBlank() ||
                                 _statusText.value == "加载空间动态..."
                             ) {
@@ -489,6 +535,7 @@ class QZoneViewModel : ViewModel() {
                             }
                             finishFeedLoad(generation, success = true, preserveStatus = true)
                             cancelFeedRetry()
+                            scheduleEmptyRefreshRetry()
                         }
                     }
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit
@@ -620,6 +667,9 @@ class QZoneViewModel : ViewModel() {
         if (distinctItems.isNotEmpty()) {
             lastSubmittedFingerprint = currentFingerprint
             _feeds.value = distinctItems
+            // Real feeds arrived (initial load, retry, or late observer event) — the
+            // empty-refresh retry budget no longer applies.
+            synchronized(emptyRetryLock) { emptyRefreshAttempts = 0 }
         }
         _statusText.value = if (distinctItems.isEmpty()) "暂无动态" else ""
         if (finishLoading) _loading.value = false
@@ -719,6 +769,7 @@ class QZoneViewModel : ViewModel() {
 
     override fun onCleared() {
         cancelFeedRetry()
+        cancelEmptyRefreshRetry()
         qZoneFeedRepository.close()
         super.onCleared()
     }
