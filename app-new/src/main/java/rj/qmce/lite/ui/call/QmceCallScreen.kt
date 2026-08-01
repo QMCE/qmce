@@ -2,6 +2,7 @@ package rj.qmce.lite.ui.call
 
 import android.content.pm.PackageManager
 import android.os.SystemClock
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -16,6 +17,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CallEnd
+import androidx.compose.material.icons.filled.Cameraswitch
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -36,8 +46,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.FilledIconButton
+import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.tencent.av.opengl.ui.GLRootView
@@ -49,12 +60,22 @@ import rj.qmce.lite.data.call.QmceCallController
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportLifecycle
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
+import rj.qmce.lite.viewmodel.SettingsViewModel
 
 @Composable
 fun QmceCallScreen(onFinish: () -> Unit) {
     val state by QmceCallController.state.collectAsState()
     val peer = state.peer
     val context = LocalContext.current
+    val adaptive = LocalQmceAdaptive.current
+    val blockBack = remember {
+        context.getSharedPreferences(SettingsViewModel.PREFERENCES_NAME, android.content.Context.MODE_PRIVATE)
+            .getBoolean(SettingsViewModel.KEY_CALL_BLOCK_BACK, true)
+    }
+    BackHandler(enabled = blockBack && state.phase !in setOf(CallPhase.Idle, CallPhase.Ended)) {
+        // Swallow back / swipe-dismiss during call when strict mode is on.
+    }
     var incomingSession by remember { mutableStateOf(state.phase == CallPhase.Incoming) }
     LaunchedEffect(state.phase) {
         if (state.phase == CallPhase.Incoming) incomingSession = true
@@ -111,7 +132,7 @@ fun QmceCallScreen(onFinish: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 18.dp, vertical = 14.dp),
+                .padding(adaptive.screenContentPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -142,26 +163,32 @@ fun QmceCallScreen(onFinish: () -> Unit) {
 @Composable
 private fun CallIdentity(state: CallUiState) {
     val peer = state.peer
+    val showAvatar = state.mode == CallMode.Voice ||
+            state.phase == CallPhase.Incoming ||
+            state.phase == CallPhase.Outgoing ||
+            state.phase == CallPhase.Ended
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Spacer(Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .size(66.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = peer?.name?.take(1)?.uppercase().orEmpty().ifBlank { "Q" },
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-            )
+        Spacer(Modifier.height(6.dp))
+        if (showAvatar) {
+            Box(
+                modifier = Modifier
+                    .size(58.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = peer?.name?.take(1)?.uppercase().orEmpty().ifBlank { "Q" },
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
         }
-        Spacer(Modifier.height(10.dp))
         Text(
             text = peer?.name ?: "QQ 通话",
             color = MaterialTheme.colorScheme.onSurface,
@@ -169,6 +196,13 @@ private fun CallIdentity(state: CallUiState) {
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = if (state.mode == CallMode.Video) "视频通话" else "语音通话",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(4.dp))
@@ -189,7 +223,9 @@ private fun CallControls(
 ) {
     if (state.phase == CallPhase.Incoming) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -197,8 +233,9 @@ private fun CallControls(
                 key = "call:reject",
                 elementId = OfficialReportBridge.ElementIds.HANG_UP,
             ) { reportTarget ->
-                ControlButton(
-                    text = "拒绝",
+                CallIconButton(
+                    icon = Icons.Default.CallEnd,
+                    contentDescription = "拒绝",
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     onClick = {
@@ -215,8 +252,9 @@ private fun CallControls(
                 key = "call:answer",
                 elementId = OfficialReportBridge.ElementIds.ANSWER_CALL,
             ) { reportTarget ->
-                ControlButton(
-                    text = "接听",
+                CallIconButton(
+                    icon = Icons.Default.Call,
+                    contentDescription = "接听",
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                     onClick = {
@@ -233,20 +271,23 @@ private fun CallControls(
     }
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OfficialReportTargetBox(
                 key = "call:microphone",
                 elementId = OfficialReportBridge.ElementIds.MICROPHONE,
             ) { reportTarget ->
-                ControlButton(
-                    text = if (state.isMuted) "开麦" else "静音",
+                CallIconButton(
+                    icon = if (state.isMuted) Icons.Default.MicOff else Icons.Default.Mic,
+                    contentDescription = if (state.isMuted) "开麦" else "静音",
                     onClick = {
                         OfficialReportBridge.reportElementClick(
                             target = reportTarget,
@@ -256,17 +297,14 @@ private fun CallControls(
                     },
                 )
             }
-            ControlButton(
-                text = if (state.isSpeakerOn) "听筒" else "扬声器",
-                onClick = QmceCallController::toggleSpeaker,
-            )
             if (state.mode == CallMode.Video) {
                 OfficialReportTargetBox(
                     key = "call:camera",
                     elementId = OfficialReportBridge.ElementIds.CAMERA,
                 ) { reportTarget ->
-                    ControlButton(
-                        text = if (state.hasLocalVideo) "关视频" else "开视频",
+                    CallIconButton(
+                        icon = if (state.hasLocalVideo) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                        contentDescription = if (state.hasLocalVideo) "关视频" else "开视频",
                         onClick = {
                             OfficialReportBridge.reportElementClick(
                                 target = reportTarget,
@@ -276,8 +314,9 @@ private fun CallControls(
                         },
                     )
                 }
-                ControlButton(
-                    text = "翻转",
+                CallIconButton(
+                    icon = Icons.Default.Cameraswitch,
+                    contentDescription = "翻转",
                     onClick = QmceCallController::switchCamera,
                 )
             }
@@ -286,8 +325,9 @@ private fun CallControls(
             key = "call:hang-up",
             elementId = OfficialReportBridge.ElementIds.HANG_UP,
         ) { reportTarget ->
-            ControlButton(
-                text = if (state.phase == CallPhase.Ending) "挂断中" else "挂断",
+            CallIconButton(
+                icon = Icons.Default.CallEnd,
+                contentDescription = if (state.phase == CallPhase.Ending) "挂断中" else "挂断",
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 enabled = state.phase != CallPhase.Ending,
@@ -304,24 +344,30 @@ private fun CallControls(
 }
 
 @Composable
-private fun ControlButton(
-    text: String,
+private fun CallIconButton(
+    icon: ImageVector,
+    contentDescription: String,
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    CompactButton(
+    FilledIconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier,
-        colors = ButtonDefaults.buttonColors(
+        modifier = modifier.size(44.dp),
+        colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = containerColor,
             contentColor = contentColor,
         ),
-        label = { Text(text) },
-    )
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(22.dp),
+        )
+    }
 }
 
 @Composable

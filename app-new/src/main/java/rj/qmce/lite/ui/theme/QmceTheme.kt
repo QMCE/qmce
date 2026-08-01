@@ -19,12 +19,19 @@ import rj.qmce.lite.AppConfig
 fun QmceTheme(
     navController: NavController? = null,
     autoScale: Boolean = true,
-    manualScale: Float = 1.50f,
+    manualScale: Float = 1.0f,
+    edgeSafeAreaEnabled: Boolean = true,
+    edgeSafeAreaScale: Float = 1.0f,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
     val deviceDensity = LocalDensity.current
-    val adaptive = rememberQmceAdaptive(autoScale = autoScale, manualScale = manualScale)
+    val adaptive = rememberQmceAdaptive(
+        autoScale = autoScale,
+        manualScale = manualScale,
+        edgeSafeEnabled = edgeSafeAreaEnabled,
+        edgeSafeScale = edgeSafeAreaScale,
+    )
     val colorScheme = remember(context) {
         dynamicColorScheme(context) ?: QmceBlueColorScheme
     }
@@ -41,13 +48,20 @@ fun QmceTheme(
             navController.popBackStack()
         }
     }
+    // Apply adaptive.densityScale for both auto (≈1.4–1.6) and manual paths.
+    // fontScale stays system-owned; list focus scaling is separate via TransformationSpec.
+    val resolvedDensity = if (adaptive.densityScale == 1.0f) {
+        deviceDensity
+    } else {
+        Density(
+            density = deviceDensity.density * adaptive.densityScale,
+            fontScale = deviceDensity.fontScale,
+        )
+    }
     MaterialTheme(colorScheme = colorScheme) {
         CompositionLocalProvider(
             LocalQmceAdaptive provides adaptive,
-            LocalDensity provides Density(
-                density = deviceDensity.density * adaptive.densityScale,
-                fontScale = deviceDensity.fontScale,
-            ),
+            LocalDensity provides resolvedDensity,
         ) {
             content()
         }

@@ -27,9 +27,9 @@ class QZoneViewModel : ViewModel() {
         private const val AVATAR_BASE = "https://thirdqq.qlogo.cn/headimg_dl?spec=100&dst_uin="
 
         // A refresh can return "success" while the first page has not arrived yet (slow
-        // backend). Retry a couple of times before settling on an empty space.
-        private const val MAX_EMPTY_REFRESH_RETRIES = 2
-        private const val EMPTY_REFRESH_RETRY_DELAY_MS = 2_500L
+        // backend). Retry a few times before settling on an empty space.
+        private const val MAX_EMPTY_REFRESH_RETRIES = 3
+        private const val EMPTY_REFRESH_RETRY_DELAY_MS = 4_000L
     }
 
     data class FeedItem(
@@ -182,15 +182,20 @@ class QZoneViewModel : ViewModel() {
         synchronized(emptyRetryLock) {
             if (emptyRefreshAttempts >= MAX_EMPTY_REFRESH_RETRIES) {
                 Log.d(TAG, "empty feed refresh retry budget exhausted; keeping empty state")
+                _statusText.value = "暂无动态"
+                _loading.value = false
+                loaded = true
                 return
             }
             if (emptyRetryJob?.isActive == true) return
             emptyRefreshAttempts++
             val attempt = emptyRefreshAttempts
+            _statusText.value = "加载空间动态..."
+            _loading.value = true
             emptyRetryJob = viewModelScope.launch(Dispatchers.IO) {
                 delay(EMPTY_REFRESH_RETRY_DELAY_MS)
                 synchronized(emptyRetryLock) { emptyRetryJob = null }
-                if (!_loading.value && _feeds.value.isEmpty()) {
+                if (_feeds.value.isEmpty()) {
                     Log.d(TAG, "retrying empty feed refresh, attempt=$attempt")
                     loadFeeds(forceRefresh = true)
                 }
@@ -524,18 +529,23 @@ class QZoneViewModel : ViewModel() {
                         if (hasFeeds) {
                             finishFeedLoad(generation, success = true)
                             cancelFeedRetry()
+                            cancelEmptyRefreshRetry()
                         } else {
-                            // Empty space is a valid success — do not retry as failure. It may
-                            // also be a slow backend; give it a bounded number of extra tries
-                            // before settling on the empty state.
-                            if (_statusText.value.isBlank() ||
-                                _statusText.value == "加载空间动态..."
-                            ) {
-                                _statusText.value = "暂无动态"
-                            }
-                            finishFeedLoad(generation, success = true, preserveStatus = true)
+                            // Keep loading UI through the empty-retry budget; only settle on
+                            // "暂无动态" once retries are exhausted.
                             cancelFeedRetry()
-                            scheduleEmptyRefreshRetry()
+                            val canRetry = synchronized(emptyRetryLock) {
+                                emptyRefreshAttempts < MAX_EMPTY_REFRESH_RETRIES
+                            }
+                            if (canRetry) {
+                                _statusText.value = "加载空间动态..."
+                                _loading.value = true
+                                if (!isCurrentFeedLoad(generation)) return@launch
+                                scheduleEmptyRefreshRetry()
+                            } else {
+                                _statusText.value = "暂无动态"
+                                finishFeedLoad(generation, success = true, preserveStatus = true)
+                            }
                         }
                     }
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit

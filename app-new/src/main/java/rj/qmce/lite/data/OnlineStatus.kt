@@ -25,6 +25,14 @@ private const val TAG = "QMCE"
  * 3. UI 通过 addObserver 注册回调，在 UI 线程收到通知后刷新
  */
 object OnlineStatus {
+    enum class TermKind {
+        Phone,
+        Computer,
+        Tablet,
+        Watch,
+        Unknown,
+    }
+
     private val cache = ConcurrentHashMap<String, StatusInfo>()
     private val observers = CopyOnWriteArrayList<() -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -33,6 +41,8 @@ object OnlineStatus {
     private var started = false
     @Volatile
     private var selfUid: String = ""
+    @Volatile
+    private var nativeService: IKernelProfileService? = null
 
     fun addObserver(cb: () -> Unit) {
         if (cb !in observers) observers.add(cb)
@@ -50,6 +60,8 @@ object OnlineStatus {
         return s.status != 0 && s.status != 20
     }
 
+    fun statusInfo(): StatusInfo? = cache[selfUid]
+
     /** "手机在线" / "在线" / "离线" / null（未知） */
     fun describe(): String? {
         val s = cache[selfUid] ?: return null
@@ -58,19 +70,47 @@ object OnlineStatus {
         return if (s.status != 0 && s.status != 20) "在线" else "离线"
     }
 
+    /** 主终端类型；离线返回 null。 */
+    fun termKind(): TermKind? {
+        val s = cache[selfUid] ?: return null
+        if (s.status == 0 || s.status == 20) return null
+        return kindForTerm(s.termType, s.iconType, s.termDesc)
+    }
+
     fun start(profileService: IProfileService, uid: String) {
-        if (started) return
+        if (started && selfUid == uid) {
+            refreshStatusInfo()
+            return
+        }
         selfUid = uid
         try {
             SdkCompat.addProfileListener(profileService, Listener)
             val native = readNativeProfileService(profileService)
+            nativeService = native
             native?.startStatusPolling(true)
-            val map = native?.getStatusInfo("qmce", arrayListOf(uid))
-            if (!map.isNullOrEmpty()) merge(map)
             started = true
+            refreshStatusInfo()
+            // 登录后短时重试，缩短首屏等待
+            mainHandler.postDelayed({ refreshStatusInfo() }, 400L)
+            mainHandler.postDelayed({ refreshStatusInfo() }, 1_200L)
             Log.d(TAG, "OnlineStatus: started, uid=$uid")
         } catch (e: Throwable) {
             Log.w(TAG, "OnlineStatus: start failed", e)
+        }
+    }
+
+    fun refreshStatusInfo() {
+        val uid = selfUid
+        val native = nativeService
+        if (uid.isEmpty() || native == null) return
+        runCatching {
+            val map = native.getStatusInfo("qmce", arrayListOf(uid))
+            if (!map.isNullOrEmpty()) {
+                merge(map)
+                notifyObservers()
+            }
+        }.onFailure {
+            Log.w(TAG, "OnlineStatus: getStatusInfo failed", it)
         }
     }
 
@@ -90,6 +130,36 @@ object OnlineStatus {
 
     private fun notifyObservers() {
         mainHandler.post { observers.forEach { runCatching { it() } } }
+    }
+
+    private fun kindForTerm(termType: Int, iconType: Int, termDesc: String?): TermKind {
+        val desc = termDesc.orEmpty()
+        when {
+            desc.contains("手表") || desc.contains("Watch", ignoreCase = true) ->
+                return TermKind.Watch
+            desc.contains("平板") || desc.contains("Pad", ignoreCase = true) ||
+                desc.contains("iPad", ignoreCase = true) ->
+                return TermKind.Tablet
+            desc.contains("电脑") || desc.contains("PC", ignoreCase = true) ||
+                desc.contains("Windows", ignoreCase = true) ||
+                desc.contains("Mac", ignoreCase = true) ->
+                return TermKind.Computer
+            desc.contains("手机") || desc.contains("Phone", ignoreCase = true) ->
+                return TermKind.Phone
+        }
+        return when (termType) {
+            1, 6 -> TermKind.Computer
+            2 -> TermKind.Phone
+            3, 4, 5 -> TermKind.Tablet
+            8, 9 -> TermKind.Watch
+            else -> when (iconType) {
+                1, 6 -> TermKind.Computer
+                2 -> TermKind.Phone
+                3, 4, 5 -> TermKind.Tablet
+                8, 9 -> TermKind.Watch
+                else -> TermKind.Phone
+            }
+        }
     }
 
     private object Listener : IKernelProfileListener {

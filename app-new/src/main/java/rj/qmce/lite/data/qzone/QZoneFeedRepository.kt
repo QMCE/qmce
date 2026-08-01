@@ -7,13 +7,18 @@ import com.tencent.watch.qzone_impl.event.Event
 import com.tencent.watch.qzone_impl.event.EventCenter
 import com.tencent.watch.qzone_impl.event.EventSource
 import com.tencent.watch.qzone_impl.event.IObserver
+import com.tencent.watch.qzone_impl.feed.BaseResponseWrapper
+import com.tencent.watch.qzone_impl.feed.IFeedManager
 import com.tencent.watch.qzone_impl.feed.QZoneFeedService
+import com.tencent.watch.qzone_impl.feed.ResultWrapper
 import com.tencent.watch.qzone_impl.feed.ServiceCallbackWrapper
+import com.tencent.watch.qzone_impl.feed.TaskWrapper
 import com.tencent.watch.qzone_impl.feed.model.BusinessFeedData
 import com.tencent.watch.qzone_impl.utils.UinUtils
 import kotlinx.coroutines.delay
 import mqq.app.MobileQQ
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicReference
 
 class QZoneFeedRepository {
 
@@ -28,6 +33,7 @@ class QZoneFeedRepository {
     private var feedObserver: IObserver? = null
     private var observedFeedService: QZoneFeedService? = null
     private var feedService: QZoneFeedService? = null
+    private val lastRequestFailure = AtomicReference<String?>(null)
 
     suspend fun refresh(
         isCurrent: () -> Boolean,
@@ -53,35 +59,109 @@ class QZoneFeedRepository {
         }
         service.m(uin, uin)
         Log.d(TAG, "feed service initialized, uin=$uin")
+        attachRequestCallback(service)
         registerFeedObserver(service, onFeeds)
 
         val feedManager = service.i ?: return RefreshResult.Unavailable("FeedManager 不可用")
+        lastRequestFailure.set(null)
         val cached = feedManager.n()
         if (!cached.isNullOrEmpty()) {
             Log.d(TAG, "loaded ${cached.size} cached feeds")
             onFeeds(cached, false)
         }
 
-        val callback = ServiceCallbackWrapper().apply {
-            a = WeakReference(Handler(Looper.getMainLooper()))
-        }
-        feedManager.j(0, callback, false)
-        Log.d(TAG, "requested network feed refresh")
+        requestRefresh(feedManager, force = false)
+        Log.d(TAG, "requested network feed refresh force=false")
 
         var lastFingerprint = feedFingerprint(cached.orEmpty())
-        repeat(POLL_COUNT) {
+        var sawNonEmpty = !cached.isNullOrEmpty()
+        var forced = false
+        repeat(POLL_COUNT) { round ->
             delay(POLL_INTERVAL_MILLIS)
             if (!isCurrent()) return RefreshResult.Cancelled
+            if (!forced && round + 1 >= FORCE_REFRESH_AFTER_ROUND) {
+                val mid = feedManager.n()
+                if (mid.isNullOrEmpty()) {
+                    requestRefresh(feedManager, force = true)
+                    forced = true
+                    Log.d(TAG, "requested network feed refresh force=true after round=${round + 1}")
+                }
+            }
+            val failure = lastRequestFailure.get()
+            if (failure != null && !sawNonEmpty) {
+                Log.w(TAG, "feed refresh failed: $failure")
+                return RefreshResult.Unavailable(failure)
+            }
             val fresh = feedManager.n()
             if (!fresh.isNullOrEmpty()) {
+                sawNonEmpty = true
                 val fingerprint = feedFingerprint(fresh)
                 if (fingerprint != lastFingerprint) {
                     onFeeds(fresh, true)
                     lastFingerprint = fingerprint
+                    Log.d(TAG, "feed poll round=${round + 1} size=${fresh.size}")
                 }
             }
         }
+        val finalSize = feedManager.n()?.size ?: 0
+        Log.d(
+            TAG,
+            "feed refresh settled size=$finalSize forced=$forced failure=${lastRequestFailure.get()}",
+        )
+        val failure = lastRequestFailure.get()
+        if (finalSize == 0 && failure != null) {
+            return RefreshResult.Unavailable(failure)
+        }
         return RefreshResult.Success
+    }
+
+    private fun requestRefresh(feedManager: IFeedManager, force: Boolean) {
+        val callback = ServiceCallbackWrapper().apply {
+            a = WeakReference(Handler(Looper.getMainLooper()))
+        }
+        feedManager.j(0, callback, force)
+    }
+
+    private fun attachRequestCallback(service: QZoneFeedService) {
+        service.j = object : IFeedManager.RequestCallbackListener {
+            override fun k(
+                task: TaskWrapper?,
+                result: ResultWrapper?,
+                response: BaseResponseWrapper?,
+                code: Int,
+            ) {
+                val respCode = runCatching { response?.a() }.getOrNull()
+                val respMsg = runCatching { response?.c() }.getOrNull().orEmpty()
+                Log.d(
+                    TAG,
+                    "feed callback k code=$code respCode=$respCode msg=$respMsg " +
+                        "size=${runCatching { response?.b()?.size }.getOrNull()}",
+                )
+                if (code != 0) {
+                    lastRequestFailure.set(
+                        if (respMsg.isNotBlank()) {
+                            "空间请求失败：$respMsg"
+                        } else {
+                            "空间请求失败 code=$code"
+                        },
+                    )
+                } else if (respCode != null && respCode != 0) {
+                    lastRequestFailure.set(
+                        if (respMsg.isNotBlank()) {
+                            "空间请求失败：$respMsg"
+                        } else {
+                            "空间请求失败 resp=$respCode"
+                        },
+                    )
+                } else {
+                    lastRequestFailure.set(null)
+                }
+            }
+
+            override fun o(task: TaskWrapper?, result: ResultWrapper?) {
+                Log.d(TAG, "feed callback o result=$result")
+            }
+        }
     }
 
     private suspend fun awaitQZoneReady(isCurrent: () -> Boolean): RefreshResult {
@@ -147,7 +227,9 @@ class QZoneFeedRepository {
         }
         feedObserver = null
         observedFeedService = null
+        feedService?.j = null
         feedService = null
+        lastRequestFailure.set(null)
     }
 
     private fun registerFeedObserver(
@@ -164,6 +246,7 @@ class QZoneFeedRepository {
                     Log.d(TAG, "feed event: type=${event.a}")
                     if (event.a != FEED_EVENT_UPDATED && event.a != FEED_EVENT_REFRESHED) return
                     val feeds = service.i?.n()
+                    Log.d(TAG, "feed event type=${event.a} size=${feeds?.size ?: 0}")
                     if (!feeds.isNullOrEmpty()) onFeeds(feeds, true)
                 }
             }
@@ -208,8 +291,9 @@ class QZoneFeedRepository {
         private const val TAG = "QMCE-QZoneFeed"
         private const val FEED_EVENT_UPDATED = 1
         private const val FEED_EVENT_REFRESHED = 4
-        private const val POLL_COUNT = 30
-        private const val POLL_INTERVAL_MILLIS = 400L
+        private const val POLL_COUNT = 60
+        private const val POLL_INTERVAL_MILLIS = 500L
+        private const val FORCE_REFRESH_AFTER_ROUND = 30
         private const val READY_POLL_COUNT = 80
         private const val READY_POLL_INTERVAL_MILLIS = 250L
     }

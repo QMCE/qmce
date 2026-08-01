@@ -415,6 +415,7 @@ internal fun feedTimeText(time: Long): String =
 internal fun ForwardFeedContent(
     forward: QZoneViewModel.ForwardInfo,
     hasMedia: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val author = forward.author.ifBlank { "原作者" }
@@ -425,7 +426,7 @@ internal fun ForwardFeedContent(
         else -> "该动态没有文字内容"
     }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(scheme.surfaceContainerHigh)

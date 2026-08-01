@@ -26,6 +26,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.GroupManagementState
 import rj.qmce.lite.viewmodel.ChatSettingsViewModel
 
@@ -55,6 +56,13 @@ fun ChatSettingsScreen(
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
+            item(key = "settings-header") {
+                QmceListHeader(
+                    text = if (isGroup) "群聊设置" else "好友设置",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
             item(key = "settings-top") {
                 Button(
                     onClick = vm::togglePinned,

@@ -33,4 +33,7 @@ work/.tmp/
 .claude
 # Local Gradle cache (do not commit)
 .gradle_home/
+.gradle-home/
+compile-notify.log
+compile-out.log
 gradle.properties.local

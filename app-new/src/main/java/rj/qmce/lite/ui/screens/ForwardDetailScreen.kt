@@ -35,6 +35,7 @@ import rj.qmce.lite.viewmodel.ChatDetailViewModel
 internal fun ForwardDetailScreen(
     state: ChatDetailViewModel.ForwardDetailState,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit = { _, _ -> },
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
     onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
@@ -158,6 +159,7 @@ internal fun ForwardDetailScreen(
                             MessageBubble(
                                 message = message,
                                 ensureImageCached = ensureImageCached,
+                                ensureVideoCached = ensureVideoCached,
                                 onOpenMedia = onOpenMedia,
                                 onOpenVideo = onOpenVideo,
                                 onOpenForward = onOpenForward,

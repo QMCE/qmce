@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.Icons
@@ -27,10 +28,8 @@ import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
@@ -46,7 +45,6 @@ import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.ui.components.ChatItem
-import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.ui.wear.QmceEmptyOrErrorState
 import rj.qmce.lite.ui.wear.QmceLoadingState
 import rj.qmce.lite.viewmodel.ChatListViewModel
@@ -75,6 +73,9 @@ fun ChatListScreen(
     val transformationSpec = rememberTransformationSpec()
     val latestContacts by rememberUpdatedState(contacts)
     val reportUid = runCatching { runtime?.currentUid.orEmpty() }.getOrDefault("")
+    val firstVisibleItemIndex =
+        listState.layoutInfo.visibleItems.firstOrNull()?.index ?: 0
+    val showScrollToTop = firstVisibleItemIndex > 0
 
     DisposableEffect(runtime) {
         val receiver = object : BroadcastReceiver() {
@@ -108,7 +109,10 @@ fun ChatListScreen(
             snapshotFlow {
                 val currentContacts = latestContacts
                 listState.layoutInfo.visibleItems.mapNotNull { visibleItem ->
-                    currentContacts.getOrNull(visibleItem.index)?.let(::chatListExposureKey)
+                    // Index 0 is the notification Button; contacts start at 1.
+                    val contactIndex = visibleItem.index - 1
+                    if (contactIndex < 0) return@mapNotNull null
+                    currentContacts.getOrNull(contactIndex)?.let(::chatListExposureKey)
                 }
             }
                 .map { keys -> keys.distinct() }
@@ -165,74 +169,86 @@ fun ChatListScreen(
 
     when {
         contacts.isNotEmpty() -> {
-            ScreenScaffold(
-                scrollState = listState,
-                edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
-                edgeButton = {
-                    EdgeButton(
-                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                        modifier = Modifier.fillMaxWidth(),
-                        buttonSize = EdgeButtonSize.Large,
+            val listBody: @Composable BoxScope.(androidx.compose.foundation.layout.PaddingValues) -> Unit =
+                { contentPadding ->
+                    TransformingLazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = contentPadding,
                     ) {
-                        Icon(
-                            Icons.Default.ExpandLess,
-                            contentDescription = "滚动到顶部",
-                        )
-                    }
-                },
-            ) { contentPadding ->
-                TransformingLazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = contentPadding,
-                ) {
-                    item(key = "notification-bell") {
-                        Button(
-                            onClick = onOpenNotificationCenter,
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                            icon = {
-                                Icon(
-                                    Icons.Outlined.Notifications,
-                                    contentDescription = "通知中心",
+                        if (showScrollToTop) {
+                            item(key = "scroll-to-top") {
+                                CompactButton(
+                                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                                    transformation = SurfaceTransformation(transformationSpec),
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.ExpandLess,
+                                            contentDescription = "滚动到顶部",
+                                        )
+                                    },
+                                    label = { Text("回顶") },
                                 )
-                            },
-                        ) {
-                            Text("通知中心")
+                            }
                         }
-                    }
-                    items(
-                        items = contacts,
-                        key = { contact ->
-                            "chat:${chatListExposureKey(contact) ?: contact.hashCode()}"
-                        },
-                    ) { contact ->
-                        ChatItem(
-                            contact = contact,
-                            reportParams = OfficialReportBridge.chatListItemElementParams(
+                        item(key = "notification-bell") {
+                            Button(
+                                onClick = onOpenNotificationCenter,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, transformationSpec)
+                                    .minimumVerticalContentPadding(
+                                        ButtonDefaults.minimumVerticalListContentPadding,
+                                    ),
+                                transformation = SurfaceTransformation(transformationSpec),
+                                icon = {
+                                    Icon(
+                                        Icons.Outlined.Notifications,
+                                        contentDescription = "通知中心",
+                                    )
+                                },
+                            ) {
+                                Text("通知中心")
+                            }
+                        }
+                        items(
+                            items = contacts,
+                            key = { contact ->
+                                "chat:${chatListExposureKey(contact) ?: contact.hashCode()}"
+                            },
+                        ) { contact ->
+                            ChatItem(
                                 contact = contact,
-                                homeUin = uin,
-                                uid = reportUid,
-                            ),
-                            reuseIdentifier = chatListExposureKey(contact),
-                            onClick = { target ->
-                                OfficialReportBridge.reportChatListItemClick(
-                                    target = target,
+                                reportParams = OfficialReportBridge.chatListItemElementParams(
                                     contact = contact,
                                     homeUin = uin,
                                     uid = reportUid,
-                                )
-                                onOpenChat(contact)
-                            },
-                            modifier = Modifier.transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        )
+                                ),
+                                reuseIdentifier = chatListExposureKey(contact),
+                                onClick = { target ->
+                                    OfficialReportBridge.reportChatListItemClick(
+                                        target = target,
+                                        contact = contact,
+                                        homeUin = uin,
+                                        uid = reportUid,
+                                    )
+                                    onOpenChat(contact)
+                                },
+                                modifier = Modifier
+                                    .transformedHeight(this, transformationSpec)
+                                    .minimumVerticalContentPadding(
+                                        ButtonDefaults.minimumVerticalListContentPadding,
+                                    ),
+                                transformation = SurfaceTransformation(transformationSpec),
+                            )
+                        }
                     }
                 }
-            }
+            ScreenScaffold(
+                scrollState = listState,
+                content = listBody,
+            )
         }
 
         statusText.contains("失败") || statusText.contains("不可用") -> {

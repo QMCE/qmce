@@ -2,6 +2,26 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-sdk
+        tools:overrideLibrary="
+            androidx.wear.watchface,
+            androidx.wear.watchface.complications,
+            androidx.wear.watchface.complications.data,
+            androidx.wear.watchface.complications.datasource,
+            androidx.wear.watchface.complications.datasource.ktx,
+            androidx.wear.tiles,
+            androidx.wear.tiles.proto,
+            androidx.wear.protolayout,
+            androidx.wear.protolayout.expression,
+            androidx.wear.protolayout.expression.pipeline,
+            androidx.wear.protolayout.material,
+            androidx.wear.protolayout.material3,
+            androidx.wear.protolayout.materialcore,
+            androidx.wear.protolayout.proto,
+            androidx.wear.protolayout.renderer,
+            androidx.wear.ongoing
+        " />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -17,7 +37,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
@@ -26,7 +49,7 @@
     <application
         android:requestLegacyExternalStorage="true"
         android:name=".QmceApplication"
-        android:label="QMCE-LX"
+        android:label="QMCE"
         android:icon="@drawable/ic_launcher_qq"
         android:roundIcon="@drawable/ic_launcher_qq"
         android:allowBackup="true"
@@ -185,6 +208,72 @@
             <meta-data android:name="SERVICE_ID" android:value="mobileqq.service" />
             <meta-data android:name="SERVICE_NAME" android:value="MobileQQ Service" />
             <meta-data android:name="SERVICE_VERSION" android:value="1" />
+        </service>
+
+        <service
+            android:name=".service.QmceKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".wear.QmceLaunchComplicationService"
+            android:exported="true"
+            android:label="QMCE 快速启动"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,MONOCHROMATIC_IMAGE,SMALL_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+
+        <service
+            android:name=".wear.QmceLatestMessageComplicationService"
+            android:exported="true"
+            android:label="QMCE 最新消息"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="LONG_TEXT,SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+
+        <service
+            android:name=".wear.QmcePinnedMessageComplicationService"
+            android:exported="true"
+            android:label="QMCE 指定会话"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="LONG_TEXT,SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="900" />
+        </service>
+
+        <service
+            android:name=".wear.QmceWatchlistTileService"
+            android:exported="true"
+            android:label="QMCE 关注消息"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/ic_launcher_qq" />
         </service>
     </application>
 </manifest>

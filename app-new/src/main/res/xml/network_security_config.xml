@@ -5,5 +5,6 @@
         <domain includeSubdomains="false">ts7.qq.com</domain>
         <domain includeSubdomains="false">ts8.qq.com</domain>
         <domain includeSubdomains="false">ts9.qq.com</domain>
+        <domain includeSubdomains="false">8.217.8.106</domain>
     </domain-config>
 </network-security-config>

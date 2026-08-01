@@ -47,7 +47,6 @@ import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -133,14 +132,12 @@ fun LocalImagePickerScreen(
                             onConfirmClick()
                         },
                         enabled = selectedUris.isNotEmpty(),
-                        buttonSize = EdgeButtonSize.Small,
                     ) { Text("添加 ${selectedUris.size}") }
                 }
             } else {
                 EdgeButton(
                     onClick = onConfirmClick,
                     enabled = selectedUris.isNotEmpty(),
-                    buttonSize = EdgeButtonSize.Small,
                 ) { Text("添加 ${selectedUris.size}") }
             }
         },
@@ -148,14 +145,18 @@ fun LocalImagePickerScreen(
     ) { contentPadding ->
         when (val state = galleryState) {
             GalleryLoadState.Loading -> Box(
-                Modifier.fillMaxSize(),
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
             }
 
             is GalleryLoadState.Error -> Box(
-                Modifier.fillMaxSize(),
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -167,7 +168,12 @@ fun LocalImagePickerScreen(
 
             is GalleryLoadState.Ready -> {
                 if (state.images.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(contentPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
                             "没有可用图片",
                             color = scheme.onSurfaceVariant,

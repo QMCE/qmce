@@ -78,6 +78,7 @@ fun ContactPickerScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
                         .padding(vertical = 2.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,

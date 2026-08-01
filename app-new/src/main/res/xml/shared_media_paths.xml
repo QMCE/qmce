@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="shared_media" path="shared-media/" />
+    <cache-path name="ota" path="ota/" />
+    <cache-path name="notify_media" path="notify-media/" />
 </paths>

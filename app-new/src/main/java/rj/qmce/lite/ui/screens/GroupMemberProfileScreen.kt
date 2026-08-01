@@ -176,7 +176,7 @@ fun GroupMemberProfileScreen(
                         Text(
                             member.roleLabelForUi(),
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -274,7 +274,7 @@ private fun androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope.me
                 }
                 .padding(horizontal = 16.dp, vertical = 5.dp),
         ) {
-            Text(label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Text(value, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }

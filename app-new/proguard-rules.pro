@@ -1,6 +1,8 @@
 # ── qq-sdk: 全量保留（内核反射、MSF、QRoute 动态加载） ──
 -keep class com.tencent.** { *; }
 -keep class com.tencent.qqnt.kernel.nativeinterface.** { *; }
+-keep class com.tencent.qqnt.kernel.invorker.** { *; }
+-keep class rj.qmce.lite.notify.** { *; }
 -keep class d.c.k.o.a.a.r8 { *; }
 -keep class mqq.** { *; }
 -keep class oicq.** { *; }

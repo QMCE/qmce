@@ -76,7 +76,7 @@ fun QZoneCommentScreen(
                         onSend()
                     },
                     enabled = draft.isNotBlank() && sendState !is QZoneViewModel.CommentSendState.Sending,
-                    buttonSize = EdgeButtonSize.Small,
+                    buttonSize = EdgeButtonSize.Medium,
                 ) { Text("发送") }
             }
         },

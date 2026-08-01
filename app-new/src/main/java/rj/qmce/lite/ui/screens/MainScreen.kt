@@ -23,6 +23,7 @@ import androidx.wear.compose.material3.HorizontalPagerScaffold
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.settingsVm
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -52,7 +53,8 @@ fun MainScreen(
     onOpenQZoneDetail: (rj.qmce.lite.viewmodel.QZoneViewModel.FeedItem) -> Unit,
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
-    onOpenChatFromContacts: (String, String, String) -> Unit, // uid, uin, name
+    onOpenChatFromContacts: (String, String, String, Int) -> Unit, // uid, uin, name, chatType
+    onOpenGroupFromContacts: (ContactsViewModel.UiGroup) -> Unit,
     onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
     onOpenNotificationCenter: () -> Unit = {},
 ) {
@@ -64,25 +66,25 @@ fun MainScreen(
     }
 
     LaunchedEffect(uin, runtime) {
-        if (runtime == null) return@LaunchedEffect
-        qZoneVm.init(runtime)
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
+        qZoneVm.init(activeRuntime)
     }
 
     LaunchedEffect(uin, runtime, kernelRetryNonce) {
-        if (runtime == null) return@LaunchedEffect
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
         val timeouts = listOf(30_000L, 10_000L, 6_000L)
         timeouts.forEachIndexed { index, timeoutMillis ->
             val ready = withContext(Dispatchers.IO) {
                 if (kernelRetryNonce == 0 && index == 0) {
-                    KernelBridge.awaitCoreServices(timeoutMillis, runtime)
+                    KernelBridge.awaitCoreServices(timeoutMillis, activeRuntime)
                 } else {
-                    KernelBridge.retryCoreServices(timeoutMillis, runtime)
+                    KernelBridge.retryCoreServices(timeoutMillis, activeRuntime)
                 }
             }
             android.util.Log.d("QMCE", "MainScreen: core services ready=$ready attempt=${index + 1}")
             if (ready) {
-                chatListVm.loadContacts(runtime)
-                contactsVm.loadBuddies(runtime, forceRefresh = true)
+                chatListVm.loadContacts(activeRuntime)
+                contactsVm.loadBuddies(activeRuntime, forceRefresh = true)
                 qZoneVm.loadFeeds(forceRefresh = true)
                 return@LaunchedEffect
             }
@@ -126,7 +128,10 @@ fun MainScreen(
 
                     1 -> ContactsScreen(
                         vm = contactsVm,
-                        onOpenChat = onOpenChatFromContacts,
+                        onOpenChat = { uid, uin, name ->
+                            onOpenChatFromContacts(uid, uin, name, 1)
+                        },
+                        onOpenGroup = onOpenGroupFromContacts,
                         onOpenProfile = onOpenContactProfile,
                         onRetryKernel = { kernelRetryNonce++ },
                     )

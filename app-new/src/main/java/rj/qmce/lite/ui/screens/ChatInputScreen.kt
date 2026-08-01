@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,8 +41,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -72,6 +74,7 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.TextButtonDefaults
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.AtMention
@@ -90,8 +93,6 @@ import android.graphics.drawable.Drawable
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
-import androidx.compose.material3.TextField as MaterialTextField
-import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -679,7 +680,7 @@ fun ChatInputScreen(
                 }
             }
             item(key = "input") {
-                MaterialTextField(
+                BasicTextField(
                     value = textFieldValue,
                     onValueChange = { newValue ->
                         // 检测标记被删除 → 移除对应图片
@@ -738,8 +739,13 @@ fun ChatInputScreen(
                             }
                         }
                         .padding(horizontal = 10.dp)
-                        .defaultMinSize(minHeight = 72.dp),
+                        .defaultMinSize(minHeight = 72.dp)
+                        .background(scheme.surfaceContainerHigh, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                    cursorBrush = SolidColor(scheme.primary),
+                    minLines = 2,
+                    maxLines = 4,
                     visualTransformation = imgMarkerTransformation(
                         imageCount = imageSlots.size,
                         atMentions = atSlots,
@@ -747,25 +753,16 @@ fun ChatInputScreen(
                         marketFaceCount = marketFaceSlots.size,
                         highlightColor = scheme.primary,
                     ),
-                    placeholder = {
-                        Text("输入消息", style = MaterialTheme.typography.bodySmall)
+                    decorationBox = { innerTextField ->
+                        if (textFieldValue.text.isEmpty()) {
+                            Text(
+                                "输入消息",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline,
+                            )
+                        }
+                        innerTextField()
                     },
-                    minLines = 2,
-                    maxLines = 4,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = MaterialTextFieldDefaults.colors(
-                        focusedContainerColor = scheme.surfaceContainerHigh,
-                        unfocusedContainerColor = scheme.surfaceContainerHigh,
-                        disabledContainerColor = scheme.surfaceContainerHigh,
-                        focusedTextColor = scheme.onSurface,
-                        unfocusedTextColor = scheme.onSurface,
-                        cursorColor = scheme.primary,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                        focusedPlaceholderColor = scheme.onSurfaceVariant,
-                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
-                    ),
                 )
             }
             item(key = "more") {
@@ -1090,6 +1087,7 @@ fun EmotionPickerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .transformedHeight(this, transformationSpec)
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                             transformation = SurfaceTransformation(transformationSpec),
                         ) {
@@ -1115,7 +1113,8 @@ fun EmotionPickerScreen(
                         onClick = { selectedPack = null },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec),
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(TextButtonDefaults.minimumVerticalListContentPadding),
                     ) {
                         Text("返回表情包")
                     }

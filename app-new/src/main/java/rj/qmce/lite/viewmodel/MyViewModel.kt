@@ -90,27 +90,6 @@ class MyViewModel : ViewModel() {
         _operationStatus.value = "已请求消息同步"
     }
 
-    fun clearChatCache() {
-        val storageService = KernelBridge.getKernelService()?.getStorageCleanService()
-        if (storageService == null) {
-            _operationStatus.value = "缓存服务暂不可用"
-            return
-        }
-        _operationStatus.value = "正在清理聊天缓存…"
-        runCatching {
-            storageService.clearAllChatCacheInfo(object : IOperateCallback {
-                override fun onResult(code: Int, errMsg: String?) {
-                    _operationStatus.value =
-                        if (code == 0) "聊天缓存已清理" else "清理失败: ${errMsg.orEmpty()}"
-                    Log.d(TAG, "clear chat cache: code=$code, errMsg=$errMsg")
-                }
-            })
-        }.onFailure { error ->
-            _operationStatus.value = "清理失败: ${error.javaClass.simpleName}"
-            Log.w(TAG, "clear chat cache failed", error)
-        }
-    }
-
     fun clearOperationStatus() {
         _operationStatus.value = ""
     }

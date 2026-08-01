@@ -2,18 +2,21 @@ package rj.qmce.lite.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
@@ -30,8 +33,6 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.QZoneViewModel
-import androidx.compose.material3.TextField as MaterialTextField
-import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.ui.theme.LocalQmceAdaptive
@@ -76,7 +77,7 @@ fun QZoneComposerScreen(
                         onPublish()
                     },
                     enabled = canPublish && publishState !is QZoneViewModel.PublishState.Publishing,
-                    buttonSize = EdgeButtonSize.Small,
+                    buttonSize = EdgeButtonSize.Medium,
                 ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表动态") }
             }
         },
@@ -89,11 +90,17 @@ fun QZoneComposerScreen(
         ) {
             if (publishState is QZoneViewModel.PublishState.Failed) {
                 item(key = "qzone-composer-error") {
-                    Text("发表失败：${publishState.message}", modifier = Modifier.padding(horizontal = 14.dp))
+                    Text(
+                        "发表失败：${publishState.message}",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 14.dp),
+                    )
                 }
             }
             item(key = "qzone-composer-input") {
-                MaterialTextField(
+                BasicTextField(
                     value = draft,
                     onValueChange = onDraftChange,
                     modifier = Modifier
@@ -106,25 +113,23 @@ fun QZoneComposerScreen(
                             }
                         }
                         .padding(horizontal = 10.dp)
-                        .defaultMinSize(minHeight = 80.dp),
+                        .defaultMinSize(minHeight = 80.dp)
+                        .background(scheme.surfaceContainerHigh, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
-                    placeholder = { Text("写点什么…", style = MaterialTheme.typography.bodySmall) },
+                    cursorBrush = SolidColor(scheme.primary),
                     minLines = 2,
                     maxLines = 4,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = MaterialTextFieldDefaults.colors(
-                        focusedContainerColor = scheme.surfaceContainerHigh,
-                        unfocusedContainerColor = scheme.surfaceContainerHigh,
-                        disabledContainerColor = scheme.surfaceContainerHigh,
-                        focusedTextColor = scheme.onSurface,
-                        unfocusedTextColor = scheme.onSurface,
-                        cursorColor = scheme.primary,
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedPlaceholderColor = scheme.onSurfaceVariant,
-                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
-                    ),
+                    decorationBox = { innerTextField ->
+                        if (draft.isBlank()) {
+                            Text(
+                                "写点什么…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline,
+                            )
+                        }
+                        innerTextField()
+                    },
                 )
             }
             item(key = "qzone-composer-media") {

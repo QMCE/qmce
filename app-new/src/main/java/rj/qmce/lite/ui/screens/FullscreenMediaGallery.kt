@@ -3,6 +3,7 @@ package rj.qmce.lite.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,8 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import coil3.compose.AsyncImage
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
+import kotlin.math.abs
 
 @Composable
 fun FullscreenMediaGallery(
@@ -37,6 +40,7 @@ fun FullscreenMediaGallery(
     if (media.isEmpty()) return
     BackHandler(onBack = onDismiss)
     val pagerState = rememberPagerState(pageCount = { media.size })
+    val topInset = LocalQmceAdaptive.current.screenContentPadding.calculateTopPadding()
 
     Box(
         modifier = Modifier
@@ -48,7 +52,7 @@ fun FullscreenMediaGallery(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
         ) { page ->
-            GalleryMediaPage(media[page])
+            GalleryMediaPage(media[page], onDismiss)
         }
         Text(
             text = "${pagerState.currentPage + 1}/${media.size}",
@@ -56,20 +60,22 @@ fun FullscreenMediaGallery(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 8.dp),
+                .padding(top = topInset),
         )
     }
 }
 
 @Composable
-private fun GalleryMediaPage(media: ViewerMedia) {
+private fun GalleryMediaPage(media: ViewerMedia, onDismiss: () -> Unit) {
     var scale by remember(media.key) { mutableFloatStateOf(1f) }
     var offsetX by remember(media.key) { mutableFloatStateOf(0f) }
     var offsetY by remember(media.key) { mutableFloatStateOf(0f) }
     var loaded by remember(media.key) { mutableStateOf(false) }
+    var dismissDrag by remember(media.key) { mutableFloatStateOf(0f) }
     val transformState = rememberTransformableState { _, zoomChange, panChange, _ ->
         scale = (scale * zoomChange).coerceIn(1f, 4f)
-        if (scale == 1f) {
+        if (scale <= 1.01f) {
+            scale = 1f
             offsetX = 0f
             offsetY = 0f
         } else {
@@ -93,6 +99,20 @@ private fun GalleryMediaPage(media: ViewerMedia) {
                         }
                     },
                 )
+            }
+            .pointerInput(media.key, scale) {
+                if (scale > 1.05f) return@pointerInput
+                detectVerticalDragGestures(
+                    onDragEnd = {
+                        if (abs(dismissDrag) > 96f) onDismiss()
+                        dismissDrag = 0f
+                    },
+                    onDragCancel = { dismissDrag = 0f },
+                    onVerticalDrag = { change, dragAmount ->
+                        change.consume()
+                        dismissDrag += dragAmount
+                    },
+                )
             },
         contentAlignment = Alignment.Center,
     ) {
@@ -105,7 +125,7 @@ private fun GalleryMediaPage(media: ViewerMedia) {
                     scaleX = scale
                     scaleY = scale
                     translationX = offsetX
-                    translationY = offsetY
+                    translationY = offsetY + (if (scale <= 1.01f) dismissDrag * 0.35f else 0f)
                 }
                 .transformable(transformState),
             contentScale = ContentScale.Fit,

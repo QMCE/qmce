@@ -3,6 +3,7 @@
 package rj.qmce.lite.ui
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -10,8 +11,14 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.Toast
+import mqq.app.Constants
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -21,6 +28,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Tablet
+import androidx.compose.material.icons.filled.Watch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -29,10 +41,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -41,7 +55,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.curvedComposable
 import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.TimeText
 import androidx.wear.compose.material3.TimeTextDefaults
 import androidx.wear.compose.material3.curvedText
@@ -53,6 +69,7 @@ import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rj.qmce.lite.QmceApplication
 import rj.qmce.lite.R
@@ -67,6 +84,7 @@ import rj.qmce.lite.data.reporting.OfficialReportLifecycle
 import rj.qmce.lite.data.reporting.OfficialReportPage
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.screens.AboutScreen
+import rj.qmce.lite.ui.screens.AiSettingsScreen
 import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
 import rj.qmce.lite.ui.screens.ChatComposerMenuScreen
@@ -74,15 +92,26 @@ import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.EmotionPickerScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
+import rj.qmce.lite.ui.screens.CheckUpdateScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
+import rj.qmce.lite.ui.screens.DeveloperToolsSettingsScreen
+import rj.qmce.lite.ui.screens.DiagnosticsSettingsScreen
 import rj.qmce.lite.ui.screens.ForceExitConfirmationScreen
 import rj.qmce.lite.ui.screens.InteractionSettingsScreen
 import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
 import rj.qmce.lite.ui.screens.LogoutConfirmationScreen
 import rj.qmce.lite.ui.screens.MainScreen
+import rj.qmce.lite.notify.QmceDeepLinks
+import rj.qmce.lite.notify.QmceForegroundSession
+import rj.qmce.lite.notify.QmceMessageNotificationBuilder
+import rj.qmce.lite.notify.QmceMessageNotifier
+import rj.qmce.lite.notify.QmceNotifyLifecycle
+import rj.qmce.lite.notify.QmceRecentViewedChats
 import rj.qmce.lite.ui.screens.NotificationCenterScreen
+import rj.qmce.lite.ui.screens.NotificationSettingsScreen
 import rj.qmce.lite.ui.screens.PacketToolScreen
+import rj.qmce.lite.ui.screens.TileGroupPickerScreen
 import rj.qmce.lite.ui.screens.QZoneCommentScreen
 import rj.qmce.lite.ui.screens.QZoneComposerScreen
 import rj.qmce.lite.ui.screens.QZoneFeedDetailScreen
@@ -103,6 +132,7 @@ import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.GroupInfoViewModel
 import rj.qmce.lite.viewmodel.GroupManagementViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
+import rj.qmce.lite.viewmodel.StorageViewModel
 import rj.qmce.lite.viewmodel.PacketToolViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
 import rj.qmce.lite.viewmodel.SettingsViewModel
@@ -132,6 +162,13 @@ class MainActivity : FragmentActivity() {
             }
         }
         setContentView(reportHost)
+        QmceDeepLinks.notifyNewIntent()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        QmceDeepLinks.notifyNewIntent()
     }
 }
 
@@ -156,27 +193,41 @@ private fun WearApp() {
     var loginPageId by remember { mutableStateOf<String?>(OfficialReportBridge.PageIds.WELCOME) }
     settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
+    val loginEnterScope = rememberCoroutineScope()
 
     val logoutReason by QmceApplication.logoutReason.collectAsState()
 
     // OnlineStatus state
     var onlineDesc by remember { mutableStateOf<String?>(null) }
     var onlineKnown by remember { mutableStateOf(false) }
+    var onlineTermKind by remember { mutableStateOf<OnlineStatus.TermKind?>(null) }
 
     LaunchedEffect(logoutReason) {
-        if (logoutReason != null) {
-            selectedContact = null
-            selectedGroupMember = null
-            loggedUin = ""
-            isLoggedIn = false
-            loginPageId = OfficialReportBridge.PageIds.WELCOME
-            onlineDesc = null
-            onlineKnown = false
-            Log.w("QMCE", "ui: returned to login after official logout=$logoutReason")
+        val reason = logoutReason ?: return@LaunchedEffect
+        val toastText = when (reason) {
+            Constants.LogoutReason.expired,
+            Constants.LogoutReason.suspend,
+            -> "登录已过期，请重新登录"
+            Constants.LogoutReason.kicked,
+            Constants.LogoutReason.secKicked,
+            Constants.LogoutReason.forceLogout,
+            -> "账号已在其他设备登录，请重新登录"
+            else -> "请重新登录"
         }
+        Toast.makeText(context, toastText, Toast.LENGTH_LONG).show()
+        selectedContact = null
+        selectedGroupMember = null
+        loggedUin = ""
+        isLoggedIn = false
+        loginPageId = OfficialReportBridge.PageIds.WELCOME
+        onlineDesc = null
+        onlineKnown = false
+        onlineTermKind = null
+        QmceApplication.consumeLogoutReason()
+        Log.w("QMCE", "ui: returned to login after official logout=$reason")
     }
 
-    DisposableEffect(isLoggedIn) {
+    DisposableEffect(isLoggedIn, loggedUin) {
         if (isLoggedIn) {
             val ps = KernelBridge.getKernelService()?.getProfileService()
             if (ps != null && loggedUin.isNotEmpty()) {
@@ -185,13 +236,16 @@ private fun WearApp() {
             val observer = {
                 onlineDesc = OnlineStatus.describe()
                 onlineKnown = OnlineStatus.known()
+                onlineTermKind = OnlineStatus.termKind()
             }
             OnlineStatus.addObserver(observer)
             observer()
+            OnlineStatus.refreshStatusInfo()
             onDispose { OnlineStatus.removeObserver(observer) }
         } else {
             onlineDesc = null
             onlineKnown = false
+            onlineTermKind = null
             Log.e("QMCE", "Not logged in")
             onDispose {}
         }
@@ -203,6 +257,7 @@ private fun WearApp() {
             val saved = LoginPrefs.loadAccount(context)
             if (saved != null) {
                 val uin = saved.uin
+                QmceApplication.beginLoginTransition()
                 val result = KernelBridge.bindLoggedInAccount(uin, saved)
                 if (result == "ok" || result == "kernel-not-ready") {
                     if (result == "kernel-not-ready") {
@@ -211,20 +266,35 @@ private fun WearApp() {
                             "bind: account ok but kernel session not ready; awaiting services",
                         )
                     }
-                    KernelBridge.awaitCoreServices(
+                    var ready = KernelBridge.awaitCoreServices(
                         timeoutMillis = 30_000,
                         runtimeOverride = r,
                     )
-                    withContext(Dispatchers.Main) { loggedUin = uin; isLoggedIn = true }
+                    if (!ready) {
+                        ready = KernelBridge.retryCoreServices(
+                            timeoutMillis = 15_000,
+                            runtimeOverride = r,
+                        )
+                    }
+                    withContext(Dispatchers.Main) {
+                        QmceApplication.markLoginEstablished()
+                        loggedUin = uin
+                        isLoggedIn = true
+                        runtime = QmceApplication.ensureRuntime() ?: r
+                        Log.d("QMCE", "ui: cold restore enter uin=$uin coreReady=$ready")
+                    }
                 } else {
                     Log.e("QMCE", "bindLoggedInAccount failed: $result")
+                    QmceApplication.endLoginTransition()
                     withContext(Dispatchers.Main) { LoginPrefs.clear(context) }
                 }
             }
             r
         }
         withContext(Dispatchers.Main) {
-            runtime = QmceApplication.ensureRuntime() ?: rt
+            if (runtime == null) {
+                runtime = QmceApplication.ensureRuntime() ?: rt
+            }
             ready = true
         }
     }
@@ -233,12 +303,53 @@ private fun WearApp() {
         QmceTheme(
             autoScale = settings.autoScale,
             manualScale = settings.manualScale,
+            edgeSafeAreaEnabled = settings.edgeSafeAreaEnabled,
+            edgeSafeAreaScale = settings.edgeSafeAreaScale,
         ) {
             OfficialReportPage(OfficialReportBridge.PageIds.SPLASH) {
-                SplashScreen()
+                SplashScreen(
+                    restoringLogin = LoginPrefs.loadAccount(context) != null,
+                )
             }
         }
         return
+    }
+
+    val chatDetailVm: ChatDetailViewModel = viewModel()
+    var currentNavRoute by remember { mutableStateOf<String?>(null) }
+    val unreadBadgeText by chatDetailVm.unreadBadgeText.collectAsState()
+
+    LaunchedEffect(isLoggedIn) {
+        if (!isLoggedIn) currentNavRoute = null
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> QmceForegroundSession.appInForeground = true
+                Lifecycle.Event.ON_STOP -> QmceForegroundSession.appInForeground = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
+            QmceNotifyLifecycle.onLoggedIn(context)
+            if (Build.VERSION.SDK_INT >= 33 &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // Best-effort: user can also grant from notification settings.
+            }
+        } else {
+            QmceNotifyLifecycle.onLoggedOut(context)
+        }
     }
 
     val appNavController = if (isLoggedIn) {
@@ -251,25 +362,45 @@ private fun WearApp() {
         navController = appNavController,
         autoScale = settings.autoScale,
         manualScale = settings.manualScale,
+        edgeSafeAreaEnabled = settings.edgeSafeAreaEnabled,
+        edgeSafeAreaScale = settings.edgeSafeAreaScale,
     ) {
         val themeColors = androidx.wear.compose.material3.MaterialTheme.colorScheme
         AppScaffold(
             timeText = {
                 if (settings.showTimeText) {
-                    val showStatus = settings.showOnlineStatus && isLoggedIn && onlineKnown
+                    val showUnreadBadge = isLoggedIn &&
+                        currentNavRoute == "chat" &&
+                        !unreadBadgeText.isNullOrBlank()
+                    val showStatus = settings.showOnlineStatus && isLoggedIn && onlineKnown && !showUnreadBadge
+                    val statusColor = if (OnlineStatus.isOnline()) {
+                        themeColors.tertiary
+                    } else {
+                        themeColors.onSurfaceVariant
+                    }
+                    val statusIcon = onlineTermKind?.let(::termKindIcon)
+                        ?: Icons.Default.PhoneAndroid
                     TimeText(
-                        maxSweepAngle = if (showStatus) 140f else TimeTextDefaults.MaxSweepAngle,
+                        maxSweepAngle = if (showStatus || showUnreadBadge) 140f else TimeTextDefaults.MaxSweepAngle,
                         content = { time ->
                             timeTextCurvedText(time)
-                            if (showStatus) {
+                            if (showUnreadBadge) {
                                 timeTextSeparator()
                                 curvedText(
-                                    text = onlineDesc ?: "离线",
-                                    color = if (OnlineStatus.isOnline())
-                                        themeColors.tertiary
-                                    else
-                                        themeColors.onSurfaceVariant,
+                                    text = unreadBadgeText.orEmpty(),
+                                    color = themeColors.primary,
                                 )
+                            } else if (showStatus) {
+                                timeTextSeparator()
+                                curvedComposable {
+                                    Icon(
+                                        imageVector = statusIcon,
+                                        contentDescription = onlineDesc
+                                            ?: if (OnlineStatus.isOnline()) "在线" else "离线",
+                                        tint = statusColor,
+                                        modifier = Modifier.size(12.dp),
+                                    )
+                                }
                             }
                         },
                     )
@@ -278,7 +409,6 @@ private fun WearApp() {
         ) {
             if (isLoggedIn) {
                 val navController = checkNotNull(appNavController)
-                val chatDetailVm: ChatDetailViewModel = viewModel()
                 val chatSettingsVm: ChatSettingsViewModel = viewModel()
                 val groupInfoVm: GroupInfoViewModel = viewModel()
                 val groupManagementVm: GroupManagementViewModel = viewModel()
@@ -287,11 +417,13 @@ private fun WearApp() {
                 val contactsVm: ContactsViewModel = viewModel()
                 val qZoneVm: QZoneViewModel = viewModel()
                 val myVm: MyViewModel = viewModel()
+                val storageVm: StorageViewModel = viewModel()
                 val packetToolVm: PacketToolViewModel = viewModel()
                 var mainPage by remember { mutableStateOf(0) }
                 var nestedOfficialPageId by remember { mutableStateOf<String?>(null) }
                 val navBackStackEntry by navController.currentBackStackEntryAsState()
                 LaunchedEffect(navBackStackEntry?.destination?.route) {
+                    currentNavRoute = navBackStackEntry?.destination?.route
                     nestedOfficialPageId = null
                 }
                 val officialPageId = nestedOfficialPageId ?: officialPageId(
@@ -306,6 +438,74 @@ private fun WearApp() {
                     }
                 }
                 OfficialReportLifecycle(officialPageId)
+                val deepLinkTick by QmceDeepLinks.tick.collectAsState()
+                LaunchedEffect(isLoggedIn, deepLinkTick, currentNavRoute) {
+                    if (!isLoggedIn) return@LaunchedEffect
+                    val activity = context as? MainActivity ?: return@LaunchedEffect
+                    val intent = activity.intent ?: return@LaunchedEffect
+                    val openNotify = intent.getBooleanExtra(
+                        QmceMessageNotifier.EXTRA_OPEN_NOTIFY_CENTER,
+                        false,
+                    )
+                    val openChat = intent.getBooleanExtra(
+                        QmceMessageNotifier.EXTRA_OPEN_CHAT,
+                        false,
+                    )
+                    val openTilePicker = intent.getBooleanExtra(
+                        QmceMessageNotifier.EXTRA_OPEN_TILE_GROUP_PICKER,
+                        false,
+                    )
+                    if (!openNotify && !openChat && !openTilePicker) return@LaunchedEffect
+                    intent.removeExtra(QmceMessageNotifier.EXTRA_OPEN_NOTIFY_CENTER)
+                    intent.removeExtra(QmceMessageNotifier.EXTRA_OPEN_CHAT)
+                    intent.removeExtra(QmceMessageNotifier.EXTRA_OPEN_TILE_GROUP_PICKER)
+                    if (openNotify) {
+                        navController.navigate("notificationCenter") { launchSingleTop = true }
+                        return@LaunchedEffect
+                    }
+                    if (openTilePicker) {
+                        navController.navigate("tileGroupPicker") { launchSingleTop = true }
+                        return@LaunchedEffect
+                    }
+                    val peerUid = intent.getStringExtra(QmceMessageNotifier.EXTRA_PEER_UID)
+                        ?.takeIf { it.isNotBlank() }
+                        ?: return@LaunchedEffect
+                    val chatType = intent.getIntExtra(QmceMessageNotifier.EXTRA_CHAT_TYPE, 1)
+                    val peerUin = intent.getLongExtra(QmceMessageNotifier.EXTRA_PEER_UIN, 0L)
+                    val nick = intent.getStringExtra(QmceMessageNotifier.EXTRA_PEER_NICKNAME)
+                        .orEmpty()
+                    selectedContact = RecentContactInfo().apply {
+                        this.peerUid = peerUid
+                        this.peerUin = peerUin
+                        this.chatType = chatType
+                        peerName = nick.ifBlank { peerUid }
+                        id = if (chatType == 2) peerUid else peerUin.toString()
+                    }
+                    QmceMessageNotifier.cancelForChat(context, peerUid, chatType)
+                    navController.navigate("chat") { launchSingleTop = true }
+                }
+                LaunchedEffect(currentNavRoute, selectedContact?.peerUid, selectedContact?.chatType) {
+                    if (currentNavRoute == "chat") {
+                        val contact = selectedContact
+                        QmceForegroundSession.setActiveChat(contact?.peerUid, contact?.chatType)
+                        contact?.peerUid?.let { uid ->
+                            QmceMessageNotifier.cancelForChat(context, uid, contact.chatType)
+                            val title = contact.peerName?.takeIf { it.isNotBlank() }
+                                ?: contact.remark?.takeIf { it.isNotBlank() }
+                                ?: uid
+                            QmceRecentViewedChats.record(
+                                context = context,
+                                peerUid = uid,
+                                peerUin = contact.peerUin,
+                                chatType = contact.chatType,
+                                title = title,
+                            )
+                            QmceMessageNotificationBuilder.syncShortcutsForRecent(context)
+                        }
+                    } else {
+                        QmceForegroundSession.setActiveChat(null, null)
+                    }
+                }
                 SwipeDismissableNavHost(
                     navController = navController,
                     startDestination = "main"
@@ -356,14 +556,24 @@ private fun WearApp() {
                                     selectedContact = contact
                                     navController.navigate("chat") { launchSingleTop = true }
                                 },
-                                onOpenChatFromContacts = { uid, uin, name ->
-                                    // 从联系人页面点击，构造一个最小 RecentContactInfo
+                                onOpenChatFromContacts = { uid, uin, name, chatType ->
                                     val fakeContact = RecentContactInfo().apply {
                                         peerUid = uid
                                         peerUin = uin.toLongOrNull() ?: 0L
                                         peerName = name
-                                        chatType = 1
-                                        id = uin
+                                        this.chatType = chatType
+                                        id = if (chatType == 2) uid else uin
+                                    }
+                                    selectedContact = fakeContact
+                                    navController.navigate("chat") { launchSingleTop = true }
+                                },
+                                onOpenGroupFromContacts = { group ->
+                                    val fakeContact = RecentContactInfo().apply {
+                                        peerUid = group.groupCode.toString()
+                                        peerUin = group.groupCode
+                                        peerName = group.groupName
+                                        chatType = 2
+                                        id = group.groupCode.toString()
                                     }
                                     selectedContact = fakeContact
                                     navController.navigate("chat") { launchSingleTop = true }
@@ -683,6 +893,11 @@ private fun WearApp() {
                                     launchSingleTop = true
                                 }
                             },
+                            onOpenNotifications = {
+                                navController.navigate("notificationSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
                             onOpenSyncData = {
                                 navController.navigate("syncDataSettings") {
                                     launchSingleTop = true
@@ -691,10 +906,56 @@ private fun WearApp() {
                             onOpenStorage = {
                                 navController.navigate("storageSettings") { launchSingleTop = true }
                             },
+                            onOpenDeveloperTools = {
+                                navController.navigate("developerToolsSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onOpenAiSettings = {
+                                navController.navigate("aiSettings") { launchSingleTop = true }
+                            },
                             onOpenAbout = {
                                 navController.navigate("about") { launchSingleTop = true }
                             },
+                            onCheckUpdate = {
+                                navController.navigate("checkUpdate") { launchSingleTop = true }
+                            },
+                            onOpenDiagnostics = {
+                                navController.navigate("diagnostics") { launchSingleTop = true }
+                            },
                         )
+                    }
+                    composable("notificationSettings") {
+                        NotificationSettingsScreen(
+                            settingsVm = settingsVm,
+                            onOpenWatchlist = {
+                                navController.navigate("tileGroupPicker") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("tileWatchlist") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("tileGroupPicker") {
+                                launchSingleTop = true
+                                popUpTo("tileWatchlist") { inclusive = true }
+                            }
+                        }
+                    }
+                    composable("tileGroupPicker") {
+                        val isWearDevice = rj.qmce.lite.util.QmceDevice.isWear(context)
+                        LaunchedEffect(isWearDevice) {
+                            if (!isWearDevice) navController.popBackStack()
+                        }
+                        if (isWearDevice) {
+                            TileGroupPickerScreen(
+                                runtime = runtime,
+                                contactsVm = contactsVm,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
                     }
                     composable("appearanceSettings") {
                         AppearanceSettingsScreen(
@@ -715,6 +976,16 @@ private fun WearApp() {
                             contactsVm = contactsVm,
                             qZoneVm = qZoneVm,
                             myVm = myVm,
+                            onOpenTileGroupPicker = {
+                                navController.navigate("tileGroupPicker") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("developerToolsSettings") {
+                        DeveloperToolsSettingsScreen(
                             onOpenPacketTool = {
                                 navController.navigate("packetToolSettings") {
                                     launchSingleTop = true
@@ -723,8 +994,27 @@ private fun WearApp() {
                             onBack = { navController.popBackStack() },
                         )
                     }
+                    composable("aiSettings") {
+                        AiSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("checkUpdate") {
+                        CheckUpdateScreen(
+                            onBack = { navController.popBackStack() },
+                            settingsVm = settingsVm,
+                        )
+                    }
+                    composable("diagnostics") {
+                        DiagnosticsSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
                     composable("storageSettings") {
                         StorageSettingsScreen(
+                            storageVm = storageVm,
                             onOpenClearCache = {
                                 navController.navigate("settingsClearChatCache") {
                                     launchSingleTop = true
@@ -835,7 +1125,7 @@ private fun WearApp() {
                     composable("settingsClearChatCache") {
                         SettingsClearChatCacheScreen(
                             onConfirm = {
-                                myVm.clearChatCache()
+                                storageVm.clearAllCache()
                                 navController.popBackStack()
                             },
                             onBack = { navController.popBackStack() },
@@ -874,17 +1164,47 @@ private fun WearApp() {
                     LoginScreen(
                         onPageIdChanged = { loginPageId = it },
                         onLoginSuccess = { uin, account ->
-                            LoginPrefs.saveAccount(context, account)
-                            QmceApplication.markLoginEstablished()
-                            val restarted = QmceApplication.restartAfterLogin(context)
-                            Log.d(
-                                "QMCE",
-                                "ui: login persisted uin=$uin, scheduled fresh start=$restarted",
-                            )
+                            // Align with cold-start: save → await/retry core → mark → enter.
+                            loginEnterScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    LoginPrefs.saveAccount(context, account)
+                                    val rt = QmceApplication.ensureRuntime()
+                                    var coreReady = KernelBridge.areCoreServicesReady()
+                                    if (!coreReady) {
+                                        coreReady = KernelBridge.awaitCoreServices(
+                                            timeoutMillis = 30_000,
+                                            runtimeOverride = rt,
+                                        )
+                                    }
+                                    if (!coreReady) {
+                                        coreReady = KernelBridge.retryCoreServices(
+                                            timeoutMillis = 15_000,
+                                            runtimeOverride = rt,
+                                        )
+                                    }
+                                    if (!coreReady) {
+                                        Log.w(
+                                            "QMCE",
+                                            "ui: login enter with kernel not ready uin=$uin",
+                                        )
+                                    }
+                                    QmceApplication.markLoginEstablished()
+                                    withContext(Dispatchers.Main) {
+                                        runtime = QmceApplication.ensureRuntime() ?: rt
+                                        loggedUin = uin
+                                        isLoggedIn = true
+                                        Log.d(
+                                            "QMCE",
+                                            "ui: login in-process enter uin=$uin coreReady=$coreReady",
+                                        )
+                                    }
+                                }
+                            }
                         },
                     )
                 }
             }
+            rj.qmce.lite.ui.ota.OtaUpdateDialogHost()
         }
     }
 }
@@ -905,8 +1225,9 @@ private fun officialPageId(route: String?, mainPage: Int): String? = when (route
     "qzoneComposer" -> OfficialReportBridge.PageIds.DYNAMIC_PUBLISH
     "qzoneImagePicker" -> OfficialReportBridge.PageIds.ALBUM_SELECTION
     "settingsClearChatCache" -> OfficialReportBridge.PageIds.CLEARS_MESSAGES
-    "settings", "appearanceSettings", "interactionSettings", "syncDataSettings",
-    "storageSettings", "packetToolSettings" ->
+    "settings", "appearanceSettings", "interactionSettings", "notificationSettings",
+    "tileWatchlist", "tileGroupPicker", "syncDataSettings", "storageSettings", "packetToolSettings",
+    "checkUpdate", "diagnostics", "about" ->
         OfficialReportBridge.PageIds.SETTINGS
     "chatSettings" -> OfficialReportBridge.PageIds.SETTINGS
     else -> null
@@ -955,11 +1276,12 @@ private fun ChatInputRoute(
 }
 
 @Composable
-private fun SplashScreen() {
+private fun SplashScreen(restoringLogin: Boolean = false) {
+    val scheme = androidx.wear.compose.material3.MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(androidx.wear.compose.material3.MaterialTheme.colorScheme.background),
+            .background(scheme.background),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -977,10 +1299,27 @@ private fun SplashScreen() {
                     contentScale = ContentScale.Fit,
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            androidx.wear.compose.material3.Text(
+                text = "QMCE",
+                style = androidx.wear.compose.material3.MaterialTheme.typography.titleSmall,
+                color = scheme.onBackground,
+            )
+            androidx.wear.compose.material3.Text(
+                text = "QQ Max Compose Edition",
+                style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
             androidx.wear.compose.material3.CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 2.dp,
+                modifier = Modifier.size(36.dp),
+                strokeWidth = 3.dp,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            androidx.wear.compose.material3.Text(
+                text = if (restoringLogin) "正在恢复登录…" else "正在启动…",
+                style = androidx.wear.compose.material3.MaterialTheme.typography.bodySmall,
+                color = scheme.onSurfaceVariant,
             )
         }
     }
@@ -994,6 +1333,14 @@ private fun qZoneGalleryPermissions(): Array<String> = when {
 
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_IMAGES)
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+private fun termKindIcon(kind: OnlineStatus.TermKind): ImageVector = when (kind) {
+    OnlineStatus.TermKind.Phone -> Icons.Default.PhoneAndroid
+    OnlineStatus.TermKind.Computer -> Icons.Default.Computer
+    OnlineStatus.TermKind.Tablet -> Icons.Default.Tablet
+    OnlineStatus.TermKind.Watch -> Icons.Default.Watch
+    OnlineStatus.TermKind.Unknown -> Icons.Default.PhoneAndroid
 }
 
 private fun hasQZoneGalleryAccess(context: android.content.Context): Boolean = when {

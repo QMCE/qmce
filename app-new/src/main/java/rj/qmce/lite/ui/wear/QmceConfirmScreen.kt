@@ -56,7 +56,7 @@ fun QmceConfirmScreen(
                 onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = confirmEnabled,
-                buttonSize = EdgeButtonSize.Small,
+                buttonSize = EdgeButtonSize.Medium,
                 colors = confirmColors ?: if (destructive) {
                     ButtonDefaults.buttonColors(
                         containerColor = scheme.error,

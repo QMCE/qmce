@@ -10,9 +10,6 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,6 +34,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Call
@@ -45,15 +43,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -103,11 +98,10 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonDefaults
-import androidx.wear.compose.material3.EdgeButtonSize
+import androidx.wear.compose.material3.FilledTonalIconButton
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.LocalContentColor
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -117,9 +111,11 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.call.CallMode
 import rj.qmce.lite.data.call.CallStartResult
@@ -133,6 +129,7 @@ import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.data.chat.PttTranslationPhase
 import rj.qmce.lite.data.chat.PttTranslationState
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.ui.theme.LocalQmceAdaptive
@@ -142,8 +139,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-private val MessageBubbleCornerRadius = 8.dp
-private val MessageBubbleLeadingCornerRadius = 4.dp
+private val MessageBubbleCornerRadius = 16.dp
+private val MessageBubbleLeadingCornerRadius = 6.dp
+private val MessageBubbleMaxWidth = 186.dp
 private const val ConsecutiveMessageWindowMillis = 5 * 60 * 1000L
 
 private fun messageBubbleShape(isSelf: Boolean) = RoundedCornerShape(
@@ -195,8 +193,10 @@ private data class FileDetailTarget(
 )
 
 internal data class VideoPlayback(
-    val file: File,
+    val file: File?,
     val title: String,
+    val messageKey: String? = null,
+    val elementId: Long = 0L,
 )
 
 @Composable
@@ -264,6 +264,8 @@ fun ChatDetailScreen(
     var initialPositioned by remember(peerUid, chatType) { mutableStateOf(false) }
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var followNewMessages by remember(peerUid, chatType) { mutableStateOf(true) }
+    var atBottom by remember(peerUid, chatType) { mutableStateOf(true) }
+    val listScrollScope = rememberCoroutineScope()
     var isHistoryRequestPending by remember(peerUid, chatType) { mutableStateOf(false) }
     var pendingHistoryAnchor by remember(peerUid, chatType) { mutableStateOf<HistoryAnchor?>(null) }
     var viewerMedia by remember(peerUid, chatType) { mutableStateOf<ViewerMedia?>(null) }
@@ -320,6 +322,9 @@ fun ChatDetailScreen(
         return
     }
     val context = LocalContext.current
+    val mediaSaveScope = rememberCoroutineScope()
+    val mediaStoreSaver = remember { MediaStoreSaver() }
+    var mediaSaveLabel by remember(peerUid, chatType) { mutableStateOf("保存") }
     var pendingCallMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     val startCall: (CallMode) -> Unit = { mode ->
         when (
@@ -501,6 +506,7 @@ fun ChatDetailScreen(
                                         state.firstVisibleItemOffset < previous.firstVisibleItemOffset
                                 )
             } == true
+            atBottom = state.atBottom
             if (state.isScrolling) {
                 followNewMessages = state.atBottom && !movedTowardTop
             }
@@ -621,39 +627,39 @@ fun ChatDetailScreen(
                                 maxLines = 1,
                             )
                         }
-                        ScreenScaffold(
-                            scrollState = listState,
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
                                 .nestedScroll(topHistoryNestedScrollConnection),
-                            contentPadding = LocalQmceAdaptive.current.screenContentPadding,
-                            edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
-                            edgeButton = {
-                                if (multiSelectMode) {
-                                    EdgeButton(
-                                        onClick = { showMultiSelectActions = true },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        buttonSize = EdgeButtonSize.Small,
-                                        enabled = selectedMsgIds.isNotEmpty(),
-                                    ) {
-                                        Text("操作 (${selectedMsgIds.size})")
+                        ) {
+                            ScreenScaffold(
+                                scrollState = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = LocalQmceAdaptive.current.screenContentPadding,
+                                edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+                                edgeButton = {
+                                    if (multiSelectMode) {
+                                        EdgeButton(
+                                            onClick = { showMultiSelectActions = true },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            enabled = selectedMsgIds.isNotEmpty(),
+                                        ) {
+                                            Text("操作 (${selectedMsgIds.size})")
+                                        }
+                                    } else {
+                                        EdgeButton(
+                                            onClick = onOpenComposerMenu,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Keyboard,
+                                                contentDescription = "输入",
+                                            )
+                                        }
                                     }
-                                } else {
-                                    EdgeButton(
-                                        onClick = onOpenComposerMenu,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        buttonSize = EdgeButtonSize.Small,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Keyboard,
-                                            contentDescription = "输入",
-                                            modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
-                                        )
-                                    }
-                                }
-                            },
-                        ) { contentPadding ->
+                                },
+                            ) { contentPadding ->
                             TransformingLazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
@@ -710,6 +716,7 @@ fun ChatDetailScreen(
                                                     memberLevel = groupMemberLevels[item.message.senderUid],
                                                     memberTitle = groupMemberTitles[item.message.senderUid],
                                                     ensureImageCached = vm::ensureImageCached,
+                                                    ensureVideoCached = vm::ensureVideoCached,
                                                     onOpenMedia = { viewerMedia = it },
                                                     onOpenVideo = { videoPlayer = it },
                                                     onOpenForward = vm::loadForwardDetail,
@@ -783,6 +790,59 @@ fun ChatDetailScreen(
                                     }
                                 }
                             }
+                            }
+                            val showScrollToBottom =
+                                initialPositioned && !multiSelectMode && !atBottom
+                            val showMessageNav =
+                                initialPositioned &&
+                                    !multiSelectMode &&
+                                    atBottom &&
+                                    messageNavigationState !is ChatDetailViewModel.MessageNavigationState.Idle
+                            if (showScrollToBottom || showMessageNav) {
+                                val loading =
+                                    showMessageNav &&
+                                        (
+                                            messageNavigationState is ChatDetailViewModel.MessageNavigationState.Loading ||
+                                                messageNavigationState is ChatDetailViewModel.MessageNavigationState.Located
+                                            )
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        if (showScrollToBottom) {
+                                            followNewMessages = true
+                                            val lastIndex = timelineItems.lastIndex
+                                            if (lastIndex >= 0) {
+                                                listScrollScope.launch {
+                                                    listState.animateScrollToItem(lastIndex)
+                                                }
+                                            }
+                                        } else {
+                                            vm.requestMessageNavigation()
+                                        }
+                                    },
+                                    enabled = !loading,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = LocalQmceAdaptive.current.composerClearance)
+                                        .touchTargetAwareSize(IconButtonDefaults.SmallButtonSize),
+                                ) {
+                                    if (loading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    } else if (showScrollToBottom) {
+                                        Icon(
+                                            Icons.Default.ArrowDownward,
+                                            contentDescription = "回到底部",
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.ArrowUpward,
+                                            contentDescription = "跳转新消息",
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -823,34 +883,6 @@ fun ChatDetailScreen(
                     onOpenSettings = onOpenChatSettings,
                 )
             }
-        }
-        AnimatedVisibility(
-            visible = initialPositioned &&
-                    pagerState.currentPage == 0 &&
-                    !multiSelectMode &&
-                    messageNavigationState !is ChatDetailViewModel.MessageNavigationState.Idle,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 8.dp),
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            val loading = messageNavigationState is ChatDetailViewModel.MessageNavigationState.Loading ||
-                    messageNavigationState is ChatDetailViewModel.MessageNavigationState.Located
-            CompactButton(
-                onClick = vm::requestMessageNavigation,
-                enabled = !loading,
-                icon = {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
-                    } else {
-                        Icon(Icons.Default.ArrowUpward, contentDescription = "跳转新消息")
-                    }
-                },
-            )
         }
         if (showMultiSelectActions && multiSelectMode) {
             MultiSelectActionsScreen(
@@ -902,6 +934,7 @@ fun ChatDetailScreen(
             ForwardDetailScreen(
                 state = forwardDetailState,
                 ensureImageCached = vm::ensureImageCached,
+                ensureVideoCached = vm::ensureVideoCached,
                 onOpenMedia = { viewerMedia = it },
                 onOpenVideo = { videoPlayer = it },
                 onOpenForward = vm::loadForwardDetail,
@@ -911,11 +944,73 @@ fun ChatDetailScreen(
             )
         }
         viewerMedia?.let { media ->
-            FullscreenMediaViewer(media = media, onDismiss = { viewerMedia = null })
+            val resolvedModel = remember(messages, media.key, media.model) {
+                resolveViewerModel(messages, media.key) ?: media.model
+            }
+            FullscreenMediaViewer(
+                media = media.copy(model = resolvedModel),
+                onDismiss = {
+                    viewerMedia = null
+                    mediaSaveLabel = "保存"
+                },
+                onSave = resolvedModel?.let { model ->
+                    {
+                        if (mediaSaveLabel == "正在保存…") return@let
+                        mediaSaveScope.launch {
+                            mediaSaveLabel = "正在保存…"
+                            val source = when (model) {
+                                is File -> model.absolutePath
+                                is String -> model
+                                else -> model.toString()
+                            }
+                            val result = withContext(Dispatchers.IO) {
+                                mediaStoreSaver.saveImage(context, source)
+                            }
+                            mediaSaveLabel = result.fold(
+                                onSuccess = { "已保存" },
+                                onFailure = { "保存失败" },
+                            )
+                        }
+                    }
+                },
+                onShare = resolvedModel?.let { model ->
+                    {
+                        val file = when (model) {
+                            is File -> model.takeIf(File::isFile)
+                            is String -> LocalMediaResolver.resolveFile(model)
+                            else -> null
+                        }
+                        if (file == null) {
+                            Toast.makeText(
+                                context,
+                                "图片尚未缓存",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            shareLocalMedia(context, file)
+                        }
+                    }
+                },
+                saveLabel = mediaSaveLabel,
+            )
         }
         videoPlayer?.let { playback ->
+            val resolvedFile = remember(messages, playback.messageKey, playback.elementId, playback.file) {
+                resolveVideoFile(messages, playback) ?: playback.file
+            }
+            LaunchedEffect(playback.messageKey, playback.elementId, resolvedFile) {
+                if (resolvedFile != null) return@LaunchedEffect
+                val message = playback.messageKey?.let { key ->
+                    messages.firstOrNull { it.stableKey == key }
+                } ?: return@LaunchedEffect
+                val video = message.contents
+                    .filterIsInstance<ChatDetailViewModel.MessageContent.Video>()
+                    .firstOrNull { playback.elementId <= 0L || it.elementId == playback.elementId }
+                    ?: return@LaunchedEffect
+                vm.ensureVideoCached(message, video)
+            }
             LocalVideoPlayerScreen(
-                file = playback.file,
+                file = resolvedFile,
                 title = playback.title,
                 onDismiss = { videoPlayer = null },
             )
@@ -1011,6 +1106,26 @@ fun ChatDetailScreen(
                             shareLocalMedia(context, file)
                         }
 
+                        "save_media" -> message.firstLocalMediaFile()?.let { file ->
+                            mediaSaveScope.launch {
+                                val isVideo = message.contents.any {
+                                    it is ChatDetailViewModel.MessageContent.Video
+                                }
+                                val result = withContext(Dispatchers.IO) {
+                                    if (isVideo) mediaStoreSaver.saveVideo(context, file.absolutePath)
+                                    else mediaStoreSaver.saveImage(context, file.absolutePath)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    result.fold(
+                                        onSuccess = { "已保存" },
+                                        onFailure = { "保存失败" },
+                                    ),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        } ?: Toast.makeText(context, "媒体尚未缓存", Toast.LENGTH_SHORT).show()
+
                         "forward_detail" -> message.contents
                             .filterIsInstance<ChatDetailViewModel.MessageContent.Forward>()
                             .firstOrNull()
@@ -1028,7 +1143,7 @@ fun ChatDetailScreen(
                             onOpenContactPicker()
                         }
 
-                        "reply" -> {
+                        "quote", "reply" -> {
                             if (vm.prepareReply(message)) onOpenInput()
                         }
 
@@ -1098,12 +1213,10 @@ private fun CallPage(
             EdgeButton(
                 onClick = { onRequestCall(CallMode.Voice) },
                 modifier = Modifier.fillMaxWidth(),
-                buttonSize = EdgeButtonSize.Small,
             ) {
                 Icon(
                     imageVector = Icons.Default.Call,
                     contentDescription = null,
-                    modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text("语音通话")
@@ -1176,26 +1289,7 @@ private fun CallPage(
                     Text("视频通话")
                 }
             }
-            item(key = "call-packet") {
-                Button(
-                    onClick = onOpenPacketTool,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .graphicsLayer {
-                            with(SurfaceTransformation(transformationSpec)) {
-                                applyContainerTransformation()
-                                applyContentTransformation()
-                            }
-                        },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Text("发包工具")
-                }
-            }
+            // 发包工具入口已隐藏；PacketToolScreen 代码保留
         }
     }
 }
@@ -1222,13 +1316,11 @@ private fun MultiSelectActionsScreen(
             EdgeButton(
                 onClick = onForward,
                 modifier = Modifier.fillMaxWidth(),
-                buttonSize = EdgeButtonSize.Small,
                 enabled = selectedCount > 0,
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.Forward,
                     contentDescription = null,
-                    modifier = Modifier.size(EdgeButtonDefaults.SmallIconSize),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text("转发 ($selectedCount)")
@@ -1347,6 +1439,7 @@ internal fun MessageBubble(
     message: ChatDetailViewModel.UiMsg,
     isContinuation: Boolean = false,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit = { _, _ -> },
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
     onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
@@ -1369,13 +1462,13 @@ internal fun MessageBubble(
         SystemTipLine(systemTip.text)
         return
     }
-    val containerColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.secondaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
+    val containerColor = when {
+        hasMediaBubbleBackground(message) -> Color.Transparent
+        message.isSelf -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val messageContentColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.onSecondaryContainer
+        MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurface
     }
@@ -1383,37 +1476,67 @@ internal fun MessageBubble(
     val bubbleShape = messageBubbleShape(message.isSelf)
     val isSingleMedia = message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
-                it is ChatDetailViewModel.MessageContent.Giphy
+                it is ChatDetailViewModel.MessageContent.Giphy ||
+                it is ChatDetailViewModel.MessageContent.Video
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = if (isContinuation) 1.dp else 3.dp, bottom = 3.dp),
+            .padding(top = if (isContinuation) 3.dp else 8.dp, bottom = 4.dp),
         horizontalArrangement = alignment
     ) {
         Column(
-            modifier = Modifier.widthIn(max = 172.dp),
+            modifier = Modifier.widthIn(max = MessageBubbleMaxWidth),
             horizontalAlignment = if (message.isSelf) Alignment.End else Alignment.Start,
         ) {
             if (!message.isSelf && !isContinuation && message.senderNick.isNotBlank()) {
-                Text(
-                    text = listOfNotNull(
-                        memberLevel?.takeIf { it > 0 }?.let { "LV$it" },
-                        memberTitle?.takeIf { it.isNotBlank() },
-                        message.senderNick,
-                    ).joinToString(" "),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-                    maxLines = 1,
-                )
+                Column(
+                    modifier = Modifier.padding(start = 6.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = message.senderNick,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        memberLevel?.takeIf { it > 0 }?.let { level ->
+                            Text(
+                                text = "LV$level",
+                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                            )
+                        }
+                        memberTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                            Text(
+                                text = title,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        RoundedCornerShape(MessageBubbleCornerRadius),
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
             }
             MessageCard(
                 modifier = Modifier
                     .width(IntrinsicSize.Max)
                     .height(IntrinsicSize.Max)
-                    .widthIn(max = 172.dp)
+                    .widthIn(max = MessageBubbleMaxWidth)
                     .then(
                         if (isHighlighted) {
                             Modifier.border(2.dp, MaterialTheme.colorScheme.primary, bubbleShape)
@@ -1425,8 +1548,8 @@ internal fun MessageBubble(
                 contentColor = messageContentColor,
                 shape = bubbleShape,
                 contentPadding = if (isSingleMedia) PaddingValues(0.dp) else PaddingValues(
-                    horizontal = 11.dp,
-                    vertical = 7.dp
+                    horizontal = 12.dp,
+                    vertical = 8.dp,
                 ),
                 onClick = { onTap?.invoke() },
                 onLongClick = { onLongClick(message) },
@@ -1438,6 +1561,7 @@ internal fun MessageBubble(
                         content = content,
                         messageShape = bubbleShape,
                         ensureImageCached = ensureImageCached,
+                        ensureVideoCached = ensureVideoCached,
                         onOpenMedia = onOpenMedia,
                         onOpenVideo = onOpenVideo,
                         onOpenForward = onOpenForward,
@@ -1475,6 +1599,7 @@ private fun MessageContentItem(
     content: ChatDetailViewModel.MessageContent,
     messageShape: RoundedCornerShape,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit,
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
     onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
@@ -1497,12 +1622,26 @@ private fun MessageContentItem(
             content = content,
             ensureCached = { ensureImageCached(message, content) },
             onOpen = { file ->
-                onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", file, "图片"))
+                onOpenMedia(
+                    ViewerMedia(
+                        key = "${message.stableKey}:$contentIndex",
+                        model = file,
+                        description = "图片",
+                    ),
+                )
             },
         )
 
         is ChatDetailViewModel.MessageContent.Face -> {
             FaceMessageContent(content)
+        }
+
+        is ChatDetailViewModel.MessageContent.FaceBubble -> {
+            Text(
+                content.summary,
+                color = LocalContentColor.current,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         is ChatDetailViewModel.MessageContent.MarketFace -> {
@@ -1520,7 +1659,12 @@ private fun MessageContentItem(
             onTogglePlayback = { onToggleVoice(content) },
         )
 
-        is ChatDetailViewModel.MessageContent.Video -> VideoMessageContent(content, onOpenVideo)
+        is ChatDetailViewModel.MessageContent.Video -> VideoMessageContent(
+            message = message,
+            content = content,
+            ensureCached = { ensureVideoCached(message, content) },
+            onOpenVideo = onOpenVideo,
+        )
         is ChatDetailViewModel.MessageContent.File -> FileMessageContent(content) {
             onOpenFile(
                 message,
@@ -1579,18 +1723,22 @@ private fun MessageContentItem(
             onRequestCall
         )
 
-        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback(
-            content.detail?.let { "[$it · 类型 ${content.elementType}]" }
-                ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
-        )
+        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback("不支持的消息类型")
     }
 }
+
+private fun hasMediaBubbleBackground(message: ChatDetailViewModel.UiMsg): Boolean =
+    message.contents.any { content ->
+        content is ChatDetailViewModel.MessageContent.Image ||
+                content is ChatDetailViewModel.MessageContent.Video ||
+                content is ChatDetailViewModel.MessageContent.Giphy
+    }
 
 @Composable
 private fun LocalMessageImage(
     content: ChatDetailViewModel.MessageContent.Image,
     ensureCached: () -> Unit,
-    onOpen: (File) -> Unit,
+    onOpen: (File?) -> Unit,
 ) {
     val localFile = remember(content.localPaths, content.thumbnailPaths, content.sourcePath) {
         LocalMediaResolver.firstAvailable(
@@ -1600,64 +1748,51 @@ private fun LocalMessageImage(
         )
     }
     val size = mediaSize(content.width, content.height)
-    if (localFile == null) {
-        LaunchedEffect(content.elementId, content.isLoading, content.loadError) {
-            if (!content.isLoading && content.loadError == null) ensureCached()
-        }
-        Box {
-            MediaPlaceholder(
-                size = size,
-                label = when {
-                    content.isLoading -> "图片加载中"
-                    content.loadError != null -> "图片加载失败"
-                    else -> "图片"
-                },
-                onClick = if (content.isLoading) null else ensureCached,
-            )
-            if (!content.isLoading) {
-                androidx.wear.compose.material3.FilledIconButton(
-                    onClick = ensureCached,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 4.dp, end = 4.dp),
-                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    ),
-                ) {
-                    Icon(
-                        if (content.loadError != null) Icons.Default.Download else Icons.Default.Download,
-                        contentDescription = "加载图片",
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-            }
-        }
-    } else {
-        Box {
-            Card(
-                onClick = { onOpen(localFile) },
-                modifier = Modifier.size(size.width, size.height),
-                colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-                    containerColor = Color.Transparent,
-                ),
-                contentPadding = PaddingValues(0.dp),
-            ) {
-                Box(Modifier.fillMaxSize()) {
+    LaunchedEffect(content.elementId, content.isLoading, content.loadError, localFile) {
+        if (localFile == null && !content.isLoading) ensureCached()
+    }
+    Box(
+        modifier = Modifier
+            .size(size.width, size.height)
+            .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(
+            onClick = {
+                ensureCached()
+                onOpen(localFile)
+            },
+            modifier = Modifier.fillMaxSize(),
+            colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ),
+            contentPadding = PaddingValues(0.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
+        ) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (localFile != null) {
                     AsyncImage(
                         model = localFile,
                         contentDescription = "图片",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
+                        contentScale = ContentScale.Fit,
                     )
-                    Icon(
-                        Icons.Outlined.Image,
-                        contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.7f),
-                        modifier = Modifier
-                            .size(22.dp)
-                            .align(Alignment.Center),
-                    )
+                } else {
+                    when {
+                        content.isLoading -> CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        content.loadError != null -> Text(
+                            "图片加载失败",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        else -> CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
                 }
             }
         }
@@ -1724,7 +1859,7 @@ private fun LocalMarketFace(
         Box(
             modifier = Modifier
                 .size(size.width, size.height)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
         ) {
             AsyncImage(
                 model = localFile,
@@ -1972,7 +2107,7 @@ private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageConten
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(MessageBubbleCornerRadius),
                 contentPadding = PaddingValues(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2027,7 +2162,7 @@ private fun CallRecordMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2164,7 +2299,7 @@ private fun ReplyMessageContent(
     ) {
         Text(
             text = content.senderName,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -2195,7 +2330,7 @@ private fun FileMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2281,7 +2416,7 @@ private fun VoiceMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(horizontal = 8.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2348,7 +2483,9 @@ private fun VoiceMessageContent(
 
 @Composable
 private fun VideoMessageContent(
+    message: ChatDetailViewModel.UiMsg,
     content: ChatDetailViewModel.MessageContent.Video,
+    ensureCached: () -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
 ) {
     val localFile = remember(content.filePath) {
@@ -2357,16 +2494,30 @@ private fun VideoMessageContent(
     val thumbnail = remember(content.thumbnailPaths) {
         LocalMediaResolver.firstAvailable(content.thumbnailPaths)
     }
+    val size = mediaSize(content.width, content.height)
+    LaunchedEffect(content.elementId, content.isLoading, content.loadError, localFile) {
+        if (localFile == null && !content.isLoading) ensureCached()
+    }
     Card(
-        onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
-        enabled = localFile != null,
+        onClick = {
+            ensureCached()
+            onOpenVideo(
+                VideoPlayback(
+                    file = localFile,
+                    title = "视频",
+                    messageKey = message.stableKey,
+                    elementId = content.elementId,
+                ),
+            )
+        },
+        enabled = true,
         modifier = Modifier
-            .fillMaxWidth()
-            .height(132.dp),
+            .size(size.width, size.height)
+            .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(0.dp),
     ) {
         Box(
@@ -2378,45 +2529,31 @@ private fun VideoMessageContent(
                     model = thumbnail,
                     contentDescription = "视频封面",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                 )
             }
             Icon(
-                Icons.Outlined.Movie,
-                contentDescription = "视频",
-                tint = Color.White.copy(alpha = 0.8f),
-                modifier = Modifier.size(30.dp),
+                Icons.Default.PlayArrow,
+                contentDescription = "播放视频",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                modifier = Modifier.size(26.dp),
             )
             Text(
                 text = buildList {
                     add(formatDuration(content.durationSeconds))
                     content.progress?.let { add("$it%") }
+                    when {
+                        localFile != null -> Unit
+                        content.loadError != null -> add("失败")
+                        else -> add("缓存中")
+                    }
                 }.joinToString(" · "),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(7.dp),
-                color = LocalContentColor.current,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (localFile == null) {
-                androidx.wear.compose.material3.FilledIconButton(
-                    onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
-                    enabled = false,
-                    modifier = Modifier
-                        .size(30.dp)
-                        .align(Alignment.BottomEnd)
-                        .padding(4.dp),
-                    colors = androidx.wear.compose.material3.IconButtonDefaults.filledIconButtonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    ),
-                ) {
-                    Icon(
-                        Icons.Default.Download,
-                        contentDescription = "视频未缓存",
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-            }
         }
     }
 }
@@ -2430,55 +2567,59 @@ private fun StructuredCardContent(
     actionUrl: String?,
 ) {
     val context = LocalContext.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                actionUrl?.let { url -> Modifier.clickable { openHttpLink(context, url) } }
-                    ?: Modifier,
-            )
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-            .padding(9.dp),
+    Card(
+        onClick = { actionUrl?.let { openHttpLink(context, it) } },
+        enabled = !actionUrl.isNullOrBlank(),
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
+        contentPadding = PaddingValues(9.dp),
     ) {
-        tag?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                it,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-            Spacer(Modifier.height(2.dp))
-        }
-        Text(
-            title,
-            color = LocalContentColor.current,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        description.takeIf { it.isNotBlank() }?.let {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                it,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        previewUrl?.let { url ->
-            Spacer(Modifier.height(7.dp))
-            AsyncImage(
-                model = url,
-                contentDescription = "卡片预览",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(88.dp)
-                    .clip(RoundedCornerShape(7.dp)),
-                contentScale = ContentScale.Crop,
-            )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            tag?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(2.dp))
+            }
+            if (title.isNotBlank()) {
+                Text(
+                    title,
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            description.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            previewUrl?.let { url ->
+                Spacer(Modifier.height(7.dp))
+                AsyncImage(
+                    model = url,
+                    contentDescription = "卡片预览",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(88.dp)
+                        .clip(RoundedCornerShape(7.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
         }
     }
 }
@@ -2495,7 +2636,7 @@ private fun ForwardMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(9.dp),
     ) {
         Text(
@@ -2540,7 +2681,7 @@ private fun LocationMessageContent(content: ChatDetailViewModel.MessageContent.L
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2577,7 +2718,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2634,7 +2775,7 @@ private fun CalendarMessageContent(content: ChatDetailViewModel.MessageContent.C
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2691,7 +2832,7 @@ private fun InlineKeyboardMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -2714,7 +2855,7 @@ private fun InlineKeyboardMessageContent(
                         enabled = !isPending,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
@@ -2731,7 +2872,7 @@ private fun SystemTipLine(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp, vertical = 7.dp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.outline,
         style = MaterialTheme.typography.bodySmall,
         textAlign = TextAlign.Center,
     )
@@ -2771,7 +2912,7 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
         Card(
             modifier = modifier,
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
             contentPadding = PaddingValues(0.dp),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2787,7 +2928,7 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             onClick = onClick,
             modifier = modifier,
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
             contentPadding = PaddingValues(0.dp),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2799,6 +2940,39 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             }
         }
     }
+}
+
+private fun resolveViewerModel(
+    messages: List<ChatDetailViewModel.UiMsg>,
+    key: String,
+): Any? {
+    val sep = key.lastIndexOf(':')
+    if (sep <= 0) return null
+    val stableKey = key.substring(0, sep)
+    val contentIndex = key.substring(sep + 1).toIntOrNull() ?: return null
+    val message = messages.firstOrNull { it.stableKey == stableKey } ?: return null
+    val content = message.contents.getOrNull(contentIndex) ?: return null
+    return when (content) {
+        is ChatDetailViewModel.MessageContent.Image -> LocalMediaResolver.firstAvailable(
+            content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath),
+        )
+        is ChatDetailViewModel.MessageContent.Giphy -> content.mediaUrl
+        else -> null
+    }
+}
+
+private fun resolveVideoFile(
+    messages: List<ChatDetailViewModel.UiMsg>,
+    playback: VideoPlayback,
+): File? {
+    val message = playback.messageKey?.let { key ->
+        messages.firstOrNull { it.stableKey == key }
+    } ?: return playback.file
+    val video = message.contents
+        .filterIsInstance<ChatDetailViewModel.MessageContent.Video>()
+        .firstOrNull { playback.elementId <= 0L || it.elementId == playback.elementId }
+        ?: return playback.file
+    return LocalMediaResolver.resolveFile(video.filePath) ?: playback.file
 }
 
 private fun mediaSize(width: Int, height: Int): DpSize {
@@ -2837,7 +3011,7 @@ private fun ChatDateDivider(
         )
         Text(
             date,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.outline,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 8.dp)
         )

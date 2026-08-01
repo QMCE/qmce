@@ -14,6 +14,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
@@ -36,6 +39,8 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.packet.PacketMode
 import rj.qmce.lite.data.packet.PacketPayloadFormat
 import rj.qmce.lite.data.packet.PacketTarget
+import rj.qmce.lite.ui.wear.QmceConfirmScreen
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.PacketToolViewModel
 
 @Composable
@@ -46,6 +51,19 @@ fun PacketToolScreen(
     vm: PacketToolViewModel,
     onBack: () -> Unit,
 ) {
+    var riskAccepted by remember { mutableStateOf(false) }
+    if (!riskAccepted) {
+        QmceConfirmScreen(
+            title = "风险提示",
+            detail = "发包工具可发送任意协议包，可能导致账号异常或触发风控，仅供开发调试使用。",
+            confirmLabel = "我了解风险",
+            onConfirm = { riskAccepted = true },
+            onBack = onBack,
+            destructive = true,
+        )
+        return
+    }
+
     val state by vm.state.collectAsState()
     LaunchedEffect(peerUid, peerName, chatType) {
         vm.setTarget(
@@ -59,22 +77,16 @@ fun PacketToolScreen(
     ScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp),
+            modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-            item {
-                Text(
+            item(key = "packet-tool-header") {
+                QmceListHeader(
                     text = "发包工具",
-                    color = scheme.onBackground,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             item {

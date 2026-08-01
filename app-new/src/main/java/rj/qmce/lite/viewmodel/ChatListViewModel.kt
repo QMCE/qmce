@@ -238,7 +238,7 @@ class ChatListViewModel : ViewModel() {
     }
 
     private fun contactComparator(): Comparator<RecentContactInfo> =
-        compareByDescending<RecentContactInfo> { it.topFlag.toInt() != 0 }
+        compareByDescending<RecentContactInfo> { it.topFlag.toInt() == 1 }
             .thenByDescending { contact ->
                 val sortField = contact.sortField
                 if (sortField != 0L) sortField else contact.msgTime
@@ -469,7 +469,7 @@ class ChatListViewModel : ViewModel() {
                         return@Thread
                     }
                 }
-                val kernelService = ks ?: return@Thread
+                val kernelService = ks
 
                 // 等核心服务 Ready（含强制 start session），再读 recentService
                 mainHandler.post { _statusText.value = "等待内核会话服务…" }

@@ -1,6 +1,6 @@
 package rj.qmce.lite.kernel
 
-import android.util.Log
+import rj.qmce.lite.util.QmceLog
 import com.tencent.mobileqq.app.guard.GuardManager
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qphone.base.remote.SimpleAccount
@@ -119,10 +119,10 @@ object KernelBridge {
                 messageBridge.init(kernelMsgService)
                 officialMessageKernel = kernelMsgService
                 officialMessageService = messageBridge
-                Log.d(TAG, "KernelBridge: official message bridge initialized service=$messageBridge")
+                QmceLog.d(TAG, "KernelBridge: official message bridge initialized service=$messageBridge")
                 messageBridge
             }.onFailure { error ->
-                Log.w(TAG, "KernelBridge: official message bridge initialization failed", error)
+                QmceLog.w(TAG, "KernelBridge: official message bridge initialization failed", error)
             }.getOrNull()
         }
     }
@@ -151,7 +151,7 @@ object KernelBridge {
         return runCatching {
             task.get(timeoutMillis + 1_000L, TimeUnit.MILLISECONDS)
         }.getOrElse { error ->
-            Log.w(TAG, "KernelBridge: wait for single-flight init failed", error)
+            QmceLog.w(TAG, "KernelBridge: wait for single-flight init failed", error)
             false
         }
     }
@@ -170,6 +170,26 @@ object KernelBridge {
         return awaitCoreServices(timeoutMillis, runtimeOverride)
     }
 
+    /** Clear service caches after logout so the next login can await again. */
+    fun resetAfterLogout() {
+        synchronized(coreInitLock) {
+            activeCoreInit?.cancel(true)
+            activeCoreInit = null
+            lastForcedStartKs = null
+            coreInitAttempt = 0
+            _coreServicesStatus.value = CoreServicesStatus(CoreServicesPhase.Idle)
+        }
+        cachedKs = null
+        cachedMsgService = null
+        cachedRecentService = null
+        cachedBuddyService = null
+        cachedGroupService = null
+        officialMessageKernel = null
+        officialMessageService = null
+        foregroundReplayedSession = null
+        QmceLog.d(TAG, "KernelBridge: resetAfterLogout cleared service caches")
+    }
+
     private fun awaitCoreServicesInternal(
         timeoutMillis: Long,
         runtimeOverride: AppRuntime?,
@@ -178,7 +198,7 @@ object KernelBridge {
         val startedAt = System.currentTimeMillis()
         val attempt = synchronized(coreInitLock) { ++coreInitAttempt }
         publishCoreStatus(CoreServicesPhase.Starting, attempt = attempt)
-        Log.i(
+        QmceLog.i(
             TAG,
             "KernelBridge: core init start attempt=$attempt pid=${android.os.Process.myPid()} " +
                 "runtime=${runtimeOverride ?: QmceApplication.sAppRuntime} nativeLoaded=$nativeKernelLoaded " +
@@ -187,7 +207,7 @@ object KernelBridge {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (System.currentTimeMillis() < deadline) {
             if (Thread.interrupted() || synchronized(coreInitLock) { activeCoreInit !== myTask }) {
-                Log.i(TAG, "KernelBridge: core init interrupted/superseded attempt=$attempt")
+                QmceLog.i(TAG, "KernelBridge: core init interrupted/superseded attempt=$attempt")
                 return false
             }
             val runtime = runtimeOverride ?: QmceApplication.ensureRuntime()
@@ -198,7 +218,7 @@ object KernelBridge {
                 if (readWrapperSession(kernelService) == null &&
                     lastForcedStartKs !== kernelService
                 ) {
-                    Log.w(
+                    QmceLog.w(
                         TAG,
                         "KernelBridge: awaitCoreServices sees wrapperSession=null; forcing start",
                     )
@@ -213,7 +233,7 @@ object KernelBridge {
                         attempt = attempt,
                         elapsedMillis = System.currentTimeMillis() - startedAt,
                     )
-                    Log.i(TAG, "KernelBridge: core services ready state=${kernelState(kernelService)}")
+                    QmceLog.i(TAG, "KernelBridge: core services ready state=${kernelState(kernelService)}")
                     return true
                 }
             }
@@ -221,12 +241,12 @@ object KernelBridge {
                 Thread.sleep(250)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
-                Log.i(TAG, "KernelBridge: core init sleep interrupted attempt=$attempt")
+                QmceLog.i(TAG, "KernelBridge: core init sleep interrupted attempt=$attempt")
                 return false
             }
         }
         if (Thread.interrupted() || synchronized(coreInitLock) { activeCoreInit !== myTask }) {
-            Log.i(TAG, "KernelBridge: core init superseded after timeout attempt=$attempt")
+            QmceLog.i(TAG, "KernelBridge: core init superseded after timeout attempt=$attempt")
             return false
         }
         val ks = cachedKs
@@ -237,7 +257,7 @@ object KernelBridge {
             attempt = attempt,
             elapsedMillis = System.currentTimeMillis() - startedAt,
         )
-        Log.w(
+        QmceLog.w(
             TAG,
             "KernelBridge: timed out waiting for core services; " +
                     "runtime=${runtimeOverride ?: QmceApplication.sAppRuntime}, " +
@@ -278,7 +298,7 @@ object KernelBridge {
             }
             Thread.sleep(250)
         }
-        Log.w(TAG, "KernelBridge: timed out waiting for group service")
+        QmceLog.w(TAG, "KernelBridge: timed out waiting for group service")
         return cachedGroupService
     }
 
@@ -297,7 +317,7 @@ object KernelBridge {
         cachedRecentService = runCatching { ks.getRecentContactService() }.getOrNull()
         cachedBuddyService = runCatching { ks.getBuddyService() }.getOrNull()
         cachedGroupService = runCatching { ks.getGroupService() }.getOrNull()
-        Log.d(
+        QmceLog.d(
             TAG,
             "KernelBridge: cached services — ks=$cachedKs, msg=$cachedMsgService, " +
                     "recent=$cachedRecentService, buddy=$cachedBuddyService, state=${kernelState(ks)}"
@@ -318,7 +338,7 @@ object KernelBridge {
             val wrapperField = impl.getDeclaredField("wrapperSession").apply { isAccessible = true }
             val wrapper = wrapperField.get(ks)
             if (wrapper == null) {
-                Log.d(
+                QmceLog.d(
                     TAG,
                     "KernelBridge: completeExistingKernelInit skipped; wrapperSession=null ks=$ks"
                 )
@@ -328,7 +348,7 @@ object KernelBridge {
             val readyAtomic =
                 readyField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean ?: return@runCatching
             if (readyAtomic.get()) {
-                Log.d(TAG, "KernelBridge: existing kernel already ready ks=$ks wrapper=$wrapper")
+                QmceLog.d(TAG, "KernelBridge: existing kernel already ready ks=$ks wrapper=$wrapper")
                 return@runCatching
             }
             val startupField =
@@ -340,14 +360,14 @@ object KernelBridge {
                 (hadStartField.get(ks) as? java.util.concurrent.atomic.AtomicBoolean)?.get() == true
 
             if (startupWrapper == null) {
-                Log.w(
+                QmceLog.w(
                     TAG,
                     "KernelBridge: wrapperSession present but startupSessionWrapper=null; " +
                             "skip initService (hadStartNT=$hadStart) to avoid permanent stall",
                 )
                 if (hadStart) {
                     readyAtomic.set(true)
-                    Log.w(
+                    QmceLog.w(
                         TAG,
                         "KernelBridge: forced isNTStartFinish=true after hadStartNT stall " +
                                 "ks=$ks wrapper=$wrapper",
@@ -356,7 +376,7 @@ object KernelBridge {
                 return@runCatching
             }
 
-            Log.w(
+            QmceLog.w(
                 TAG,
                 "KernelBridge: existing wrapper session found with isNTStartFinish=false; completing init"
             )
@@ -365,11 +385,11 @@ object KernelBridge {
             if (!after && hadStart) {
                 readyAtomic.set(true)
                 after = true
-                Log.w(TAG, "KernelBridge: forced isNTStartFinish=true after initService no-op")
+                QmceLog.w(TAG, "KernelBridge: forced isNTStartFinish=true after initService no-op")
             }
-            Log.i(TAG, "KernelBridge: forced existing kernel init complete=$after wrapper=$wrapper")
+            QmceLog.i(TAG, "KernelBridge: forced existing kernel init complete=$after wrapper=$wrapper")
         }.onFailure {
-            Log.e(TAG, "KernelBridge: forced existing kernel init failed", it)
+            QmceLog.e(TAG, "KernelBridge: forced existing kernel init failed", it)
         }
     }
 
@@ -416,13 +436,13 @@ object KernelBridge {
             runCatching { app.setLastLoginUin(uin) }
             runCatching { app.setSortAccountList(arrayListOf(account)) }
             val runtime = QmceApplication.ensureRuntime(app)
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "bind: runtime=$runtime, isLogin=${runtime?.isLogin()}, uin=${runtime?.currentUin}"
             )
             runCatching { runtime?.login(account) }
             runCatching { runtime?.setLogined() }
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "bind: after setLogined, isLogin=${runtime?.isLogin()}, uin=${runtime?.currentUin}"
             )
@@ -437,7 +457,7 @@ object KernelBridge {
             val ks = runCatching {
                 runtime?.getRuntimeService(IKernelService::class.java, "")
             }.getOrNull()
-            Log.d(TAG, "bind: kernelService=$ks")
+            QmceLog.d(TAG, "bind: kernelService=$ks")
 
             // createRuntime 里已经自动继承登录态，不用再调 waitAppRuntime 拿新实例
             val actualRuntime = runtime
@@ -445,20 +465,20 @@ object KernelBridge {
 
             if (ks != null) {
                 val existingSession = readWrapperSession(ks)
-                Log.d(TAG, "bind: existingSession=$existingSession")
+                QmceLog.d(TAG, "bind: existingSession=$existingSession")
                 if (existingSession == null) {
                     // pinRuntime 已在上面完成，先 patch serviceContent 再 start
                     patchServiceContent(ks, actualRuntime ?: runtime)
                     startKernelSession(ks, actualRuntime)
                 } else {
-                    Log.d(TAG, "bind: session already exists, initializing directly")
+                    QmceLog.d(TAG, "bind: session already exists, initializing directly")
                     initExistingKernel(actualRuntime, ks)
                 }
             }
 
             val sessionOk = waitForSession(ks, actualRuntime)
             if (!sessionOk) {
-                Log.e(
+                QmceLog.e(
                     TAG,
                     "bind: wrapperSession still null after start+wait; " +
                             "ks=$ks state=${ks?.let { kernelState(it) }}",
@@ -467,8 +487,7 @@ object KernelBridge {
             reinitializeAfterLogin(actualRuntime)
             when {
                 areCoreServicesReady() -> "ok"
-                sessionOk -> "ok"
-                // 账号已绑定、票可用，但 NT session 未起来；勿清 LoginPrefs
+                // 账号已绑定、票可用，但 NT session/服务未齐；勿清 LoginPrefs
                 else -> "kernel-not-ready"
             }
         }.getOrElse { "failed: ${it.javaClass.simpleName}: ${it.message}" }
@@ -477,7 +496,7 @@ object KernelBridge {
     fun reinitializeAfterLogin(runtime: AppRuntime?): Boolean {
         // 不要清空已有非空缓存；只在后续 await/cacheServices 时覆盖刷新
         if (cachedMsgService != null || cachedRecentService != null || cachedBuddyService != null) {
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "login reinitialize: keeping cached services " +
                         "msg=$cachedMsgService recent=$cachedRecentService buddy=$cachedBuddyService",
@@ -486,34 +505,34 @@ object KernelBridge {
 
         val coreReady = awaitCoreServices(timeoutMillis = 30_000, runtimeOverride = runtime)
         if (!coreReady) {
-            Log.w(TAG, "login reinitialize: core services unavailable")
+            QmceLog.w(TAG, "login reinitialize: core services unavailable")
             return false
         }
 
         runCatching {
             cachedMsgService?.switchForeGround(object : IOperateCallback {
                 override fun onResult(code: Int, errMsg: String?) {
-                    Log.d(TAG, "login reinitialize: switchForeGround code=$code, errMsg=$errMsg")
+                    QmceLog.d(TAG, "login reinitialize: switchForeGround code=$code, errMsg=$errMsg")
                 }
             })
             cachedMsgService?.startMsgSync()
-            Log.d(TAG, "login reinitialize: startMsgSync called")
-        }.onFailure { Log.w(TAG, "login reinitialize: message sync failed", it) }
+            QmceLog.d(TAG, "login reinitialize: startMsgSync called")
+        }.onFailure { QmceLog.w(TAG, "login reinitialize: message sync failed", it) }
 
         runCatching {
             val contactService = runtime?.getRuntimeService(IContactRuntimeService::class.java, "")
             contactService?.initUinToUidCache(true)
-            Log.d(TAG, "login reinitialize: initUinToUidCache(true) called")
-        }.onFailure { Log.w(TAG, "login reinitialize: contact cache init failed", it) }
+            QmceLog.d(TAG, "login reinitialize: initUinToUidCache(true) called")
+        }.onFailure { QmceLog.w(TAG, "login reinitialize: contact cache init failed", it) }
 
         runCatching {
             cachedBuddyService?.getBuddyList(true, object : IOperateCallback {
                 override fun onResult(code: Int, errMsg: String?) {
-                    Log.d(TAG, "login reinitialize: getBuddyList code=$code, errMsg=$errMsg")
+                    QmceLog.d(TAG, "login reinitialize: getBuddyList code=$code, errMsg=$errMsg")
                 }
             })
-            Log.d(TAG, "login reinitialize: getBuddyList(true) called")
-        }.onFailure { Log.w(TAG, "login reinitialize: buddy refresh failed", it) }
+            QmceLog.d(TAG, "login reinitialize: getBuddyList(true) called")
+        }.onFailure { QmceLog.w(TAG, "login reinitialize: buddy refresh failed", it) }
 
         runCatching {
             val context = com.tencent.qphone.base.util.BaseApplication.getContext()
@@ -521,8 +540,8 @@ object KernelBridge {
                 android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
                     .setPackage(context.packageName)
             )
-            Log.d(TAG, "login reinitialize: ON_KERNEL_INIT_COMPLETE sent")
-        }.onFailure { Log.w(TAG, "login reinitialize: init broadcast failed", it) }
+            QmceLog.d(TAG, "login reinitialize: ON_KERNEL_INIT_COMPLETE sent")
+        }.onFailure { QmceLog.w(TAG, "login reinitialize: init broadcast failed", it) }
 
         return cachedMsgService != null && cachedRecentService != null
     }
@@ -570,17 +589,17 @@ object KernelBridge {
                             configCls.getField("qua").set(config, qua)
                         }
                     }
-                    Log.d(TAG, "bind: patched WrapperEngineGlobalConfig appVersion=9.0.7.2563 platformType=1")
+                    QmceLog.d(TAG, "bind: patched WrapperEngineGlobalConfig appVersion=9.0.7.2563 platformType=1")
                     config
                 } else {
                     method.invoke(delegate, *(args ?: emptyArray()))
                 }
             }
             field.set(null, proxy)
-            Log.d(TAG, "bind: InitialModuleInjector patched with fixed global config")
+            QmceLog.d(TAG, "bind: InitialModuleInjector patched with fixed global config")
             true
         }.getOrElse { error ->
-            Log.e(TAG, "bind: injectInitialModule failed", error)
+            QmceLog.e(TAG, "bind: injectInitialModule failed", error)
             false
         }
     }
@@ -594,8 +613,8 @@ object KernelBridge {
             val cMethod = companion.javaClass.getDeclaredMethod("c")
             cMethod.isAccessible = true
             cMethod.invoke(companion)
-            Log.d(TAG, "bind: reinitWrapperEngineConfig via KernelSetterImpl.Companion.c() OK")
-        }.onFailure { Log.w(TAG, "bind: reinitWrapperEngineConfig skipped", it) }
+            QmceLog.d(TAG, "bind: reinitWrapperEngineConfig via KernelSetterImpl.Companion.c() OK")
+        }.onFailure { QmceLog.w(TAG, "bind: reinitWrapperEngineConfig skipped", it) }
     }
 
     private fun loadNativeKernel(): Boolean {
@@ -616,7 +635,7 @@ object KernelBridge {
             runCatching { System.loadLibrary(lib) }
                 .onFailure {
                     ok = false
-                    Log.w(TAG, "bind: loadLibrary($lib) failed", it)
+                    QmceLog.w(TAG, "bind: loadLibrary($lib) failed", it)
                 }
         }
         return ok
@@ -640,7 +659,7 @@ object KernelBridge {
             sha256(File(nativeDir, name))
         }
         val valid = expected.all { (name, hash) -> actual[name] == hash }
-        Log.i(TAG, "KernelBridge: native baseline eligible=$valid expected=$expected actual=$actual")
+        QmceLog.i(TAG, "KernelBridge: native baseline eligible=$valid expected=$expected actual=$actual")
         return valid
     }
 
@@ -675,29 +694,28 @@ object KernelBridge {
             val current = f.get(MobileQQ.sMobileQQ)
             if (current !== runtime) {
                 f.set(MobileQQ.sMobileQQ, runtime)
-                Log.d(TAG, "bind: pinned mAppRuntime: $current -> $runtime")
+                QmceLog.d(TAG, "bind: pinned mAppRuntime: $current -> $runtime")
             }
             val stateField = MobileQQ::class.java.getDeclaredField("mRuntimeState")
             stateField.isAccessible = true
             (stateField.get(MobileQQ.sMobileQQ) as? java.util.concurrent.atomic.AtomicInteger)?.set(
                 3
             )
-        }.onFailure { Log.e(TAG, "bind: pinRuntime mAppRuntime failed", it) }
+        }.onFailure { QmceLog.e(TAG, "bind: pinRuntime mAppRuntime failed", it) }
 
         // 2. KernelServiceImpl.serviceContent 里的 WeakReference<AppRuntime>
         runCatching {
-            val ks =
-                runtime.getRuntimeService(IKernelService::class.java, "") ?: return@runCatching
+            val ks = runtime.getRuntimeService(IKernelService::class.java, "")
             patchServiceContent(ks, runtime)
-            Log.d(TAG, "bind: pinned serviceContent runtime -> $runtime")
-        }.onFailure { Log.e(TAG, "bind: pinRuntime serviceContent failed", it) }
+            QmceLog.d(TAG, "bind: pinned serviceContent runtime -> $runtime")
+        }.onFailure { QmceLog.e(TAG, "bind: pinRuntime serviceContent failed", it) }
     }
 
     /** 在 ks.start() 之前 patch serviceContent WeakReference，
      *  确保 serviceContent.a() 非空，否则官方 start() 会静默跳过 startSession */
     private fun patchServiceContent(ks: IKernelService, runtime: AppRuntime?) {
         if (runtime == null) {
-            Log.w(TAG, "patchServiceContent: runtime is null, skip")
+            QmceLog.w(TAG, "patchServiceContent: runtime is null, skip")
             return
         }
         runCatching {
@@ -712,7 +730,7 @@ object KernelBridge {
                     .getDeclaredConstructor(Any::class.java)
                     .newInstance(runtime)
                 aField.set(sc, created)
-                Log.d(TAG, "patchServiceContent: created WeakReference for runtime=$runtime")
+                QmceLog.d(TAG, "patchServiceContent: created WeakReference for runtime=$runtime")
             } else {
                 setWeakRefReferent(weakRef, runtime)
             }
@@ -721,11 +739,11 @@ object KernelBridge {
                 val bField = sc.javaClass.getDeclaredField("b"); bField.isAccessible = true
                 bField.set(sc, runtime.currentAccountUin)
             }
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "patchServiceContent: set runtime=$runtime, isLogin=${runtime.isLogin()}, isRunning=${runtime.isRunning}"
             )
-        }.onFailure { Log.e(TAG, "patchServiceContent failed", it) }
+        }.onFailure { QmceLog.e(TAG, "patchServiceContent failed", it) }
     }
 
     /** ART 上 referent 在 java.lang.ref.Reference；null referent 也必须写入，否则 ks.start 空转 */
@@ -740,7 +758,7 @@ object KernelBridge {
                     val current = f.get(weakRef)
                     if (current !== value) {
                         f.set(weakRef, value)
-                        Log.d(
+                        QmceLog.d(
                             TAG,
                             "setWeakRefReferent: patched field '${f.name}' in ${cls.simpleName} " +
                                 "(wasNull=${current == null})"
@@ -751,7 +769,7 @@ object KernelBridge {
             }
             cls = cls.superclass
         }
-        Log.w(TAG, "setWeakRefReferent: could not find referent field")
+        QmceLog.w(TAG, "setWeakRefReferent: could not find referent field")
     }
 
     private fun injectSAccountModule(): Boolean {
@@ -764,9 +782,9 @@ object KernelBridge {
                     Class.forName("com.tencent.qqnt.watch.inject.AccountModuleInjector")
                 val accountModule = accountModuleCls.getDeclaredConstructor().newInstance()
                 sAccountModuleField.set(null, accountModule)
-                Log.d(TAG, "bind: sAccountModule set to $accountModule")
+                QmceLog.d(TAG, "bind: sAccountModule set to $accountModule")
             }
-        }.onFailure { Log.e(TAG, "bind: set sAccountModule failed", it) }.isSuccess
+        }.onFailure { QmceLog.e(TAG, "bind: set sAccountModule failed", it) }.isSuccess
     }
 
     private fun createPatchedAppSettingInjector(): Any? {
@@ -802,10 +820,10 @@ object KernelBridge {
                 val ksField = ks.javaClass.getDeclaredField("sAppSetting")
                 ksField.isAccessible = true
                 ksField.set(ks, proxy)
-                Log.d(TAG, "bind: patched KernelServiceImpl.sAppSetting on $ks")
+                QmceLog.d(TAG, "bind: patched KernelServiceImpl.sAppSetting on $ks")
             }
-            Log.d(TAG, "bind: AppSettingInjector patched with fixed version proxy")
-        }.onFailure { Log.e(TAG, "bind: patch AppSettingInjector failed", it) }
+            QmceLog.d(TAG, "bind: AppSettingInjector patched with fixed version proxy")
+        }.onFailure { QmceLog.e(TAG, "bind: patch AppSettingInjector failed", it) }
     }
 
     private fun checkTicketStatus(runtime: AppRuntime?, uin: String) {
@@ -816,13 +834,13 @@ object KernelBridge {
                 it.name == "getRuntimeService" && it.parameterTypes.size == 2
             }
             val ticketSvc = m?.invoke(runtime, ticketClass, "")
-            Log.d(TAG, "bind: ticketSvc=$ticketSvc")
+            QmceLog.d(TAG, "bind: ticketSvc=$ticketSvc")
             if (ticketSvc != null) {
                 val a2 = runCatching {
                     ticketSvc.javaClass.getMethod("getA2", String::class.java)
                         .invoke(ticketSvc, uin)
                 }.getOrNull()
-                Log.d(TAG, "bind: A2=$a2")
+                QmceLog.d(TAG, "bind: A2=$a2")
                 val localTicket = runCatching {
                     ticketSvc.javaClass.getMethod(
                         "getLocalTicket",
@@ -831,14 +849,14 @@ object KernelBridge {
                     )
                         .invoke(ticketSvc, uin, 262144)
                 }.getOrNull()
-                Log.d(TAG, "bind: localTicket=$localTicket")
+                QmceLog.d(TAG, "bind: localTicket=$localTicket")
             }
-        }.onFailure { Log.e(TAG, "bind: ticket check failed", it) }
+        }.onFailure { QmceLog.e(TAG, "bind: ticket check failed", it) }
     }
 
     private fun startKernelSession(ks: IKernelService, runtime: AppRuntime?) {
         val boundRuntime = runtime ?: run {
-            Log.e(TAG, "bind: cannot start kernel session without runtime")
+            QmceLog.e(TAG, "bind: cannot start kernel session without runtime")
             return
         }
 
@@ -852,7 +870,7 @@ object KernelBridge {
         val setter = runCatching {
             val cls = Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
             cls.getDeclaredConstructor().apply { isAccessible = true }.newInstance()
-        }.onFailure { Log.e(TAG, "bind: create KernelSetterImpl failed", it) }.getOrNull() ?: return
+        }.onFailure { QmceLog.e(TAG, "bind: create KernelSetterImpl failed", it) }.getOrNull() ?: return
 
         // mAppRef
         runCatching {
@@ -863,7 +881,7 @@ object KernelBridge {
         // ensureInject
         runCatching {
             setter.javaClass.getMethod("ensureInject").invoke(setter)
-        }.onFailure { Log.e(TAG, "bind: ensureInject failed", it) }
+        }.onFailure { QmceLog.e(TAG, "bind: ensureInject failed", it) }
         // sAppSetting 注入
         injectSAppSetting(ks)
 
@@ -874,19 +892,19 @@ object KernelBridge {
         ) { _, method, args ->
             when (method.name) {
                 "a" -> { // onKernelCreate: 官方在此调用 setServletKernelInit
-                    Log.d(TAG, "IKernelCreateListener.a called (kernel created)")
+                    QmceLog.d(TAG, "IKernelCreateListener.a called (kernel created)")
                     runCatching {
                         val setterCls =
                             Class.forName("com.tencent.qqnt.kernel.api.impl.KernelSetterImpl")
                         val m = setterCls.getMethod("setServletKernelInit")
                         m.invoke(setter)
-                        Log.d(TAG, "setServletKernelInit OK")
-                    }.onFailure { Log.e(TAG, "setServletKernelInit failed", it) }
+                        QmceLog.d(TAG, "setServletKernelInit OK")
+                    }.onFailure { QmceLog.e(TAG, "setServletKernelInit failed", it) }
                     null
                 }
 
                 "b" -> { // onKernelInitComplete: 发送 ON_KERNEL_INIT_COMPLETE 广播
-                    Log.d(TAG, "IKernelCreateListener.b called (kernel init complete)")
+                    QmceLog.d(TAG, "IKernelCreateListener.b called (kernel init complete)")
                     registerOfficialMsfConnectionBridge(runtime)
                     registerOfficialForegroundCallback(runtime)
                     initializeOfficialMessageBridge(runtime)
@@ -902,16 +920,16 @@ object KernelBridge {
                                 ""
                             )
                         }.getOrNull()
-                        Log.d(TAG, "initUinToUidCache: contactSvc=$contactSvc")
+                        QmceLog.d(TAG, "initUinToUidCache: contactSvc=$contactSvc")
                         if (contactSvc != null) {
                             val m = contactSvc.javaClass.getMethod(
                                 "initUinToUidCache",
                                 Boolean::class.javaPrimitiveType
                             )
                             m.invoke(contactSvc, true) // true = fetch from server
-                            Log.d(TAG, "initUinToUidCache(true) OK")
+                            QmceLog.d(TAG, "initUinToUidCache(true) OK")
                         }
-                    }.onFailure { Log.e(TAG, "initUinToUidCache failed", it) }
+                    }.onFailure { QmceLog.e(TAG, "initUinToUidCache failed", it) }
 
                     // 直接调 IBuddyService.getBuddyList(true, callback) 强制拉取
                     runCatching {
@@ -922,21 +940,21 @@ object KernelBridge {
                             m?.invoke(boundRuntime, IKernelService::class.java, "")
                         }.getOrNull() as? IKernelService
                         val buddySvc = ks?.getBuddyService()
-                        Log.d(TAG, "buddySvc=$buddySvc")
+                        QmceLog.d(TAG, "buddySvc=$buddySvc")
                         if (buddySvc != null) {
                             val callback =
                                 object : com.tencent.qqnt.kernel.nativeinterface.IOperateCallback {
                                     override fun onResult(code: Int, errMsg: String?) {
-                                        Log.d(
+                                        QmceLog.d(
                                             TAG,
                                             "getBuddyList result: code=$code, errMsg=$errMsg"
                                         )
                                     }
                                 }
                             buddySvc.getBuddyList(true, callback)
-                            Log.d(TAG, "getBuddyList(true) called")
+                            QmceLog.d(TAG, "getBuddyList(true) called")
                         }
-                    }.onFailure { Log.e(TAG, "getBuddyList direct failed", it) }
+                    }.onFailure { QmceLog.e(TAG, "getBuddyList direct failed", it) }
 
                     runCatching {
                         val ctx = com.tencent.qphone.base.util.BaseApplication.getContext()
@@ -944,8 +962,8 @@ object KernelBridge {
                             android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
                                 .setPackage(ctx.packageName)
                         ctx.sendBroadcast(intent)
-                        Log.d(TAG, "ON_KERNEL_INIT_COMPLETE broadcast sent")
-                    }.onFailure { Log.e(TAG, "sendBroadcast failed", it) }
+                        QmceLog.d(TAG, "ON_KERNEL_INIT_COMPLETE broadcast sent")
+                    }.onFailure { QmceLog.e(TAG, "sendBroadcast failed", it) }
                     null
                 }
 
@@ -953,7 +971,7 @@ object KernelBridge {
                 "equals" -> false
                 "toString" -> "QMCE-KernelCreateListener"
                 else -> {
-                    Log.d(TAG, "IKernelCreateListener: unexpected method=${method.name}")
+                    QmceLog.d(TAG, "IKernelCreateListener: unexpected method=${method.name}")
                     null
                 }
             }
@@ -964,21 +982,21 @@ object KernelBridge {
                 Class.forName("com.tencent.qqnt.kernel.api.IKernelCreateListener")
             )
             val accountCallback = getCallback.invoke(setter, kernelCreateListener)
-            Log.d(TAG, "bind: getAccountCallback returned=$accountCallback")
-        }.onFailure { Log.e(TAG, "bind: getAccountCallback failed", it) }
+            QmceLog.d(TAG, "bind: getAccountCallback returned=$accountCallback")
+        }.onFailure { QmceLog.e(TAG, "bind: getAccountCallback failed", it) }
 
         // 原路径 onAccountChanged 被包名校验拦截，直接调 ks.start(listener)
         val listener = kernelCreateListener as IKernelCreateListener
         runCatching {
             ks.start(listener)
-            Log.d(TAG, "bind: ks.start(listener) OK state=${kernelState(ks)}")
-        }.onFailure { Log.e(TAG, "bind: ks.start(listener) failed", it) }
+            QmceLog.d(TAG, "bind: ks.start(listener) OK state=${kernelState(ks)}")
+        }.onFailure { QmceLog.e(TAG, "bind: ks.start(listener) failed", it) }
 
         // Do not invoke startSession reflectively here. On 9.0.7 it creates another
         // native shell after a failed official start and turns one missing session into
         // an unbounded stream of NPEs. A later explicit retry starts a fresh cycle.
         if (readWrapperSession(ks) == null) {
-            Log.w(
+            QmceLog.w(
                 TAG,
                 "bind: official start returned without wrapperSession; " +
                     "state=${kernelState(ks)}",
@@ -1017,13 +1035,13 @@ object KernelBridge {
 
             val sessionIdListObj =
                 startupWrapper.javaClass.getMethod("getSessionIdList").invoke(startupWrapper)
-            val sessionIdList = sessionIdListObj as? java.util.Map<*, *> ?: return false
+            val sessionIdList = sessionIdListObj as? Map<*, *> ?: return false
 
-            val valueCandidates = sessionIdList.values().mapNotNull { it as? String }
-            val keyCandidates = sessionIdList.keySet().mapNotNull { it as? String }
+            val valueCandidates = sessionIdList.values.mapNotNull { it as? String }
+            val keyCandidates = sessionIdList.keys.mapNotNull { it as? String }
             val candidateIds = (valueCandidates + keyCandidates).distinct()
             if (candidateIds.isEmpty()) {
-                Log.w(
+                QmceLog.w(
                     TAG,
                     "bind: tryForceWrapperSession empty candidateIds; " +
                         "keyCandidates=${keyCandidates.take(10)} valueCandidates=${valueCandidates.take(10)}",
@@ -1031,7 +1049,7 @@ object KernelBridge {
                 return false
             }
 
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "bind: tryForceWrapperSession sessionIdList.size=${sessionIdList.size()} " +
                     "keyCandidates=${keyCandidates.take(10)} " +
@@ -1053,7 +1071,7 @@ object KernelBridge {
                 if (ws != null) {
                     wrapperField.set(ks, ws)
                     startupWrapperField.set(ks, startupWrapper)
-                    Log.d(
+                    QmceLog.d(
                         TAG,
                         "bind: forced wrapperSession via candidate=$candidate " +
                             "state=${kernelState(ks)}",
@@ -1062,14 +1080,14 @@ object KernelBridge {
                 }
             }
 
-            Log.w(
+            QmceLog.w(
                 TAG,
                 "bind: tryForceWrapperSessionFromCppProxy no candidate wrapper found; " +
                     "candidates=${candidateIds.take(10)}",
             )
             return false
         }.getOrElse { error ->
-            Log.w(TAG, "bind: tryForceWrapperSessionFromCppProxy failed", error)
+            QmceLog.w(TAG, "bind: tryForceWrapperSessionFromCppProxy failed", error)
             false
         }
     }
@@ -1099,8 +1117,8 @@ object KernelBridge {
             )
             m.isAccessible = true
             m.invoke(ks, runtime, listener)
-            Log.d(TAG, "bind: reflective startSession OK")
-        }.onFailure { Log.e(TAG, "bind: reflective startSession failed", it) }
+            QmceLog.d(TAG, "bind: reflective startSession OK")
+        }.onFailure { QmceLog.e(TAG, "bind: reflective startSession failed", it) }
     }
 
     private fun registerOfficialForegroundCallback(runtime: AppRuntime?) {
@@ -1110,9 +1128,9 @@ object KernelBridge {
         }.onSuccess { api ->
             api.registerForegroundCallback()
             foregroundCallbackRegistered = true
-            Log.d(TAG, "bind: official foreground callback registered api=$api")
+            QmceLog.d(TAG, "bind: official foreground callback registered api=$api")
         }.onFailure { error ->
-            Log.w(TAG, "bind: official foreground callback unavailable", error)
+            QmceLog.w(TAG, "bind: official foreground callback unavailable", error)
         }
     }
 
@@ -1129,9 +1147,9 @@ object KernelBridge {
             helper.addPushListener(listener)
             msfConnectionListener = listener
             msfConnectionBridgeRegistered = true
-            Log.d(TAG, "bind: official MSF connection bridge registered helper=$helper")
+            QmceLog.d(TAG, "bind: official MSF connection bridge registered helper=$helper")
         }.onFailure { error ->
-            Log.w(TAG, "bind: official MSF connection bridge unavailable", error)
+            QmceLog.w(TAG, "bind: official MSF connection bridge unavailable", error)
         }
     }
 
@@ -1164,9 +1182,9 @@ object KernelBridge {
         runCatching {
             runtime.getRuntimeService(IKernelService::class.java, "")
                 .setOnMsfStatusChanged(status, MsfChangeReasonType.KAUTO, 0)
-            Log.d(TAG, "msfBridge: status=$status")
+            QmceLog.d(TAG, "msfBridge: status=$status")
         }.onFailure { error ->
-            Log.w(TAG, "msfBridge: status=$status failed", error)
+            QmceLog.w(TAG, "msfBridge: status=$status failed", error)
         }
     }
 
@@ -1176,7 +1194,7 @@ object KernelBridge {
      */
     private fun waitForSession(ks: IKernelService?, runtime: AppRuntime?): Boolean {
         if (ks == null) {
-            Log.e(TAG, "bind: waitForSession skipped; kernelService=null")
+            QmceLog.e(TAG, "bind: waitForSession skipped; kernelService=null")
             return false
         }
         fun pollOnce(label: String, maxRounds: Int): Any? {
@@ -1186,7 +1204,7 @@ object KernelBridge {
                 waitCount++
                 val ws = readWrapperSession(ks)
                 if (ws != null) {
-                    Log.d(
+                    QmceLog.d(
                         TAG,
                         "bind: kernel session established ($label) after ${waitCount * 500}ms",
                     )
@@ -1198,14 +1216,29 @@ object KernelBridge {
 
         var ws = pollOnce("initial", 20)
         if (ws == null) {
-            Log.w(TAG, "bind: wrapperSession still null after initial wait; forcing startKernelSession")
+            QmceLog.w(TAG, "bind: wrapperSession still null after initial wait; forcing startKernelSession")
             patchServiceContent(ks, runtime)
             startKernelSession(ks, runtime)
             lastForcedStartKs = ks
             ws = pollOnce("forced-start", 30)
         }
+        if (ws == null && runtime != null) {
+            QmceLog.w(
+                TAG,
+                "bind: wrapperSession still null after forced start; trying CppProxy session force; " +
+                    "state=${kernelState(ks)}",
+            )
+            if (tryForceWrapperSessionFromCppProxy(ks, runtime)) {
+                registerOfficialMsfConnectionBridge(runtime)
+                registerOfficialForegroundCallback(runtime)
+                initializeOfficialMessageBridge(runtime)
+                ws = readWrapperSession(ks) ?: pollOnce("cpp-proxy-force", 5)
+            }
+        } else if (ws == null) {
+            QmceLog.w(TAG, "bind: skip CppProxy force; runtime=null state=${kernelState(ks)}")
+        }
         if (ws == null) {
-            Log.e(
+            QmceLog.e(
                 TAG,
                 "bind: wrapperSession unavailable after forced start; state=${kernelState(ks)}",
             )
@@ -1221,7 +1254,7 @@ object KernelBridge {
             serviceWait++
             cacheServices(ks)
         }
-        Log.d(
+        QmceLog.d(
             TAG,
             "bind: services after session wait=${serviceWait * 500}ms " +
                     "msg=$cachedMsgService recent=$cachedRecentService buddy=$cachedBuddyService " +
@@ -1235,21 +1268,21 @@ object KernelBridge {
     private fun replayForegroundToWrapperSession(session: Any) {
         val wrapperSession = session as? IQQNTWrapperSession
         if (wrapperSession == null) {
-            Log.w(TAG, "bind: session foreground replay skipped; unexpected session=$session")
+            QmceLog.w(TAG, "bind: session foreground replay skipped; unexpected session=$session")
             return
         }
         if (foregroundReplayedSession === wrapperSession) {
-            Log.d(TAG, "bind: session foreground replay already sent")
+            QmceLog.d(TAG, "bind: session foreground replay already sent")
             return
         }
         val guardForeground = runCatching { GuardManager.c?.f() == true }
-            .onFailure { Log.w(TAG, "bind: session foreground replay guard check failed", it) }
+            .onFailure { QmceLog.w(TAG, "bind: session foreground replay guard check failed", it) }
             .getOrDefault(false)
         val lifecycleForeground = runCatching { Foreground.isCurrentProcessForeground() }
-            .onFailure { Log.w(TAG, "bind: session foreground replay lifecycle check failed", it) }
+            .onFailure { QmceLog.w(TAG, "bind: session foreground replay lifecycle check failed", it) }
             .getOrDefault(false)
         if (!guardForeground && !lifecycleForeground) {
-            Log.d(
+            QmceLog.d(
                 TAG,
                 "bind: session foreground replay skipped; guard and lifecycle are background"
             )
@@ -1258,13 +1291,13 @@ object KernelBridge {
         runCatching { wrapperSession.switchToFront() }
             .onSuccess {
                 foregroundReplayedSession = wrapperSession
-                Log.i(
+                QmceLog.i(
                     TAG,
                     "bind: replayed foreground to WrapperSession " +
                             "guard=$guardForeground lifecycle=$lifecycleForeground"
                 )
             }
-            .onFailure { Log.w(TAG, "bind: WrapperSession.switchToFront failed", it) }
+            .onFailure { QmceLog.w(TAG, "bind: WrapperSession.switchToFront failed", it) }
     }
 
     /** 复用已有 wrapperSession 时，补做 IKernelCreateListener 回调里的关键初始化 */
@@ -1273,21 +1306,21 @@ object KernelBridge {
         cacheServices(ks)
         runCatching {
             val contactSvc = runtime?.getRuntimeService(IContactRuntimeService::class.java, "")
-            Log.d(TAG, "initExistingKernel: contactSvc=$contactSvc")
+            QmceLog.d(TAG, "initExistingKernel: contactSvc=$contactSvc")
             contactSvc?.initUinToUidCache(true)
-            Log.d(TAG, "initExistingKernel: initUinToUidCache(true) OK")
-        }.onFailure { Log.e(TAG, "initExistingKernel: initUinToUidCache failed", it) }
+            QmceLog.d(TAG, "initExistingKernel: initUinToUidCache(true) OK")
+        }.onFailure { QmceLog.e(TAG, "initExistingKernel: initUinToUidCache failed", it) }
 
         runCatching {
             val buddySvc = ks.getBuddyService()
-            Log.d(TAG, "initExistingKernel: buddySvc=$buddySvc")
+            QmceLog.d(TAG, "initExistingKernel: buddySvc=$buddySvc")
             buddySvc?.getBuddyList(true, object : IOperateCallback {
                 override fun onResult(code: Int, errMsg: String?) {
-                    Log.d(TAG, "initExistingKernel: getBuddyList code=$code, errMsg=$errMsg")
+                    QmceLog.d(TAG, "initExistingKernel: getBuddyList code=$code, errMsg=$errMsg")
                 }
             })
-            Log.d(TAG, "initExistingKernel: getBuddyList(true) called")
-        }.onFailure { Log.e(TAG, "initExistingKernel: getBuddyList failed", it) }
+            QmceLog.d(TAG, "initExistingKernel: getBuddyList(true) called")
+        }.onFailure { QmceLog.e(TAG, "initExistingKernel: getBuddyList failed", it) }
 
         runCatching {
             val ctx = com.tencent.qphone.base.util.BaseApplication.getContext()
@@ -1295,8 +1328,8 @@ object KernelBridge {
                 android.content.Intent("com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE")
                     .setPackage(ctx.packageName)
             )
-            Log.d(TAG, "initExistingKernel: ON_KERNEL_INIT_COMPLETE sent")
-        }.onFailure { Log.e(TAG, "initExistingKernel: broadcast failed", it) }
+            QmceLog.d(TAG, "initExistingKernel: ON_KERNEL_INIT_COMPLETE sent")
+        }.onFailure { QmceLog.e(TAG, "initExistingKernel: broadcast failed", it) }
 
         unblockPush()
     }
@@ -1313,11 +1346,11 @@ object KernelBridge {
                 if (pm != null) {
                     val oField = pm.javaClass.getDeclaredField("o")
                     oField.isAccessible = true
-                    Log.d(TAG, "bind: PushManager.o before = ${oField.get(pm)}")
+                    QmceLog.d(TAG, "bind: PushManager.o before = ${oField.get(pm)}")
                     oField.set(pm, java.lang.Boolean.FALSE)
-                    Log.d(TAG, "bind: PushManager.o set FALSE — push unblocked")
+                    QmceLog.d(TAG, "bind: PushManager.o set FALSE — push unblocked")
                 }
             }
-        }.onFailure { Log.e(TAG, "bind: unblock push failed", it) }
+        }.onFailure { QmceLog.e(TAG, "bind: unblock push failed", it) }
     }
 }

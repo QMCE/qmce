@@ -20,8 +20,10 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.CompactButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -56,7 +58,9 @@ internal fun MessageSummaryScreen(
             item(key = "summary-back") {
                 CompactButton(
                     onClick = onBack,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    modifier = Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(CompactButtonDefaults.minimumVerticalListContentPadding),
                     transformation = SurfaceTransformation(transformationSpec),
                     icon = { Icon(Icons.Default.Close, contentDescription = "关闭总结") },
                 )
@@ -103,6 +107,7 @@ internal fun MessageSummaryScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .transformedHeight(this, transformationSpec)
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
                                 .padding(horizontal = 10.dp, vertical = 4.dp),
                             transformation = SurfaceTransformation(transformationSpec),
                         ) {
@@ -130,6 +135,7 @@ internal fun MessageSummaryScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .transformedHeight(this, transformationSpec)
+                                    .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
                                     .padding(horizontal = 10.dp, vertical = 4.dp),
                                 transformation = SurfaceTransformation(transformationSpec),
                             ) {

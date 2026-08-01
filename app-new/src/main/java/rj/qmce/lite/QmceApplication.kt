@@ -4,9 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.ActivityManager
 import android.app.Application
-import android.app.ActivityOptions
-import android.app.AlarmManager
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -16,8 +13,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
-import android.os.SystemClock
-import android.util.Log
 import androidx.multidex.MultiDex
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -40,13 +35,17 @@ import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.emotion.EmotionAssetBridge
 import rj.qmce.lite.data.reporting.OfficialReportBridge
+import rj.qmce.lite.data.update.OtaUpdateSession
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.fix.LegacyKiller
 import rj.qmce.lite.fix.PackageSignatureProvider
 import rj.qmce.lite.fix.SignatureProbe
+import rj.qmce.lite.util.QmceLog
+import rj.qmce.lite.viewmodel.SettingsViewModel
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.system.exitProcess
 
 
@@ -58,10 +57,37 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         override fun onAccountChanged(runtime: AppRuntime?) = Unit
 
         override fun onLogout(reason: Constants.LogoutReason?) {
-            if (reason !in forcedLogoutReasons) return
+            when (reason) {
+                null,
+                Constants.LogoutReason.user,
+                Constants.LogoutReason.switchAccount,
+                Constants.LogoutReason.restartProcess,
+                Constants.LogoutReason.tips,
+                Constants.LogoutReason.gray,
+                -> {
+                    QmceLog.d("QMCE", "account: ignore logout reason=$reason")
+                    return
+                }
+                Constants.LogoutReason.kicked,
+                Constants.LogoutReason.secKicked,
+                Constants.LogoutReason.forceLogout,
+                -> Unit
+                Constants.LogoutReason.expired,
+                Constants.LogoutReason.suspend,
+                -> {
+                    if (isLoginTransitionSuppressing()) {
+                        QmceLog.w(
+                            "QMCE",
+                            "account: suppress transitional logout reason=$reason " +
+                                "(login transition active)",
+                        )
+                        return
+                    }
+                }
+            }
             clearExpiredLoginState()
             _logoutReason.value = reason
-            Log.w("QMCE", "account: official logout reason=$reason")
+            QmceLog.important("QMCE", "account: official logout reason=$reason")
         }
     }
 
@@ -78,111 +104,40 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         var sAppRuntime: AppRuntime? = null
         private val _logoutReason = MutableStateFlow<Constants.LogoutReason?>(null)
         val logoutReason = _logoutReason.asStateFlow()
-        private val forcedLogoutReasons = setOf(
-            Constants.LogoutReason.expired,
-            Constants.LogoutReason.forceLogout,
-            Constants.LogoutReason.kicked,
-            Constants.LogoutReason.secKicked,
-            Constants.LogoutReason.suspend
-        )
-        private val loginRestartScheduled = AtomicBoolean(false)
+
+        private val loginTransitionActive = AtomicBoolean(false)
+        private val suppressForcedLogoutUntilMs = AtomicLong(0L)
+        private const val LOGIN_ESTABLISHED_GRACE_MS = 5_000L
+
+        fun beginLoginTransition() {
+            loginTransitionActive.set(true)
+            suppressForcedLogoutUntilMs.set(0L)
+            QmceLog.d("QMCE", "account: login transition begin")
+        }
+
+        fun endLoginTransition() {
+            loginTransitionActive.set(false)
+            suppressForcedLogoutUntilMs.set(0L)
+            QmceLog.d("QMCE", "account: login transition end")
+        }
 
         fun markLoginEstablished() {
             _logoutReason.value = null
+            loginTransitionActive.set(false)
+            suppressForcedLogoutUntilMs.set(
+                System.currentTimeMillis() + LOGIN_ESTABLISHED_GRACE_MS,
+            )
+            QmceLog.important("QMCE", "account: login established; grace=${LOGIN_ESTABLISHED_GRACE_MS}ms")
         }
 
-        /**
-         * 登录完成后重启主进程，让 MobileQQ、KernelService 和 MsgService 从全新生命周期初始化。
-         * 账号必须在调用前落盘；旧进程只负责安排启动并退出，不再尝试复用半初始化的 NT 对象。
-         *
-         * Alarm 调度成功才允许杀进程（Wear 上后台 startActivity 常失败）；成功后再用
-         * startActivity 加速拉起，Alarm 作备份。
-         */
-        fun restartAfterLogin(context: Context): Boolean {
-            if (!loginRestartScheduled.compareAndSet(false, true)) return false
-            val launchIntent = context.packageManager
-                .getLaunchIntentForPackage(context.packageName)
-                ?.apply {
-                    addFlags(
-                        Intent.FLAG_ACTIVITY_NEW_TASK or
-                                Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                                Intent.FLAG_ACTIVITY_CLEAR_TOP,
-                    )
-                }
-                ?: run {
-                    loginRestartScheduled.set(false)
-                    return false
-                }
-            val appContext = context.applicationContext
-            val pendingOptions = if (Build.VERSION.SDK_INT >= 34) {
-                ActivityOptions.makeBasic().apply {
-                    setPendingIntentCreatorBackgroundActivityStartMode(
-                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS,
-                    )
-                }.toBundle()
-            } else {
-                null
-            }
-            val pendingIntent = PendingIntent.getActivity(
-                appContext,
-                0x514D,
-                launchIntent,
-                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                pendingOptions,
-            )
-            val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            if (alarmManager == null) {
-                loginRestartScheduled.set(false)
-                Log.e("QMCE", "login restart: AlarmManager unavailable")
-                return false
-            }
-            val triggerAt = SystemClock.elapsedRealtime() + 1_500L
-            val alarmScheduled = runCatching {
-                if (Build.VERSION.SDK_INT >= 31 && !alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
-                    )
-                } else {
-                    alarmManager.setExactAndAllowWhileIdle(
-                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                        triggerAt,
-                        pendingIntent,
-                    )
-                }
-            }.isSuccess
-            if (!alarmScheduled) {
-                loginRestartScheduled.set(false)
-                Log.e("QMCE", "login restart: failed to schedule alarm")
-                return false
-            }
-            Log.i(
-                "QMCE",
-                "login restart: alarm scheduled " +
-                        "${triggerAt - SystemClock.elapsedRealtime()}ms " +
-                        "component=${launchIntent.component}",
-            )
+        fun consumeLogoutReason() {
+            _logoutReason.value = null
+        }
 
-            val mainHandler = Handler(Looper.getMainLooper())
-            mainHandler.postDelayed({
-                Log.i("QMCE", "login restart: startActivity component=${launchIntent.component}")
-                runCatching {
-                    if (pendingOptions != null) {
-                        appContext.startActivity(launchIntent, pendingOptions)
-                    } else {
-                        appContext.startActivity(launchIntent)
-                    }
-                }.onFailure { error ->
-                    Log.e("QMCE", "login restart: startActivity failed; alarm will relaunch", error)
-                }
-                mainHandler.postDelayed({
-                    Log.i("QMCE", "login restart: killing pid=${Process.myPid()}")
-                    runCatching { (context as? Activity)?.finishAndRemoveTask() }
-                    Process.killProcess(Process.myPid())
-                }, 300L)
-            }, 700L)
-            return true
+        private fun isLoginTransitionSuppressing(): Boolean {
+            if (loginTransitionActive.get()) return true
+            val until = suppressForcedLogoutUntilMs.get()
+            return until > 0L && System.currentTimeMillis() < until
         }
 
         fun forceExit(context: Context) {
@@ -222,7 +177,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
             // 优先 waitAppRuntime — 它内部调 onCreate(Bundle) 设置 isRunning=true
             runCatching { mobile.waitAppRuntime() }.getOrNull()?.let {
                 sAppRuntime = it
-                Log.d(
+                QmceLog.d(
                     "QMCE",
                     "ensureRuntime: waitAppRuntime=$it, isRunning=${it.isRunning}, isLogin=${it.isLogin()}"
                 )
@@ -261,7 +216,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     }
                     // 手动补 onCreate 让 isRunning=true
                     runCatching { runtime.onCreate(null) }
-                    Log.d(
+                    QmceLog.d(
                         "QMCE",
                         "ensureRuntime: createRuntime=$runtime, isRunning=${runtime.isRunning}, isLogin=${runtime.isLogin()}"
                     )
@@ -273,7 +228,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
     }
 
     override fun attachBaseContext(base: Context) {
-        Log.d("QMCE", "attachBaseContext start")
+        QmceLog.d("QMCE", "attachBaseContext start")
         LegacyKiller.installForCurrentPackage(base)   // PM proxy for package name mapping (always needed)
         PackageSignatureProvider.install()                 // new CREATOR hook for IPC signature
         if (isMainProcess()) {
@@ -286,26 +241,32 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
             }
         }
         runCatching { EmotionAssetBridge.ensure(base) }
-            .onFailure { Log.e("QMCE", "emotion asset bridge failed", it) }
+            .onFailure { QmceLog.e("QMCE", "emotion asset bridge failed", it) }
         super.attachBaseContext(base)
         MultiDex.install(this)
-        Log.d("QMCE", "attachBaseContext done")
+        QmceLog.d("QMCE", "attachBaseContext done")
     }
 
     override fun onCreate() {
-        Log.d("QMCE", "onCreate start")
         super.onCreate()
+        SettingsViewModel.applyDiagnosticFlags(this)
+        QmceLog.d("QMCE", "onCreate start")
         runCatching { KernelBridge.ensureEarlyNativeBootstrap() }
-            .onFailure { Log.e("QMCE", "early native bootstrap failed", it) }
-        Log.d("QMCE", "onCreate super done")
+            .onFailure { QmceLog.e("QMCE", "early native bootstrap failed", it) }
+        QmceLog.d("QMCE", "onCreate super done")
         AppCenter.start(
             this, "c67e55e2-35a3-4197-a7f6-633d41127b17",
             Analytics::class.java, Crashes::class.java
         )
-        Analytics.setEnabled(true)
-        Crashes.setEnabled(true)
+        val appCenterOn = if (BuildConfig.DEBUG) {
+            true
+        } else {
+            SettingsViewModel.isAppCenterReportingEnabled(this)
+        }
+        SettingsViewModel.applyAppCenterEnabled(appCenterOn)
         CrashCatcher.install(this)
-        Log.d("QMCE", "crashcatcher init done")
+        OtaUpdateSession.ensure(this)
+        QmceLog.d("QMCE", "crashcatcher init done")
         if (BuildConfig.DEBUG) {
             SignatureProbe.dump(this)
         }
@@ -318,8 +279,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     MMKV.z(QMMKV.e)
                     MMKV.y(QMMKV.e)
                     QMMKV.d = true
-                    Log.d("QMCE", "MMKV init OK")
-                }.onFailure { Log.e("QMCE", "MMKV init failed", it) }
+                    QmceLog.d("QMCE", "MMKV init OK")
+                }.onFailure { QmceLog.e("QMCE", "MMKV init failed", it) }
             }
         }
         if (isMainProcess()) {
@@ -332,18 +293,18 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     private fun initializeOfficialImageRuntime() {
         runCatching { System.loadLibrary("apng") }
-            .onSuccess { Log.d("QMCE", "libapng.so loaded") }
-            .onFailure { Log.w("QMCE", "libapng.so unavailable", it) }
+            .onSuccess { QmceLog.d("QMCE", "libapng.so loaded") }
+            .onFailure { QmceLog.w("QMCE", "libapng.so unavailable", it) }
         runCatching { System.loadLibrary("jlottie") }
-            .onSuccess { Log.d("QMCE", "libjlottie.so loaded") }
-            .onFailure { Log.w("QMCE", "libjlottie.so unavailable", it) }
+            .onSuccess { QmceLog.d("QMCE", "libjlottie.so loaded") }
+            .onFailure { QmceLog.w("QMCE", "libjlottie.so unavailable", it) }
         runCatching {
             val taskClass = Class.forName("com.tencent.qqnt.watch.startup.task.UrlDrawableInitTask")
             val task = taskClass.getDeclaredConstructor().newInstance()
             taskClass.getMethod("a", Context::class.java).invoke(task, this)
-            Log.d("QMCE", "URLDrawable runtime initialized")
+            QmceLog.d("QMCE", "URLDrawable runtime initialized")
         }.onFailure {
-            Log.w("QMCE", "URLDrawable runtime unavailable; emotion fallback remains enabled", it)
+            QmceLog.w("QMCE", "URLDrawable runtime unavailable; emotion fallback remains enabled", it)
         }
     }
 
@@ -390,12 +351,17 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     fun clearLocalLoginState() {
         LoginPrefs.clear(this)
+        runCatching {
+            rj.qmce.lite.notify.QmceNotifyLifecycle.onLoggedOut(this)
+        }.onFailure { QmceLog.w("QMCE", "notify lifecycle logout failed", it) }
         val runtime =
             sAppRuntime ?: runCatching { sMobileQQ?.peekAppRuntime() }.getOrNull()
         runCatching { runtime?.userLogoutReleaseData() }
-            .onFailure { error -> Log.w("QMCE", "account: release runtime failed", error) }
+            .onFailure { error -> QmceLog.w("QMCE", "account: release runtime failed", error) }
         resetRuntimeAfterLogout()
-        Log.d("QMCE", "account: cleared runtime and saved account")
+        KernelBridge.resetAfterLogout()
+        endLoginTransition()
+        QmceLog.d("QMCE", "account: cleared runtime and saved account")
     }
 
     private fun clearExpiredLoginState() {
@@ -404,7 +370,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     private fun registerLogoutCallback() {
         sMobileQQ?.registerAccountCallback(logoutCallback)
-        Log.d("QMCE", "account: logout callback registered")
+        QmceLog.d("QMCE", "account: logout callback registered")
     }
 
 
@@ -456,7 +422,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
             if (account != null) runCatching { runtime.login(account) }
             runCatching { runtime.setLogined() }
             // 不调 onCreate — caller（waitAppRuntime）会自己调，重复调会 addManager duplicated crash
-            Log.d(
+            QmceLog.d(
                 "QMCE",
                 "createRuntime: adopted login uin=$uin, old=$oldRuntime -> new=$runtime, isLogin=${runtime.isLogin()}"
             )
@@ -472,7 +438,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 (f.get(sMobileQQ) as? AtomicInteger)?.set(3)
             }
         } else {
-            Log.d("QMCE", "createRuntime: new=$runtime (no old runtime or not logged in)")
+            QmceLog.d("QMCE", "createRuntime: new=$runtime (no old runtime or not logged in)")
         }
         return runtime
     }
@@ -484,7 +450,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         val guid = com.tencent.mobileqq.utils.KidInfoUtil.getGuid(this)
         com.tencent.mobileqq.utils.HexUtil.c(guid)
     }.onFailure { error ->
-        Log.w("QMCE", "getCustomGuid failed", error)
+        QmceLog.w("QMCE", "getCustomGuid failed", error)
     }.getOrNull()
 
     // QQ 代码构造的 intent ComponentName 用 com.tencent.qqlite，但实际装的是 rj.qmce.litex，

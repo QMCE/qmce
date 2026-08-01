@@ -29,6 +29,7 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.CompactButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -85,6 +86,7 @@ fun ChatMembersScreen(
                     onClick = { vm.loadGroupMembers(groupCode, forceRefresh = true) },
                     modifier = Modifier
                         .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(CompactButtonDefaults.minimumVerticalListContentPadding)
                         .padding(vertical = 2.dp),
                     transformation = SurfaceTransformation(transformationSpec),
                 ) {
@@ -97,6 +99,13 @@ fun ChatMembersScreen(
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
                         .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -140,12 +149,17 @@ fun ChatMembersScreen(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error
                         )
-                        Button(onClick = {
-                            vm.loadGroupMembers(
-                                groupCode,
-                                forceRefresh = true
-                            )
-                        }) { Text("重试") }
+                        Button(
+                            onClick = {
+                                vm.loadGroupMembers(
+                                    groupCode,
+                                    forceRefresh = true
+                                )
+                            },
+                            modifier = Modifier
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
+                            transformation = SurfaceTransformation(transformationSpec),
+                        ) { Text("重试") }
                     }
                 }
             } else if (visibleMembers.isEmpty()) {
@@ -164,7 +178,9 @@ fun ChatMembersScreen(
                     )
                     GroupMemberRow(
                         member = memberWithLevel,
-                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding),
                         transformation = SurfaceTransformation(transformationSpec),
                         onClick = { onOpenMember(memberWithLevel) },
                         onResolveLevel = {

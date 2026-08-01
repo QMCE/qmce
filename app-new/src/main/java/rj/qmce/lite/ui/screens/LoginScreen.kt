@@ -26,7 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.HowToReg
-import androidx.compose.material.icons.filled.Notes
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Watch
@@ -93,10 +93,10 @@ private val LoginGuideStep.officialPageId: String?
         LoginGuideStep.Qr -> OfficialReportBridge.PageIds.LOGIN
     }
 
-private enum class ScreenType(val title: String, val detail: String) {
-    Auto("自动检测", "由设备决定"),
-    Round("圆形屏幕", "手动缩放"),
-    Square("方形屏幕", "手动缩放"),
+private enum class ScreenType(val title: String, val detail: String, val selectable: Boolean) {
+    Auto("自动检测", "跟随设备", true),
+    Round("圆形屏幕", "标准适配", true),
+    Square("方形屏幕", "未设计", false),
 }
 
 @Composable
@@ -119,7 +119,7 @@ fun LoginScreen(
 
     LaunchedEffect(step, loginUiState) {
         val pageId = when {
-            loginUiState is AuthViewModel.LoginUiState.Scanned ->
+            loginUiState is AuthViewModel.LoginUiState.AwaitingAgreement ->
                 OfficialReportBridge.PageIds.PROTOCOL_CONFIRMATION
             else -> step.officialPageId
         }
@@ -135,7 +135,7 @@ fun LoginScreen(
         ) {
             showErrorDetail = false
         }
-        if (loginUiState !is AuthViewModel.LoginUiState.Scanned) {
+        if (loginUiState !is AuthViewModel.LoginUiState.AwaitingAgreement) {
             userAgreement = false
             usageAgreement = false
         }
@@ -148,14 +148,18 @@ fun LoginScreen(
 
         LoginGuideStep.ScreenType -> ScreenTypeGuide(
             selected = screenType,
-            onSelected = { screenType = it },
+            onSelected = { type ->
+                if (type.selectable) screenType = type
+            },
             onContinue = {
-                when (screenType) {
+                val effective = if (screenType.selectable) screenType else ScreenType.Auto
+                when (effective) {
                     ScreenType.Auto -> settingsVm.setAutoScale(true)
-                    ScreenType.Round, ScreenType.Square -> {
+                    ScreenType.Round -> {
                         settingsVm.setAutoScale(false)
                         settingsVm.setManualScale(1.50f)
                     }
+                    ScreenType.Square -> settingsVm.setAutoScale(true)
                 }
                 step = LoginGuideStep.Qr
                 vm.fetchQrCode()
@@ -258,7 +262,7 @@ private fun WelcomeGuide(
                             applyContentTransformation()
                         }
                     }
-                    .padding(horizontal = 6.dp, vertical = 20.dp),
+                    .padding(horizontal = 12.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
@@ -271,13 +275,14 @@ private fun WelcomeGuide(
                 QQLogo(76.dp)
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "QQ Pro Compose",
-                    style = MaterialTheme.typography.bodySmall,
+                    "QMCE",
+                    style = MaterialTheme.typography.titleMedium,
                     color = scheme.onSurface,
                     textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "Edition",
+                    "QQ Max Compose Edition",
                     style = MaterialTheme.typography.bodySmall,
                     color = scheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -302,6 +307,7 @@ private fun ScreenTypeGuide(
                 onClick = onContinue,
                 modifier = Modifier.fillMaxWidth(),
                 buttonSize = EdgeButtonSize.Large,
+                enabled = selected.selectable,
             ) { Text("下一步") }
         },
     ) {
@@ -365,11 +371,12 @@ private fun QrLoginGuide(
 ) {
     BackHandler(onBack = onBack)
     val transformationSpec = rememberTransformationSpec()
-    val showConfirm = uiState is AuthViewModel.LoginUiState.Scanned
+    val showConfirm = uiState is AuthViewModel.LoginUiState.AwaitingAgreement
     val showError = uiState is AuthViewModel.LoginUiState.Error ||
             uiState is AuthViewModel.LoginUiState.Expired
     val showLoading = uiState is AuthViewModel.LoginUiState.Preparing ||
             uiState is AuthViewModel.LoginUiState.RequestingQr ||
+            uiState is AuthViewModel.LoginUiState.WaitingPhoneConfirm ||
             uiState is AuthViewModel.LoginUiState.ExchangingTicket ||
             uiState is AuthViewModel.LoginUiState.Binding ||
             (qrBitmap == null && !showError && !showConfirm)
@@ -406,7 +413,7 @@ private fun QrLoginGuide(
                         buttonSize = EdgeButtonSize.Large,
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Notes,
+                            imageVector = Icons.AutoMirrored.Filled.Notes,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                         )
@@ -442,14 +449,14 @@ private fun QrLoginGuide(
                         onUserAgreementChanged = onUserAgreementChanged,
                         onUsageAgreementChanged = onUsageAgreementChanged,
                     )
-                    showLoading -> LoginLoadingContent()
+                    showLoading -> LoginLoadingContent(uiState = uiState, statusText = statusText)
                     qrBitmap != null -> QrCodeContent(
                         qrBitmap = qrBitmap,
                         isBusy = isBusy,
                         canRefresh = uiState is AuthViewModel.LoginUiState.QrReady,
                         onRetry = onRetry,
                     )
-                    else -> LoginLoadingContent()
+                    else -> LoginLoadingContent(uiState = uiState, statusText = statusText)
                 }
             }
         }
@@ -550,25 +557,45 @@ private fun LoginGuideHeaderIcon() {
 }
 
 @Composable
-private fun LoginLoadingContent() {
+private fun LoginLoadingContent(
+    uiState: AuthViewModel.LoginUiState,
+    statusText: String,
+) {
     val scheme = MaterialTheme.colorScheme
-    LoginGuideHeaderIcon()
-    Spacer(Modifier.height(20.dp))
+    val title = when (uiState) {
+        is AuthViewModel.LoginUiState.Preparing -> "正在准备登录"
+        is AuthViewModel.LoginUiState.RequestingQr -> "正在获取二维码"
+        is AuthViewModel.LoginUiState.WaitingPhoneConfirm -> "已扫码，请在手机确认"
+        is AuthViewModel.LoginUiState.ExchangingTicket -> "正在换取登录票据"
+        is AuthViewModel.LoginUiState.Binding -> "正在完成登录"
+        else -> statusText.ifBlank { "请稍候" }
+    }
+    QQLogo(56.dp)
+    Spacer(Modifier.height(16.dp))
     CircularProgressIndicator(
-        modifier = Modifier.size(96.dp),
+        modifier = Modifier.size(48.dp),
         colors = ProgressIndicatorDefaults.colors(
             indicatorColor = scheme.primary,
             trackColor = scheme.primaryContainer,
         ),
-        strokeWidth = CircularProgressIndicatorDefaults.largeStrokeWidth,
+        strokeWidth = CircularProgressIndicatorDefaults.smallStrokeWidth,
     )
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(14.dp))
     Text(
-        "获取登陆信息中",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         textAlign = TextAlign.Center,
     )
+    if (statusText.isNotBlank() && statusText != title) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            statusText,
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable
@@ -761,14 +788,35 @@ private fun ScreenTypeOption(
     modifier: Modifier,
     transformation: SurfaceTransformation,
 ) {
+    val enabled = type.selectable
     RadioButton(
-        selected = selected,
-        onSelect = { onSelected(type) },
+        selected = selected && enabled,
+        onSelect = { if (enabled) onSelected(type) },
+        enabled = enabled,
         modifier = modifier.fillMaxWidth(),
         transformation = transformation,
-        icon = { ScreenPreview(type, selected) },
-        secondaryLabel = { Text(type.detail) },
-        label = { Text(type.title, fontWeight = FontWeight.Medium) },
+        icon = { ScreenPreview(type, selected && enabled) },
+        secondaryLabel = {
+            Text(
+                type.detail,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.outline
+                },
+            )
+        },
+        label = {
+            Text(
+                type.title,
+                fontWeight = FontWeight.Medium,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    MaterialTheme.colorScheme.outline
+                },
+            )
+        },
     )
 }
 
@@ -804,7 +852,7 @@ private fun ScreenPreview(type: ScreenType, selected: Boolean) {
 private fun SquareWatchIcon(color: Color) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.size(width = 22.dp, height = 26.dp),
+        modifier = Modifier.size(width = 22.dp, height = 30.dp),
     ) {
         Box(
             modifier = Modifier
@@ -814,7 +862,7 @@ private fun SquareWatchIcon(color: Color) {
         )
         Box(
             modifier = Modifier
-                .size(width = 18.dp, height = 18.dp)
+                .size(width = 18.dp, height = 22.dp)
                 .border(2.dp, color, RoundedCornerShape(4.dp)),
         )
         Box(
@@ -875,7 +923,10 @@ private fun QQLogo(size: Dp) {
     Box(
         modifier = Modifier
             .size(size)
-            .background(Color.White, CircleShape),
+            .background(
+                androidx.compose.ui.res.colorResource(R.color.ic_launcher_qq_background),
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Image(

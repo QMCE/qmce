@@ -23,8 +23,8 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 23
-        versionName = "0.5.1-fix"
+        versionCode = 24
+        versionName = "0.5.2-test"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -254,6 +254,14 @@ dependencies {
     //implementation(files("libs/qav-runtime.jar"))
     // Wear OS platform SDK
     implementation(libs.androidx.wear)
+    implementation(libs.androidx.wear.ongoing)
+    implementation(libs.androidx.wear.remote.interactions)
+    implementation(libs.androidx.wear.tiles)
+    implementation(libs.androidx.wear.protolayout)
+    implementation(libs.androidx.wear.protolayout.material3)
+    implementation(libs.androidx.complications.datasource)
+    implementation(libs.androidx.complications.datasource.ktx)
+    implementation(libs.guava)
 
     // AndroidX Library
     implementation(libs.androidx.core)
@@ -261,6 +269,7 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.jessyan.autosize)
     implementation(libs.androidx.multidex)

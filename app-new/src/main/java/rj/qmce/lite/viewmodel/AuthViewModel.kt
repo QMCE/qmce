@@ -3,7 +3,7 @@ package rj.qmce.lite.viewmodel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Bundle
-import android.util.Log
+import rj.qmce.lite.util.QmceLog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tencent.qphone.base.remote.SimpleAccount
@@ -27,20 +27,26 @@ import mqq.app.MobileQQ
 import oicq.wlogin_sdk.tools.ErrMsg
 import rj.qmce.lite.BuildConfig
 import rj.qmce.lite.QmceApplication
+import rj.qmce.lite.data.LoginPrefs
+import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.notify.QmceNotifyLifecycle
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.tencent.qphone.base.util.BaseApplication
 
 class AuthViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "QMCE"
         private const val LOGIN_APP_ID = 537282233
-        private const val SERVICE_INIT_TIMEOUT_MS = 12_000L
-        private const val FETCH_TIMEOUT_MS = 8_000L
+        private const val SERVICE_INIT_TIMEOUT_MS = 18_000L
+        private const val FETCH_TIMEOUT_MS = 12_000L
         private const val CALLBACK_TIMEOUT_MS = 35_000L
         private const val MAX_TICKET_ATTEMPTS = 3
         private const val TICKET_RETRY_DELAY_MS = 1_500L
+        private const val MAX_QR_FETCH_ATTEMPTS = 3
+        private const val QR_FETCH_RETRY_DELAY_MS = 1_000L
     }
 
     sealed interface LoginUiState {
@@ -48,9 +54,12 @@ class AuthViewModel : ViewModel() {
         data object Preparing : LoginUiState
         data object RequestingQr : LoginUiState
         data object QrReady : LoginUiState
-        data object Scanned : LoginUiState
+        /** Phone scanned QR; waiting for confirmation on phone (ret=53). */
+        data object WaitingPhoneConfirm : LoginUiState
         data object ExchangingTicket : LoginUiState
         data object Binding : LoginUiState
+        /** Ticket exchanged and bound; user must accept agreements before enter. */
+        data object AwaitingAgreement : LoginUiState
         data class Error(val message: String) : LoginUiState
         data object Expired : LoginUiState
     }
@@ -116,26 +125,35 @@ class AuthViewModel : ViewModel() {
         val generation = beginRequest()
         viewModelScope.launch {
             setState(LoginUiState.Preparing, "正在准备登录", busy = true)
-            val services = awaitLoginServices()
-            if (!isCurrent(generation)) return@launch
-            if (services == null) {
-                failRequest(
-                    generation,
-                    "登录服务初始化超时",
-                    detail = "awaitLoginServices timed out after ${SERVICE_INIT_TIMEOUT_MS}ms",
-                )
-                return@launch
+            var services: LoginServices? = null
+            for (attempt in 1..MAX_QR_FETCH_ATTEMPTS) {
+                if (!isCurrent(generation)) return@launch
+                if (attempt > 1) {
+                    appendLog("fetchQr retry attempt=$attempt")
+                    delay(QR_FETCH_RETRY_DELAY_MS)
+                }
+                services = awaitLoginServices()
+                if (services != null) break
+                if (attempt == MAX_QR_FETCH_ATTEMPTS) {
+                    failRequest(
+                        generation,
+                        "登录服务初始化超时",
+                        detail = "awaitLoginServices timed out after ${SERVICE_INIT_TIMEOUT_MS}ms",
+                    )
+                    return@launch
+                }
             }
+            val readyServices = services ?: return@launch
 
             setState(LoginUiState.RequestingQr, "正在获取二维码", busy = true)
             val observer = makeObserver(generation)
             loginObserver = observer
             val registered = runCatching {
-                services.runtime.registObserver(observer)
-                observerRuntime = services.runtime
+                readyServices.runtime.registObserver(observer)
+                observerRuntime = readyServices.runtime
             }
                 .onFailure {
-                    Log.e(TAG, "auth: registObserver failed gen=$generation", it)
+                    QmceLog.e(TAG, "auth: registObserver failed gen=$generation", it)
                     appendLog("注册登录观察者失败: ${it.message}")
                 }
                 .isSuccess
@@ -150,36 +168,51 @@ class AuthViewModel : ViewModel() {
                 return@launch
             }
 
-            val fetchResult = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        services.wtService.fetchCodeSigVerifyLogin(LOGIN_APP_ID, null)
+            for (attempt in 1..MAX_QR_FETCH_ATTEMPTS) {
+                if (!isCurrent(generation)) return@launch
+                if (attempt > 1) {
+                    appendLog("fetchQr retry attempt=$attempt")
+                    delay(QR_FETCH_RETRY_DELAY_MS)
+                }
+                val fetchResult = withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+                    runCatching {
+                        withContext(Dispatchers.IO) {
+                            readyServices.wtService.fetchCodeSigVerifyLogin(LOGIN_APP_ID, null)
+                        }
                     }
                 }
-            }
-            if (!isCurrent(generation)) return@launch
-            when {
-                fetchResult == null -> failRequest(
-                    generation,
-                    "二维码请求超时",
-                    detail = "fetchCodeSigVerifyLogin timed out after ${FETCH_TIMEOUT_MS}ms appId=$LOGIN_APP_ID",
-                )
-                fetchResult.isFailure -> failRequest(
-                    generation,
-                    "二维码请求异常: ${fetchResult.exceptionOrNull()?.message ?: "未知错误"}",
-                    detail = "fetchCodeSigVerifyLogin threw",
-                    throwable = fetchResult.exceptionOrNull(),
-                )
-
-                fetchResult.getOrThrow() != 0 -> failRequest(
-                    generation,
-                    "二维码请求失败 (${fetchResult.getOrThrow()})",
-                    detail = "fetchCodeSigVerifyLogin ret=${fetchResult.getOrThrow()} appId=$LOGIN_APP_ID",
-                )
-
-                else -> {
-                    appendLog("fetch=${fetchResult.getOrThrow()}")
-                    armCallbackWatchdog(generation, "二维码回调超时")
+                if (!isCurrent(generation)) return@launch
+                when {
+                    fetchResult == null -> {
+                        if (attempt < MAX_QR_FETCH_ATTEMPTS) continue
+                        failRequest(
+                            generation,
+                            "二维码请求超时",
+                            detail = "fetchCodeSigVerifyLogin timed out after ${FETCH_TIMEOUT_MS}ms appId=$LOGIN_APP_ID",
+                        )
+                    }
+                    fetchResult.isFailure -> {
+                        if (attempt < MAX_QR_FETCH_ATTEMPTS) continue
+                        failRequest(
+                            generation,
+                            "二维码请求异常: ${fetchResult.exceptionOrNull()?.message ?: "未知错误"}",
+                            detail = "fetchCodeSigVerifyLogin threw",
+                            throwable = fetchResult.exceptionOrNull(),
+                        )
+                    }
+                    fetchResult.getOrThrow() != 0 -> {
+                        if (attempt < MAX_QR_FETCH_ATTEMPTS) continue
+                        failRequest(
+                            generation,
+                            "二维码请求失败 (${fetchResult.getOrThrow()})",
+                            detail = "fetchCodeSigVerifyLogin ret=${fetchResult.getOrThrow()} appId=$LOGIN_APP_ID",
+                        )
+                    }
+                    else -> {
+                        appendLog("fetch=${fetchResult.getOrThrow()}")
+                        armCallbackWatchdog(generation, "二维码回调超时")
+                        return@launch
+                    }
                 }
             }
         }
@@ -190,6 +223,7 @@ class AuthViewModel : ViewModel() {
         _logText.value = ""
         _scannedAccount.value = null
         agreementsAccepted = false
+        pendingLoginResult = null
         buildTime = 0L
         expireTimeSec = 0L
         remainingSec = 0L
@@ -198,17 +232,22 @@ class AuthViewModel : ViewModel() {
         _isBusy.value = false
     }
 
-    /** User accepted agreements on the watch confirm screen; exchange ticket when account is ready. */
+    /** User accepted agreements; emit login result to enter main UI (same process). */
     fun confirmLogin() {
         agreementsAccepted = true
-        val account = ticketAccount ?: _scannedAccount.value
-        if (!account.isNullOrBlank()) {
-            ticketAccount = account
-            requestTicket(requestGeneration)
+        val pending = pendingLoginResult
+        if (pending != null) {
+            viewModelScope.launch {
+                setState(LoginUiState.Binding, "正在进入…", busy = true)
+                _loginResult.emit(pending)
+                pendingLoginResult = null
+            }
         } else {
-            setState(LoginUiState.Scanned, "已同意，等待手机确认", busy = false)
+            setState(LoginUiState.WaitingPhoneConfirm, "已同意，等待手机确认", busy = false)
         }
     }
+
+    private var pendingLoginResult: Pair<String, SimpleAccount>? = null
 
     private suspend fun awaitLoginServices(): LoginServices? = serviceInitMutex.withLock {
         val cachedRuntime = appRuntime
@@ -292,15 +331,19 @@ class AuthViewModel : ViewModel() {
             append(" ui=${_loginUiState.value} wt=${wtService != null} runtime=${appRuntime != null}")
         }
         if (throwable != null) {
-            Log.e(TAG, logMsg, throwable)
+            QmceLog.e(TAG, logMsg, throwable)
         } else {
-            Log.e(TAG, logMsg)
+            QmceLog.e(TAG, logMsg)
         }
         appendLog(message)
         invalidateRequest(clearQr = false)
+        QmceApplication.endLoginTransition()
         _loginUiState.value = LoginUiState.Error(message)
         _statusText.value = message
         _isBusy.value = false
+        viewModelScope.launch {
+            resetFailedLoginSession()
+        }
     }
 
     private fun expireRequest(generation: Long) {
@@ -431,7 +474,7 @@ class AuthViewModel : ViewModel() {
 
             override fun onReceive(type: Int, isSuccess: Boolean, data: Bundle?) {
                 val keys = data?.keySet()?.joinToString(",") ?: ""
-                Log.d(TAG, "auth observer type=$type success=$isSuccess keys=$keys")
+                QmceLog.d(TAG, "auth observer type=$type success=$isSuccess keys=$keys")
                 // Do NOT call super.onReceive() — it would dispatch to a/b/c/d which are no-ops.
                 if (data == null) {
                     // type=0 with null bundle: treat as generic error
@@ -527,20 +570,18 @@ class AuthViewModel : ViewModel() {
                                     ticketAccount = cleanAccount
                                     ticketAttempt = 0
                                     _scannedAccount.value = cleanAccount
-                                    if (agreementsAccepted) {
-                                        requestTicket(generation)
-                                    } else {
-                                        setState(
-                                            LoginUiState.Scanned,
-                                            "确认登录 $cleanAccount",
-                                            busy = false,
-                                        )
-                                    }
+                                    // Auto exchange ticket after phone confirm (ret=0).
+                                    requestTicket(generation)
                                 }
                                 48 -> Unit
                                 53 -> {
                                     callbackWatchdogJob?.cancel()
-                                    setState(LoginUiState.Scanned, "已扫码，等待确认", busy = false)
+                                    _scannedAccount.value = account?.takeIf { it.isNotBlank() }
+                                    setState(
+                                        LoginUiState.WaitingPhoneConfirm,
+                                        "已扫码，等待手机确认",
+                                        busy = false,
+                                    )
                                 }
                                 17, 54 -> expireRequest(generation)
                                 else -> appendLog("query ret=$ret ${errMsg.orEmpty()}")
@@ -558,7 +599,7 @@ class AuthViewModel : ViewModel() {
                         val lastError = data.getParcelable("lastError") as? ErrMsg
                         val error = data.getString("error")
                         val errorUrl = data.getString("errorurl")
-                        Log.d(
+                        QmceLog.d(
                             TAG,
                             "auth type=3 ret=$ret account=$userAccount " +
                                 "errTitle=${lastError?.title} errMsg=${lastError?.message} " +
@@ -584,8 +625,8 @@ class AuthViewModel : ViewModel() {
                             }
                             ticketRetryJob?.cancel()
                             appendLog("换票成功 uin=$cleanAccount")
-                            // 旧进程即将被 restartAfterLogin 杀掉；跳过完整 bind，由冷启二次 bind。
-                            setState(LoginUiState.Binding, "登录成功，正在重启...", busy = true)
+                            QmceApplication.beginLoginTransition()
+                            setState(LoginUiState.Binding, "正在绑定会话…", busy = true)
                             val account = SimpleAccount().apply {
                                 uin = cleanAccount
                                 loginProcess = BuildConfig.APPLICATION_ID
@@ -596,13 +637,49 @@ class AuthViewModel : ViewModel() {
                                     System.currentTimeMillis().toString()
                                 )
                             }
-                            invalidateRequest(clearQr = true)
-                            _statusText.value = "登录成功 $cleanAccount"
-                            _isBusy.value = false
-                            _loginResult.emit(cleanAccount to account)
+                            val bindResult = withContext(Dispatchers.IO) {
+                                LoginPrefs.saveAccount(BaseApplication.getContext(), account)
+                                KernelBridge.bindLoggedInAccount(cleanAccount, account)
+                            }
+                            appendLog("bind result=$bindResult")
+                            if (bindResult != "ok" && bindResult != "kernel-not-ready") {
+                                failRequest(
+                                    generation,
+                                    "会话绑定失败",
+                                    detail = "bindLoggedInAccount=$bindResult",
+                                )
+                                return@launch
+                            }
+                            if (bindResult == "kernel-not-ready" ||
+                                !KernelBridge.areCoreServicesReady()
+                            ) {
+                                withContext(Dispatchers.IO) {
+                                    val ready = KernelBridge.retryCoreServices(
+                                        timeoutMillis = 20_000,
+                                    )
+                                    appendLog("core services after bind ready=$ready")
+                                }
+                            }
+                            runCatching { QmceNotifyLifecycle.reinforceMsf() }
+                                .onFailure { QmceLog.w(TAG, "auth: early reinforceMsf failed", it) }
+                            pendingLoginResult = cleanAccount to account
+                            if (agreementsAccepted) {
+                                invalidateRequest(clearQr = true)
+                                _statusText.value = "登录成功 $cleanAccount"
+                                QmceLog.important(TAG, "auth: login success uin=$cleanAccount")
+                                _isBusy.value = false
+                                _loginResult.emit(cleanAccount to account)
+                                pendingLoginResult = null
+                            } else {
+                                setState(
+                                    LoginUiState.AwaitingAgreement,
+                                    "确认登录 $cleanAccount",
+                                    busy = false,
+                                )
+                            }
                         }
                     }
-                    else -> Log.d(TAG, "auth observer: unhandled type=$type")
+                    else -> QmceLog.d(TAG, "auth observer: unhandled type=$type")
                 }
             }
         }
@@ -610,7 +687,7 @@ class AuthViewModel : ViewModel() {
     private fun appendLog(msg: String) {
         val ts = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
         _logText.value = "$ts $msg\n${_logText.value}"
-        Log.d(TAG, "auth: $msg")
+        QmceLog.d(TAG, "auth: $msg")
     }
 
     private fun unregisterLoginObserver() {
