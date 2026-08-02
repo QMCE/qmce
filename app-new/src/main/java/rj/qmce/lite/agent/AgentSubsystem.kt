@@ -52,6 +52,7 @@ object AgentSubsystem {
         AgentTimer.clearAll()
         ApprovalController.cancelAll()
         AgentSession.reset()
+        rj.qmce.lite.agent.predict.MessagePredictionController.reset()
         QmceLog.d(TAG, "logged out, agent reset")
     }
 

@@ -303,6 +303,7 @@ private fun WearApp() {
         QmceTheme(
             autoScale = settings.autoScale,
             manualScale = settings.manualScale,
+            fontScale = settings.fontScale,
             edgeSafeAreaEnabled = settings.edgeSafeAreaEnabled,
             edgeSafeAreaScale = settings.edgeSafeAreaScale,
         ) {
@@ -362,6 +363,7 @@ private fun WearApp() {
         navController = appNavController,
         autoScale = settings.autoScale,
         manualScale = settings.manualScale,
+        fontScale = settings.fontScale,
         edgeSafeAreaEnabled = settings.edgeSafeAreaEnabled,
         edgeSafeAreaScale = settings.edgeSafeAreaScale,
     ) {

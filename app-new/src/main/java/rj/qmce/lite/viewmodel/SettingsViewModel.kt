@@ -23,6 +23,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val fullscreenDialogs: Boolean = true,
         val autoScale: Boolean = true,
         val manualScale: Float = DEFAULT_MANUAL_SCALE,
+        val fontScale: Float = DEFAULT_FONT_SCALE,
         val edgeSafeAreaEnabled: Boolean = true,
         val edgeSafeAreaScale: Float = DEFAULT_EDGE_SAFE_SCALE,
         val aiCustomEnabled: Boolean = false,
@@ -34,9 +35,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val notifyC2c: Boolean = true,
         val notifyGroup: Boolean = true,
         val notifyContact: Boolean = true,
-        val keepAlive: Boolean = true,
+        val keepAlive: Boolean = false,
         val messageRefreshMode: String = REFRESH_PUSH_ONLY,
-        val liveUpdates: Boolean = true,
+        val liveUpdates: Boolean = false,
         val voiceBackground: Boolean = true,
         val voiceOngoingSurface: Boolean = true,
         val videoStrictForeground: Boolean = true,
@@ -72,6 +73,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         autoScale = preferences.getBoolean(KEY_AUTO_SCALE, true),
         manualScale = preferences.getFloat(KEY_MANUAL_SCALE, DEFAULT_MANUAL_SCALE)
             .coerceIn(MIN_MANUAL_SCALE, MAX_MANUAL_SCALE),
+        fontScale = preferences.getFloat(KEY_FONT_SCALE, DEFAULT_FONT_SCALE)
+            .coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE),
         edgeSafeAreaEnabled = preferences.getBoolean(KEY_EDGE_SAFE_AREA_ENABLED, true),
         edgeSafeAreaScale = preferences.getFloat(KEY_EDGE_SAFE_AREA_SCALE, DEFAULT_EDGE_SAFE_SCALE)
             .coerceIn(MIN_EDGE_SAFE_SCALE, MAX_EDGE_SAFE_SCALE),
@@ -86,11 +89,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         notifyC2c = preferences.getBoolean(KEY_NOTIFY_C2C, true),
         notifyGroup = preferences.getBoolean(KEY_NOTIFY_GROUP, true),
         notifyContact = preferences.getBoolean(KEY_NOTIFY_CONTACT, true),
-        keepAlive = preferences.getBoolean(KEY_KEEP_ALIVE, true),
+        keepAlive = preferences.getBoolean(KEY_KEEP_ALIVE, false),
         messageRefreshMode = preferences.getString(KEY_MESSAGE_REFRESH_MODE, REFRESH_PUSH_ONLY)
             .orEmpty()
             .ifBlank { REFRESH_PUSH_ONLY },
-        liveUpdates = preferences.getBoolean(KEY_LIVE_UPDATES, true),
+        liveUpdates = preferences.getBoolean(KEY_LIVE_UPDATES, false),
         voiceBackground = preferences.getBoolean(KEY_VOICE_BACKGROUND, true),
         voiceOngoingSurface = preferences.getBoolean(KEY_VOICE_ONGOING_SURFACE, true),
         videoStrictForeground = preferences.getBoolean(KEY_VIDEO_STRICT_FOREGROUND, true),
@@ -118,6 +121,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setAutoScale(enabled: Boolean) = update { it.copy(autoScale = enabled) }
     fun setManualScale(scale: Float) =
         update { it.copy(manualScale = scale.coerceIn(MIN_MANUAL_SCALE, MAX_MANUAL_SCALE)) }
+    fun setFontScale(scale: Float) =
+        update { it.copy(fontScale = scale.coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)) }
     fun setEdgeSafeAreaEnabled(enabled: Boolean) = update { it.copy(edgeSafeAreaEnabled = enabled) }
     fun setEdgeSafeAreaScale(scale: Float) =
         update { it.copy(edgeSafeAreaScale = scale.coerceIn(MIN_EDGE_SAFE_SCALE, MAX_EDGE_SAFE_SCALE)) }
@@ -177,6 +182,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .putBoolean(KEY_FULLSCREEN_DIALOGS, updated.fullscreenDialogs)
                 .putBoolean(KEY_AUTO_SCALE, updated.autoScale)
                 .putFloat(KEY_MANUAL_SCALE, updated.manualScale)
+                .putFloat(KEY_FONT_SCALE, updated.fontScale)
                 .putBoolean(KEY_EDGE_SAFE_AREA_ENABLED, updated.edgeSafeAreaEnabled)
                 .putFloat(KEY_EDGE_SAFE_AREA_SCALE, updated.edgeSafeAreaScale)
                 .putBoolean(KEY_AI_CUSTOM_ENABLED, updated.aiCustomEnabled)
@@ -215,6 +221,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         private const val KEY_FULLSCREEN_DIALOGS = "fullscreen_dialogs"
         private const val KEY_AUTO_SCALE = "auto_scale"
         private const val KEY_MANUAL_SCALE = "manual_scale"
+        private const val KEY_FONT_SCALE = "font_scale"
         const val KEY_EDGE_SAFE_AREA_ENABLED = "edge_safe_area_enabled"
         const val KEY_EDGE_SAFE_AREA_SCALE = "edge_safe_area_scale"
         private const val KEY_AI_CUSTOM_ENABLED = "ai_custom_enabled"
@@ -225,7 +232,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val DEFAULT_CONTACTS_SORT_MODE = "category"
         private const val DEFAULT_MANUAL_SCALE = 1.0f
         private const val MIN_MANUAL_SCALE = 0.75f
-        private const val MAX_MANUAL_SCALE = 1.75f
+        private const val MAX_MANUAL_SCALE = 2.20f
+        private const val DEFAULT_FONT_SCALE = 1.0f
+        private const val MIN_FONT_SCALE = 0.85f
+        private const val MAX_FONT_SCALE = 1.40f
         private const val DEFAULT_EDGE_SAFE_SCALE = 1.0f
         private const val MIN_EDGE_SAFE_SCALE = 0.25f
         private const val MAX_EDGE_SAFE_SCALE = 1.5f

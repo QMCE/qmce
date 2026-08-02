@@ -22,7 +22,7 @@ object QmceMessageRefreshScheduler {
                 val keepAlive = ctx.getSharedPreferences(
                     SettingsViewModel.PREFERENCES_NAME,
                     Context.MODE_PRIVATE,
-                ).getBoolean(SettingsViewModel.KEY_KEEP_ALIVE, true)
+                ).getBoolean(SettingsViewModel.KEY_KEEP_ALIVE, false)
                 if (QmceForegroundSession.appInForeground || keepAlive) {
                     refreshOnce(ctx)
                 }

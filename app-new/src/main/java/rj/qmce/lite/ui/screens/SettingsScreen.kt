@@ -399,7 +399,7 @@ fun AppearanceSettingsScreen(
                     checked = settings.autoScale,
                     onCheckedChange = settingsVm::setAutoScale,
                     title = "自动缩放",
-                    subtitle = "按表盘尺寸自动调整界面密度（约 1.4–1.6×），列表保留 Wear 滚动缩放",
+                    subtitle = "按屏幕宽度自动填充界面密度（约 1.3–2.0×），列表保留 Wear 滚动缩放",
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
                 )
@@ -430,7 +430,7 @@ fun AppearanceSettingsScreen(
                         if (settings.autoScale) {
                             "关闭自动缩放后可手动调整；过大可能裁切标题"
                         } else {
-                            "调整界面缩放倍率（最大 1.75×）"
+                            "调整界面缩放倍率（最大 2.2×）"
                         },
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
@@ -439,8 +439,44 @@ fun AppearanceSettingsScreen(
                         value = settings.manualScale,
                         onValueChange = settingsVm::setManualScale,
                         enabled = !settings.autoScale,
-                        steps = 19,
-                        valueRange = 0.75f..1.75f,
+                        steps = 24,
+                        valueRange = 0.75f..2.20f,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            item(key = "appearance-font-scale") {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("字体大小", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            String.format(java.util.Locale.US, "%.2fx", settings.fontScale),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "独立于界面缩放调整文字大小，不影响布局",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Slider(
+                        value = settings.fontScale,
+                        onValueChange = settingsVm::setFontScale,
+                        steps = 10,
+                        valueRange = 0.85f..1.40f,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }

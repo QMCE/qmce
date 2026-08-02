@@ -20,6 +20,8 @@ import kotlin.math.ceil
 @Immutable
 data class QmceAdaptive(
     val densityScale: Float,
+    /** Independent text-size multiplier applied on top of [densityScale]. */
+    val fontScale: Float,
     val listHorizontalPadding: Dp,
     val screenContentPadding: PaddingValues,
     val edgeButtonSpacing: Dp,
@@ -30,21 +32,29 @@ data class QmceAdaptive(
 
 val LocalQmceAdaptive = staticCompositionLocalOf { QmceAdaptiveDefaults }
 
-private const val DESIGN_SHORTEST_DP = 192f
-private const val AUTO_SCALE_BASE = 1.50f
-private const val AUTO_SCALE_MIN = 1.40f
-private const val AUTO_SCALE_MAX = 1.60f
+/** Design width the UI is authored at (dp); auto scale fills this fraction of the screen. */
+private const val DESIGN_WIDTH_DP = 240f
+private const val AUTO_SCALE_TARGET_FRACTION = 1.0f
+private const val AUTO_SCALE_MIN = 1.30f
+private const val AUTO_SCALE_MAX = 2.00f
 const val MANUAL_SCALE_MIN = 0.75f
-const val MANUAL_SCALE_MAX = 1.75f
+const val MANUAL_SCALE_MAX = 2.20f
+const val FONT_SCALE_MIN = 0.85f
+const val FONT_SCALE_MAX = 1.40f
 private const val HORIZONTAL_INSET_PERCENT = 5.2f
 private const val VERTICAL_INSET_PERCENT = 10f
 private const val DENSITY_BOOST_THRESHOLD = 1.35f
 private const val DENSITY_BOOST_MAX = 1.25f
 
-/** Smaller watches get a higher multiplier for readability; clamped to [AUTO_SCALE_MIN]–[AUTO_SCALE_MAX]. */
+/**
+ * Width-filling auto scale: content designed at [DESIGN_WIDTH_DP] is stretched
+ * to occupy [AUTO_SCALE_TARGET_FRACTION] of the screen width, so every watch —
+ * round or tall — fills its own screen instead of clamping to one dead value.
+ * Clamped to [AUTO_SCALE_MIN]–[AUTO_SCALE_MAX].
+ */
 fun computeAutoDensityScale(shortestScreenWidthDp: Int): Float {
-    val shortest = shortestScreenWidthDp.coerceAtLeast(1).toFloat()
-    return (AUTO_SCALE_BASE * (DESIGN_SHORTEST_DP / shortest))
+    val width = shortestScreenWidthDp.coerceAtLeast(1).toFloat()
+    return (AUTO_SCALE_TARGET_FRACTION * width / DESIGN_WIDTH_DP)
         .coerceIn(AUTO_SCALE_MIN, AUTO_SCALE_MAX)
 }
 
@@ -64,7 +74,8 @@ fun officialScreenContentPadding(
     )
 
 val QmceAdaptiveDefaults = QmceAdaptive(
-    densityScale = AUTO_SCALE_BASE,
+    densityScale = 1.5f,
+    fontScale = 1.0f,
     listHorizontalPadding = officialHorizontalInset(192),
     screenContentPadding = officialScreenContentPadding(192, 192),
     edgeButtonSpacing = ScreenScaffoldDefaults.EdgeButtonSpacing,
@@ -76,6 +87,7 @@ fun buildQmceAdaptive(
     configuration: Configuration,
     autoScale: Boolean,
     manualScale: Float,
+    fontScale: Float = 1.0f,
     edgeSafeEnabled: Boolean = true,
     edgeSafeScale: Float = 1.0f,
 ): QmceAdaptive {
@@ -105,6 +117,7 @@ fun buildQmceAdaptive(
     }
     return QmceAdaptive(
         densityScale = densityScale,
+        fontScale = fontScale.coerceIn(FONT_SCALE_MIN, FONT_SCALE_MAX),
         listHorizontalPadding = contentPadding.calculateLeftPadding(
             androidx.compose.ui.unit.LayoutDirection.Ltr,
         ),
@@ -119,6 +132,7 @@ fun buildQmceAdaptive(
 fun rememberQmceAdaptive(
     autoScale: Boolean,
     manualScale: Float,
+    fontScale: Float = 1.0f,
     edgeSafeEnabled: Boolean = true,
     edgeSafeScale: Float = 1.0f,
 ): QmceAdaptive {
@@ -130,6 +144,7 @@ fun rememberQmceAdaptive(
         configuration.isScreenRound,
         autoScale,
         manualScale,
+        fontScale,
         edgeSafeEnabled,
         edgeSafeScale,
     ) {
@@ -137,6 +152,7 @@ fun rememberQmceAdaptive(
             configuration = configuration,
             autoScale = autoScale,
             manualScale = manualScale,
+            fontScale = fontScale,
             edgeSafeEnabled = edgeSafeEnabled,
             edgeSafeScale = edgeSafeScale,
         )
