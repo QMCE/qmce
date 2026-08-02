@@ -18,13 +18,12 @@ android {
     namespace = "rj.qmce.lite"
     compileSdk = 37
     ndkVersion = "28.2.13676358"
-
     defaultConfig {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 25
-        versionName = "0.5.2"
+        versionCode = 26
+        versionName = "0.6.0"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -78,7 +77,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // APK 内 Deflate 压缩 so，安装时解压；false 会 Store 不压缩导致包体暴涨
     packaging {
         jniLibs {
             useLegacyPackaging = true
