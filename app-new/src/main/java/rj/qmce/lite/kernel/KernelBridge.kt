@@ -1051,7 +1051,7 @@ object KernelBridge {
 
             QmceLog.d(
                 TAG,
-                "bind: tryForceWrapperSession sessionIdList.size=${sessionIdList.size()} " +
+                "bind: tryForceWrapperSession sessionIdList.size=${sessionIdList.size} " +
                     "keyCandidates=${keyCandidates.take(10)} " +
                     "valueCandidates=${valueCandidates.take(10)} " +
                     "candidates=${candidateIds.take(10)}",
