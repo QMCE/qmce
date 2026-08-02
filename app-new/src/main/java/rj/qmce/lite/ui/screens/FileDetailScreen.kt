@@ -24,7 +24,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
@@ -197,7 +197,7 @@ internal fun FileDetailScreen(
     }
 
     if (localFile != null) {
-        ScreenScaffold(
+        QmceScreenScaffold(
             scrollState = listState,
             edgeButton = {
                 EdgeButton(
@@ -210,7 +210,7 @@ internal fun FileDetailScreen(
             content = listBody,
         )
     } else {
-        ScreenScaffold(
+        QmceScreenScaffold(
             scrollState = listState,
             content = listBody,
         )

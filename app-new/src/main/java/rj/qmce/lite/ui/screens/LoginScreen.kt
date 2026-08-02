@@ -66,7 +66,7 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ProgressIndicatorDefaults
 import androidx.wear.compose.material3.RadioButton
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SplitCheckboxButton
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
@@ -893,7 +893,7 @@ private fun GuideScrollColumn(
     val adaptive = LocalQmceAdaptive.current
     GuideSurface {
         if (edgeButton != null) {
-            ScreenScaffold(
+            QmceScreenScaffold(
                 scrollState = listState,
                 edgeButtonSpacing = adaptive.edgeButtonSpacing,
                 edgeButton = edgeButton,
@@ -906,7 +906,7 @@ private fun GuideScrollColumn(
                 )
             }
         } else {
-            ScreenScaffold(scrollState = listState) { contentPadding ->
+            QmceScreenScaffold(scrollState = listState) { contentPadding ->
                 TransformingLazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     state = listState,

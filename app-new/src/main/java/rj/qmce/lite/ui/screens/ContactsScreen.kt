@@ -46,7 +46,7 @@ import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.RadioButton
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
@@ -348,7 +348,7 @@ fun ContactsScreen(
                         }
                     }
                 }
-            ScreenScaffold(
+            QmceScreenScaffold(
                 scrollState = listState,
                 content = listBody,
             )
@@ -381,7 +381,7 @@ private fun ContactsSortPickerScreen(
         Triple("online", "分组在线人数优先", "按分组上报的在线人数从多到少排列，非单好友状态"),
     )
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -483,7 +483,7 @@ private fun ContactSearchScreen(
         }
     }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),

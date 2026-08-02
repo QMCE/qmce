@@ -49,7 +49,7 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextDefaults
@@ -100,7 +100,7 @@ fun QZoneFeedDetailScreen(
         return
     }
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         edgeButton = {
             val params = mapOf("dynamic_id" to feed.feedId)

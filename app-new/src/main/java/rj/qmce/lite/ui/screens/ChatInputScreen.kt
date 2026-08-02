@@ -70,7 +70,7 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
@@ -496,7 +496,7 @@ fun ChatInputScreen(
         .isNotBlank() || imageSlots.isNotEmpty() || atSlots.isNotEmpty()
         || faceSlots.isNotEmpty() || marketFaceSlots.isNotEmpty()
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         modifier = Modifier
             .fillMaxSize()
@@ -804,7 +804,7 @@ private fun ChatInputToolsScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     BackHandler(onBack = onBack)
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -993,7 +993,7 @@ fun EmotionPickerScreen(
             loadingMarketFaces = false
         }
     }
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         OfficialReportTargetBox(
             key = "emotion-picker:column",
             modifier = Modifier.fillMaxSize(),

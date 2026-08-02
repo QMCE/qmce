@@ -48,7 +48,7 @@ import androidx.wear.compose.material3.FilledIconButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.KeepScreenOn
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.touchTargetAwareSize
 import com.tencent.mobileqq.ptt.IQQRecorder
@@ -408,7 +408,7 @@ fun VoiceRecordScreen(
     // Prevent the watch screen from sleeping while the user is recording/reviewing a voice message.
     KeepScreenOn()
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),

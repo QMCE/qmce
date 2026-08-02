@@ -26,7 +26,7 @@ import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.CompactButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
@@ -49,7 +49,7 @@ internal fun MessageSummaryScreen(
         is ChatDetailViewModel.MessageSummaryState.Error -> state.selectedCount
     }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             modifier = Modifier.fillMaxWidth(),
             state = listState,

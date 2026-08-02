@@ -33,6 +33,20 @@ open class QmceCallActivity : FragmentActivity() {
         val reportHost = FrameLayout(this).apply {
             id = View.generateViewId()
         }
+        // 通话页是独立 Activity，不走 MainActivity 的 QmceTheme 参数：
+        // 直接读 SharedPreferences 补传"边缘安全区"设置，保证与主界面一致。
+        val callPrefs = getSharedPreferences(
+            SettingsViewModel.PREFERENCES_NAME,
+            android.content.Context.MODE_PRIVATE,
+        )
+        val edgeSafeAreaEnabled = callPrefs.getBoolean(
+            SettingsViewModel.KEY_EDGE_SAFE_AREA_ENABLED,
+            true,
+        )
+        val edgeSafeAreaScale = callPrefs.getFloat(
+            SettingsViewModel.KEY_EDGE_SAFE_AREA_SCALE,
+            1.0f,
+        )
         val composeView = ComposeView(this).apply {
             id = View.generateViewId()
             setViewCompositionStrategy(
@@ -48,7 +62,10 @@ open class QmceCallActivity : FragmentActivity() {
             CompositionLocalProvider(
                 LocalOfficialReportHost provides reportHost,
             ) {
-                QmceTheme {
+                QmceTheme(
+                    edgeSafeAreaEnabled = edgeSafeAreaEnabled,
+                    edgeSafeAreaScale = edgeSafeAreaScale,
+                ) {
                     QmceCallScreen(onFinish = ::finish)
                 }
             }

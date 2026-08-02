@@ -47,7 +47,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.Slider
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
@@ -60,7 +60,6 @@ import rj.qmce.lite.data.reporting.OfficialReportTargetBox
 import rj.qmce.lite.data.update.OtaDownloadMode
 import rj.qmce.lite.data.update.OtaSourceMode
 import rj.qmce.lite.data.update.OtaUpdateSession
-import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.ui.wear.QmceConfirmScreen
 import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.ChatListViewModel
@@ -86,7 +85,7 @@ fun SettingsScreen(
 ) {
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -328,10 +327,8 @@ fun AppearanceSettingsScreen(
     val settings by settingsVm.settings.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val adaptive = LocalQmceAdaptive.current
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
-        contentPadding = adaptive.screenContentPadding,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -483,7 +480,7 @@ fun InteractionSettingsScreen(
     val settings by settingsVm.settings.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -537,13 +534,11 @@ fun SyncDataSettingsScreen(
     val operationStatus by myVm.operationStatus.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val adaptive = LocalQmceAdaptive.current
     val watchlistCount = rj.qmce.lite.wear.QmceWatchlistStore.load(context)
         .count { it.chatType == 2 }
     val isWear = rj.qmce.lite.util.QmceDevice.isWear(context)
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
-        contentPadding = adaptive.screenContentPadding,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -645,7 +640,7 @@ fun DeveloperToolsSettingsScreen(
     BackHandler(onBack = onBack)
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -695,7 +690,7 @@ fun AiSettingsScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val scheme = MaterialTheme.colorScheme
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -801,7 +796,7 @@ fun StorageSettingsScreen(
         totalBytes != null -> "共约 $totalLabel，清除内核媒体与应用临时文件"
         else -> "清除内核的聊天媒体缓存与应用临时文件"
     }
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -893,7 +888,7 @@ fun CheckUpdateScreen(
     val lastDownload = OtaDownloadMode.fromPref(settings.otaLastDownloadMode)
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,

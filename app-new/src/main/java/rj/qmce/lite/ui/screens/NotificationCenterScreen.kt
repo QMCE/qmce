@@ -29,7 +29,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.TransformationSpec
@@ -119,7 +119,7 @@ private fun NotificationCenterMain(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
     ) { contentPadding ->
         TransformingLazyColumn(
@@ -252,7 +252,7 @@ private fun NotifyListScaffold(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
     ) { contentPadding ->
         TransformingLazyColumn(

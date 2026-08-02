@@ -47,7 +47,7 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
@@ -99,7 +99,7 @@ fun LocalVideoPickerScreen(
     val transformationSpec = rememberTransformationSpec()
 
     BackHandler(onBack = onDismiss)
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         scrollIndicator = null,
         edgeButton = {

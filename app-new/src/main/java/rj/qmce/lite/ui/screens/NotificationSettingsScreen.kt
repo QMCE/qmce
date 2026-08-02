@@ -22,7 +22,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListSubHeader
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
@@ -30,7 +30,6 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.notify.QmceMessageRefreshScheduler
 import rj.qmce.lite.service.QmceKeepAliveService
-import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.util.QmceDevice
 import rj.qmce.lite.viewmodel.SettingsViewModel
 import rj.qmce.lite.wear.QmceWatchlistStore
@@ -45,7 +44,6 @@ fun NotificationSettingsScreen(
     val settings by settingsVm.settings.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val adaptive = LocalQmceAdaptive.current
     val isWear = QmceDevice.isWear(context)
     val showLiveUpdates = isWear && Build.VERSION.SDK_INT >= 37
     val watchlistCount = QmceWatchlistStore.load(context).count { it.chatType == 2 }
@@ -53,9 +51,8 @@ fun NotificationSettingsScreen(
         ActivityResultContracts.RequestPermission(),
     ) { }
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
-        contentPadding = adaptive.screenContentPadding,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,

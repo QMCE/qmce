@@ -21,7 +21,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.ListSubHeader
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
@@ -32,7 +32,6 @@ import mqq.app.AppRuntime
 import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.kernel.SdkCompat
 import rj.qmce.lite.notify.QmceWearSurfaces
-import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.ui.wear.QmceLoadingState
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.wear.PinnedChat
@@ -55,7 +54,6 @@ fun TileGroupPickerScreen(
     }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val adaptive = LocalQmceAdaptive.current
     val recentContacts = remember {
         val recent = KernelBridge.getRecentContactService()
         runCatching { recent?.let { SdkCompat.getRecentContactFromCache(it, 0) } }
@@ -120,9 +118,8 @@ fun TileGroupPickerScreen(
         return
     }
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
-        contentPadding = adaptive.screenContentPadding,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
