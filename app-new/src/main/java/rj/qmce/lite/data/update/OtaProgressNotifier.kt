@@ -97,7 +97,7 @@ object OtaProgressNotifier {
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
         )
-        val wantLive = prefs.getBoolean(SettingsViewModel.KEY_LIVE_UPDATES, true) &&
+        val wantLive = prefs.getBoolean(SettingsViewModel.KEY_LIVE_UPDATES, false) &&
             Build.VERSION.SDK_INT >= 36
         if (!wantLive) return
         runCatching {

@@ -56,7 +56,7 @@ class QmceKeepAliveService : Service() {
         fun startIfEnabled(context: Context) {
             val prefs = context.applicationContext
                 .getSharedPreferences(SettingsViewModel.PREFERENCES_NAME, Context.MODE_PRIVATE)
-            if (!prefs.getBoolean(SettingsViewModel.KEY_KEEP_ALIVE, true)) return
+            if (!prefs.getBoolean(SettingsViewModel.KEY_KEEP_ALIVE, false)) return
             val intent = Intent(context, QmceKeepAliveService::class.java)
             ContextCompat.startForegroundService(context, intent)
         }

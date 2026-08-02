@@ -39,7 +39,7 @@ object QmcePromotedOngoing {
             return
         }
         QmceNotificationChannels.ensure(app)
-        val wantLive = prefs.getBoolean(SettingsViewModel.KEY_LIVE_UPDATES, true) &&
+        val wantLive = prefs.getBoolean(SettingsViewModel.KEY_LIVE_UPDATES, false) &&
             Build.VERSION.SDK_INT >= 37
         postPlainOngoing(app, title, text, requestPromoted = wantLive)
         if (!wantLive) {
