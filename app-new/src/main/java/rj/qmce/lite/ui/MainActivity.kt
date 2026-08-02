@@ -624,43 +624,56 @@ private fun WearApp() {
                     composable("chat") {
                         val contact = selectedContact
                         if (contact != null) {
-                            ChatDetailScreen(
-                                runtime = runtime,
-                                peerUid = contact.peerUid ?: "",
-                                peerUin = contact.peerUin.takeIf { it > 0L }?.toString()
-                                    ?: contact.id.orEmpty(),
-                                chatType = contact.chatType,
-                                peerName = contact.peerName ?: contact.id ?: "",
-                                avatarPath = contact.avatarPath.orEmpty(),
-                                avatarUrl = contact.avatarUrl.orEmpty(),
-                                messageNavigation = MessageNavigationSnapshot.fromRecentContact(contact),
-                                myUin = loggedUin,
-                                onBack = { navController.popBackStack() },
-                                onOpenInput = {
-                                    navController.navigate("chatInput") {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onOpenComposerMenu = {
-                                    navController.navigate("chatComposerMenu") {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onOpenSingleEmotion = {
-                                    navController.navigate("singleEmotionPicker") {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onOpenVoiceRecorder = {
-                                    navController.navigate("voiceRecord") {
-                                        launchSingleTop = true
-                                    }
-                                },
-                                onOpenContactPicker = {
-                                    navController.navigate("contactPicker") {
-                                        launchSingleTop = true
-                                    }
-                                },
+                            if (contact.chatType == rj.qmce.lite.agent.AgentSession.CHAT_TYPE) {
+                                AgentChatRoute(
+                                    onOpenInput = {
+                                        navController.navigate("agentChatInput") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onBack = {
+                                        selectedContact = null
+                                        navController.popBackStack()
+                                    },
+                                )
+                            } else {
+                                ChatDetailScreen(
+                                    runtime = runtime,
+                                    peerUid = contact.peerUid ?: "",
+                                    peerUin = contact.peerUin.takeIf { it > 0L }?.toString()
+                                        ?: contact.id.orEmpty(),
+                                    chatType = contact.chatType,
+                                    peerName = contact.peerName ?: contact.id ?: "",
+                                    avatarPath = contact.avatarPath.orEmpty(),
+                                    avatarUrl = contact.avatarUrl.orEmpty(),
+                                    messageNavigation = MessageNavigationSnapshot.fromRecentContact(contact),
+                                    myUin = loggedUin,
+                                    onBack = { navController.popBackStack() },
+                                    onOpenInput = {
+                                        navController.navigate("chatInput") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onOpenComposerMenu = {
+                                        navController.navigate("chatComposerMenu") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onOpenSingleEmotion = {
+                                        navController.navigate("singleEmotionPicker") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onOpenVoiceRecorder = {
+                                        navController.navigate("voiceRecord") {
+                                            launchSingleTop = true
+                                        }
+                                    },
+                                    onOpenContactPicker = {
+                                        navController.navigate("contactPicker") {
+                                            launchSingleTop = true
+                                        }
+                                    },
                                 onOpenPacketTool = {
                                     navController.navigate("packetToolChat") {
                                         launchSingleTop = true
@@ -692,6 +705,7 @@ private fun WearApp() {
                                 onReportingPageChanged = { nestedOfficialPageId = it },
                                 vm = chatDetailVm
                             )
+                            }
                         }
                     }
                     composable("contactPicker") {
@@ -736,6 +750,18 @@ private fun WearApp() {
                             openToolsOnLaunch = false,
                             navController = navController,
                             onReportingPageChanged = { nestedOfficialPageId = it },
+                        )
+                    }
+                    composable("agentChatInput") {
+                        AgentChatInputRoute(
+                            chatDetailVm = chatDetailVm,
+                            navController = navController,
+                        )
+                    }
+                    composable("agentVoiceRecord") {
+                        AgentVoiceRecordRoute(
+                            chatDetailVm = chatDetailVm,
+                            navController = navController,
                         )
                     }
                     composable("chatInputMedia") {
@@ -914,6 +940,9 @@ private fun WearApp() {
                             onOpenAiSettings = {
                                 navController.navigate("aiSettings") { launchSingleTop = true }
                             },
+                            onOpenAgentSettings = {
+                                navController.navigate("agentSettings") { launchSingleTop = true }
+                            },
                             onOpenAbout = {
                                 navController.navigate("about") { launchSingleTop = true }
                             },
@@ -996,6 +1025,12 @@ private fun WearApp() {
                     }
                     composable("aiSettings") {
                         AiSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("agentSettings") {
+                        rj.qmce.lite.agent.ui.AgentSettingsScreen(
                             settingsVm = settingsVm,
                             onBack = { navController.popBackStack() },
                         )
@@ -1205,6 +1240,7 @@ private fun WearApp() {
                 }
             }
             rj.qmce.lite.ui.ota.OtaUpdateDialogHost()
+            rj.qmce.lite.agent.ui.AgentApprovalDialogHost()
         }
     }
 }
@@ -1221,6 +1257,7 @@ private fun officialPageId(route: String?, mainPage: Int): String? = when (route
     "chat", "chatInput" -> OfficialReportBridge.PageIds.AIO
     "singleEmotionPicker" -> OfficialReportBridge.PageIds.EXPRESSION
     "voiceRecord" -> null
+    "agentChat", "agentChatInput", "agentVoiceRecord", "agentSettings" -> null
     "qzoneFeedDetail", "qzoneComment" -> OfficialReportBridge.PageIds.DYNAMIC_INFORMATION
     "qzoneComposer" -> OfficialReportBridge.PageIds.DYNAMIC_PUBLISH
     "qzoneImagePicker" -> OfficialReportBridge.PageIds.ALBUM_SELECTION
@@ -1271,6 +1308,76 @@ private fun ChatInputRoute(
             }
         },
         onReportingPageChanged = onReportingPageChanged,
+        onBack = { navController.popBackStack() },
+    )
+}
+
+/** Agent chat screen wrapper (reuses AgentChatScreen). */
+@Composable
+private fun AgentChatRoute(
+    onOpenInput: () -> Unit,
+    onBack: () -> Unit,
+) {
+    rj.qmce.lite.agent.ui.AgentChatScreen(
+        onOpenInput = onOpenInput,
+        onBack = onBack,
+    )
+}
+
+/**
+ * Agent input route: reuses ChatInputScreen (shared UI + voice-text backfill),
+ * but routes plain-text send to the Agent subsystem instead of a real chat.
+ */
+@Composable
+private fun AgentChatInputRoute(
+    chatDetailVm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
+    navController: androidx.navigation.NavHostController,
+) {
+    ChatInputScreen(
+        vm = chatDetailVm,
+        peerUid = rj.qmce.lite.agent.AgentSession.PEER_UID,
+        peerUin = "0",
+        chatType = rj.qmce.lite.agent.AgentSession.CHAT_TYPE,
+        editingText = "",
+        replyTarget = null,
+        openToolsOnLaunch = false,
+        onConsumeReplyTarget = chatDetailVm::consumePendingReplyTarget,
+        onSend = { text, _ -> rj.qmce.lite.agent.AgentSubsystem.sendUserMessage(text) },
+        onSendEdited = { text -> rj.qmce.lite.agent.AgentSubsystem.sendUserMessage(text) },
+        onSendMixed = { _, _, _, _, _ ->
+            // Mixed content (images/faces/@) not supported in Agent text input.
+        },
+        onSendVideo = { _ ->
+            // Video sending to the Agent pseudo contact is not supported.
+        },
+        onOpenVoiceRecorder = {
+            navController.navigate("agentVoiceRecord") {
+                launchSingleTop = true
+            }
+        },
+        onReportingPageChanged = {},
+        onBack = { navController.popBackStack() },
+    )
+}
+
+/**
+ * Agent voice-to-text route: reuses VoiceRecordScreen; the transcribed text is
+ * routed to the Agent input box via the shared pendingVoiceText backfill.
+ */
+@Composable
+private fun AgentVoiceRecordRoute(
+    chatDetailVm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
+    navController: androidx.navigation.NavHostController,
+) {
+    VoiceRecordScreen(
+        onSendVoice = { _, _, _ -> },
+        onTranscribedText = { text ->
+            chatDetailVm.setPendingVoiceText(text)
+            navController.popBackStack()
+            navController.navigate("agentChatInput") {
+                launchSingleTop = true
+            }
+        },
         onBack = { navController.popBackStack() },
     )
 }

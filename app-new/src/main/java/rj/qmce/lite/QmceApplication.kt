@@ -266,6 +266,7 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         SettingsViewModel.applyAppCenterEnabled(appCenterOn)
         CrashCatcher.install(this)
         OtaUpdateSession.ensure(this)
+        rj.qmce.lite.agent.AgentSubsystem.ensure(this)
         QmceLog.d("QMCE", "crashcatcher init done")
         if (BuildConfig.DEBUG) {
             SignatureProbe.dump(this)

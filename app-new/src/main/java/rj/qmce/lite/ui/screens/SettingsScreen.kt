@@ -79,6 +79,7 @@ fun SettingsScreen(
     onOpenStorage: () -> Unit,
     @Suppress("UNUSED_PARAMETER") onOpenDeveloperTools: () -> Unit,
     onOpenAiSettings: () -> Unit,
+    onOpenAgentSettings: () -> Unit = {},
     onOpenAbout: () -> Unit,
     onCheckUpdate: () -> Unit = onOpenAbout,
     onOpenDiagnostics: () -> Unit = {},
@@ -253,6 +254,34 @@ fun SettingsScreen(
                                 params = params,
                             )
                             onOpenAiSettings()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
+            }
+            item(key = "settings-agent") {
+                val params = mapOf("function_name" to "Fluoxetine智能体")
+                OfficialReportTargetBox(
+                    key = "settings:agent",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                    params = params,
+                    reportImpression = true,
+                ) { reportTarget ->
+                    SettingsActionRow(
+                        icon = Icons.Default.SmartToy,
+                        title = "Fluoxetine智能体",
+                        subtitle = "内置 AI 助手，可执行发送/群管理等操作",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.FEATURE_ENTRY,
+                                params = params,
+                            )
+                            onOpenAgentSettings()
                         },
                         modifier = Modifier.fillMaxWidth(),
                         transformation = SurfaceTransformation(transformationSpec),

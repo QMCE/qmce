@@ -49,6 +49,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val appCenterReportingEnabled: Boolean = true,
         val qmceVerboseLog: Boolean = BuildConfig.DEBUG,
         val qlogLocalWriteEnabled: Boolean = false,
+        val agentEnabled: Boolean = true,
     )
 
     data class AiEndpoint(
@@ -107,6 +108,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         appCenterReportingEnabled = preferences.getBoolean(KEY_APP_CENTER_REPORTING, true),
         qmceVerboseLog = preferences.getBoolean(KEY_QMCE_VERBOSE_LOG, BuildConfig.DEBUG),
         qlogLocalWriteEnabled = preferences.getBoolean(KEY_QLOG_LOCAL_WRITE, false),
+        agentEnabled = preferences.getBoolean(KEY_AGENT_ENABLED, true),
     )
 
     fun setShowTimeText(show: Boolean) = update { it.copy(showTimeText = show) }
@@ -163,6 +165,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         applyQlogLocalWriteEnabled(enabled)
     }
 
+    fun setAgentEnabled(enabled: Boolean) = update { it.copy(agentEnabled = enabled) }
+
     private fun update(transform: (UiSettings) -> UiSettings) {
         val updated = transform(_settings.value)
         _settings.value = updated
@@ -199,6 +203,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .putBoolean(KEY_APP_CENTER_REPORTING, updated.appCenterReportingEnabled)
                 .putBoolean(KEY_QMCE_VERBOSE_LOG, updated.qmceVerboseLog)
                 .putBoolean(KEY_QLOG_LOCAL_WRITE, updated.qlogLocalWriteEnabled)
+                .putBoolean(KEY_AGENT_ENABLED, updated.agentEnabled)
         }
     }
 
@@ -245,6 +250,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val KEY_APP_CENTER_REPORTING = "app_center_reporting_enabled"
         const val KEY_QMCE_VERBOSE_LOG = "qmce_verbose_log"
         const val KEY_QLOG_LOCAL_WRITE = "qlog_local_write_enabled"
+        const val KEY_AGENT_ENABLED = "agent_enabled"
 
         const val REFRESH_PUSH_ONLY = "push_only"
         const val REFRESH_15S = "15s"
