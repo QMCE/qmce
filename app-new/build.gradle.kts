@@ -23,8 +23,8 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 24
-        versionName = "0.5.2-test"
+        versionCode = 25
+        versionName = "0.5.2"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -40,7 +40,7 @@ android {
 
     signingConfigs {
         create("dev") {
-            // Using testkey
+            // testkey
             storeFile = file("./testkey.jks")
             storePassword = releaseKeyStorePassword
             keyAlias = releaseKeyAlias
@@ -53,7 +53,6 @@ android {
     }
 
     buildTypes {
-        // QQ SDK 单 jar（含 Metadata）；R8 靠 -dontoptimize 规避大 Metadata NPE
         val enableCodeShrinks = true
         debug {
             isDebuggable = true
