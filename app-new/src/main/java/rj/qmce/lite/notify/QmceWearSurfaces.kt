@@ -15,7 +15,7 @@ object QmceWearSurfaces {
         val app = context.applicationContext
         val prefs = app.getSharedPreferences(SettingsViewModel.PREFERENCES_NAME, Context.MODE_PRIVATE)
         val complicationsOn = prefs.getBoolean(SettingsViewModel.KEY_WEAR_COMPLICATIONS, true)
-        val tilesOn = prefs.getBoolean(SettingsViewModel.KEY_WEAR_TILES, true)
+        val tilesOn = prefs.getBoolean(SettingsViewModel.KEY_WEAR_TILES, false)
         if (!complicationsOn && !tilesOn) return
 
         if (complicationsOn) {

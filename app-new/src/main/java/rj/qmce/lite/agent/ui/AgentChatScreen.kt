@@ -9,26 +9,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.material3.Button
-import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
-import androidx.wear.compose.material3.lazy.rememberTransformationSpec
-import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.agent.AgentRunStatus
 import rj.qmce.lite.agent.AgentSession
 import rj.qmce.lite.agent.AgentUiMsg
@@ -54,19 +51,26 @@ fun AgentChatScreen(
     DisposableEffect(Unit) { onDispose { AgentSession.setInChat(false) } }
 
     val listState = rememberTransformingLazyColumnState()
-    val transformationSpec = rememberTransformationSpec()
+
+    LaunchedEffect(uiMessages.size, uiMessages.lastOrNull()?.text, runStatus) {
+        val lastIndex = uiMessages.lastIndex
+        if (lastIndex >= 0) {
+            runCatching { listState.scrollToItem(lastIndex + 1) } // +1 for header
+        }
+    }
 
     QmceScreenScaffold(
         scrollState = listState,
         edgeButton = {
-            Button(
+            EdgeButton(
                 onClick = onOpenInput,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) { Text("输入") }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Keyboard,
+                    contentDescription = "输入",
+                )
+            }
         },
     ) { contentPadding ->
         TransformingLazyColumn(
@@ -82,16 +86,6 @@ fun AgentChatScreen(
                 key = { it.stableKey },
             ) { message ->
                 AgentBubble(message)
-            }
-            if (runStatus == AgentRunStatus.Running) {
-                item(key = "agent-typing") {
-                    Text(
-                        text = "Agent 思考中…",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                }
             }
         }
     }
@@ -115,14 +109,14 @@ private fun AgentHeader(runStatus: AgentRunStatus) {
 @Composable
 private fun AgentBubble(message: AgentUiMsg) {
     val containerColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.primary
+        MaterialTheme.colorScheme.primaryContainer
     } else if (message.isSystem) {
         MaterialTheme.colorScheme.surfaceContainer
     } else {
         MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val contentColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }

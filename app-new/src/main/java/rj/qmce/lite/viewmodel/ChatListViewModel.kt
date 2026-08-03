@@ -216,6 +216,18 @@ class ChatListViewModel : ViewModel() {
                 publishCache("sent-message")
             }
         }
+        scope.launch {
+            rj.qmce.lite.agent.AgentSubsystem.active.collect {
+                mainHandler.post { publishCache("agent-active") }
+            }
+        }
+        scope.launch {
+            AgentSession.lastText.collect {
+                if (rj.qmce.lite.agent.AgentSubsystem.isActive) {
+                    mainHandler.post { publishCache("agent-summary") }
+                }
+            }
+        }
     }
 
     private fun patchSentMessages() = synchronized(cacheLock) {
@@ -595,7 +607,9 @@ class ChatListViewModel : ViewModel() {
                             Log.d(TAG, "recentSync: switchForeGround code=$code, errMsg=$errMsg")
                         }
                     })
-                    installSyncProbe(msgService, recentService)
+                    if (rj.qmce.lite.BuildConfig.DEBUG) {
+                        installSyncProbe(msgService, recentService)
+                    }
                     runCatching { msgService.startMsgSync() }
                         .onSuccess { Log.d(TAG, "recentSync: startMsgSync initial") }
                         .onFailure { Log.w(TAG, "recentSync: initial startMsgSync failed", it) }

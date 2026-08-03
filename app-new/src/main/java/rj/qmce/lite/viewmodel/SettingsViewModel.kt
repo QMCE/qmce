@@ -31,7 +31,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val aiApiKey: String = "",
         val aiModel: String = "",
         val contactsSortMode: String = DEFAULT_CONTACTS_SORT_MODE,
-        val notifyEnabled: Boolean = true,
+        val notifyEnabled: Boolean = false,
         val notifyC2c: Boolean = true,
         val notifyGroup: Boolean = true,
         val notifyContact: Boolean = true,
@@ -43,7 +43,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val videoStrictForeground: Boolean = true,
         val callBlockBack: Boolean = true,
         val wearComplicationsEnabled: Boolean = true,
-        val wearTilesEnabled: Boolean = true,
+        val wearTilesEnabled: Boolean = false,
         val otaRequireWifi: Boolean = true,
         val otaSourceMode: String = OtaSourceMode.Auto.pref,
         val otaLastDownloadMode: String = OtaDownloadMode.WatchBrowser.pref,
@@ -51,6 +51,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val qmceVerboseLog: Boolean = BuildConfig.DEBUG,
         val qlogLocalWriteEnabled: Boolean = false,
         val agentEnabled: Boolean = true,
+        val agentSendPacketEnabled: Boolean = false,
     )
 
     data class AiEndpoint(
@@ -85,7 +86,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         contactsSortMode = preferences.getString(KEY_CONTACTS_SORT_MODE, DEFAULT_CONTACTS_SORT_MODE)
             .orEmpty()
             .ifBlank { DEFAULT_CONTACTS_SORT_MODE },
-        notifyEnabled = preferences.getBoolean(KEY_NOTIFY_ENABLED, true),
+        notifyEnabled = preferences.getBoolean(KEY_NOTIFY_ENABLED, false),
         notifyC2c = preferences.getBoolean(KEY_NOTIFY_C2C, true),
         notifyGroup = preferences.getBoolean(KEY_NOTIFY_GROUP, true),
         notifyContact = preferences.getBoolean(KEY_NOTIFY_CONTACT, true),
@@ -99,7 +100,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         videoStrictForeground = preferences.getBoolean(KEY_VIDEO_STRICT_FOREGROUND, true),
         callBlockBack = preferences.getBoolean(KEY_CALL_BLOCK_BACK, true),
         wearComplicationsEnabled = preferences.getBoolean(KEY_WEAR_COMPLICATIONS, true),
-        wearTilesEnabled = preferences.getBoolean(KEY_WEAR_TILES, true),
+        wearTilesEnabled = preferences.getBoolean(KEY_WEAR_TILES, false),
         otaRequireWifi = preferences.getBoolean(KEY_OTA_REQUIRE_WIFI, true),
         otaSourceMode = preferences.getString(KEY_OTA_SOURCE_MODE, OtaSourceMode.Auto.pref)
             .orEmpty()
@@ -112,6 +113,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         qmceVerboseLog = preferences.getBoolean(KEY_QMCE_VERBOSE_LOG, BuildConfig.DEBUG),
         qlogLocalWriteEnabled = preferences.getBoolean(KEY_QLOG_LOCAL_WRITE, false),
         agentEnabled = preferences.getBoolean(KEY_AGENT_ENABLED, true),
+        agentSendPacketEnabled = preferences.getBoolean(KEY_AGENT_SEND_PACKET, false),
     )
 
     fun setShowTimeText(show: Boolean) = update { it.copy(showTimeText = show) }
@@ -170,7 +172,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         applyQlogLocalWriteEnabled(enabled)
     }
 
-    fun setAgentEnabled(enabled: Boolean) = update { it.copy(agentEnabled = enabled) }
+    fun setAgentEnabled(enabled: Boolean) {
+        update { it.copy(agentEnabled = enabled) }
+        rj.qmce.lite.agent.AgentSubsystem.setEnabled(getApplication(), enabled)
+    }
+
+    fun setAgentSendPacketEnabled(enabled: Boolean) {
+        update { it.copy(agentSendPacketEnabled = enabled) }
+        rj.qmce.lite.agent.AgentToolRegistrar.ensure(getApplication())
+    }
 
     private fun update(transform: (UiSettings) -> UiSettings) {
         val updated = transform(_settings.value)
@@ -210,6 +220,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .putBoolean(KEY_QMCE_VERBOSE_LOG, updated.qmceVerboseLog)
                 .putBoolean(KEY_QLOG_LOCAL_WRITE, updated.qlogLocalWriteEnabled)
                 .putBoolean(KEY_AGENT_ENABLED, updated.agentEnabled)
+                .putBoolean(KEY_AGENT_SEND_PACKET, updated.agentSendPacketEnabled)
         }
     }
 
@@ -261,6 +272,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val KEY_QMCE_VERBOSE_LOG = "qmce_verbose_log"
         const val KEY_QLOG_LOCAL_WRITE = "qlog_local_write_enabled"
         const val KEY_AGENT_ENABLED = "agent_enabled"
+        const val KEY_AGENT_SEND_PACKET = "agent_send_packet"
 
         const val REFRESH_PUSH_ONLY = "push_only"
         const val REFRESH_15S = "15s"
@@ -268,8 +280,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val REFRESH_1M = "1m"
         const val REFRESH_5M = "5m"
 
-        const val BUILTIN_AI_BASE_URL = "https://opencode.ai/zen/v1/chat/completions"
-        const val BUILTIN_AI_MODEL = "big-pickle"
+        val BUILTIN_AI_BASE_URL: String get() = BuildConfig.BUILTIN_AI_BASE_URL
+        val BUILTIN_AI_MODEL: String get() = BuildConfig.BUILTIN_AI_MODEL
+        val BUILTIN_AI_API_KEY: String get() = BuildConfig.BUILTIN_AI_API_KEY
 
         fun resolveAiEndpoint(context: Context): AiEndpoint {
             val prefs = context.applicationContext
@@ -288,7 +301,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             } else {
                 AiEndpoint(
                     baseUrl = BUILTIN_AI_BASE_URL,
-                    apiKey = null,
+                    apiKey = BUILTIN_AI_API_KEY,
                     model = BUILTIN_AI_MODEL,
                     custom = false,
                 )

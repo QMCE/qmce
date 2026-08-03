@@ -15,7 +15,7 @@ object MessagePredictionController {
     private val _state = MutableStateFlow<PredictionUiState>(PredictionUiState.Idle)
     val state: StateFlow<PredictionUiState> = _state.asStateFlow()
 
-    /** Kick off prediction. No-op if already Loading or Ready (re-entry guard). */
+    /** Kick off prediction. No-op if already Loading or Ready (Error may retry). */
     fun start(peerUid: String, chatType: Int, initial: List<PredictionMessage>) {
         val current = _state.value
         if (current is PredictionUiState.Loading || current is PredictionUiState.Ready) return
@@ -24,6 +24,12 @@ object MessagePredictionController {
         AgentSubsystem.scope().launch {
             _state.value = MessagePredictionEngine.predict(peerUid, chatType, initial)
         }
+    }
+
+    /** Clear Error/Ready and start again. */
+    fun retry(peerUid: String, chatType: Int, initial: List<PredictionMessage>) {
+        _state.value = PredictionUiState.Idle
+        start(peerUid, chatType, initial)
     }
 
     fun reset() {

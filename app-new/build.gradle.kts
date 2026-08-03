@@ -22,14 +22,28 @@ android {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 26
-        versionName = "0.6.0"
+        versionCode = 28
+        versionName = "0.6.2"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "armeabi-v7a"
         }
         multiDexKeepProguard = file("multidex-proguard.pro")
+
+        val localProps = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.isFile) f.inputStream().use(::load)
+        }
+        val aiBaseUrl = localProps.getProperty(
+            "qmce.ai.baseUrl",
+            "https://api.ant-ling.com/v1/chat/completions",
+        )
+        val aiModel = localProps.getProperty("qmce.ai.model", "Ling-3.0-flash")
+        val aiApiKey = localProps.getProperty("qmce.ai.apiKey", "")
+        buildConfigField("String", "BUILTIN_AI_BASE_URL", "\"${aiBaseUrl.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BUILTIN_AI_MODEL", "\"${aiModel.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BUILTIN_AI_API_KEY", "\"${aiApiKey.replace("\"", "\\\"")}\"")
     }
 
     buildFeatures {

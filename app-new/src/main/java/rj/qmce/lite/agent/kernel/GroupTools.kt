@@ -74,7 +74,7 @@ class SetGroupAllMutedTool : WriteTool(
         val deferred = CompletableDeferred<Boolean>()
         val requested = GroupManagementRepository.setAllMuted(groupCode, enabled, role) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("set_group_all_muted failed: $message")
+            if (!success) rj.qmce.lite.util.QmceLog.w("QMCE-Agent", "set_group_all_muted failed: $message")
         }
         if (!requested) return err("群管理请求失败")
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
@@ -105,7 +105,7 @@ class KickGroupMemberTool : WriteTool(
             groupCode, memberUid, actorRole, targetRole,
         ) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("kick_group_member failed: $message")
+            if (!success) rj.qmce.lite.util.QmceLog.w("QMCE-Agent", "kick_group_member failed: $message")
         }
         if (!requested) return err("群管理请求失败")
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
@@ -136,7 +136,7 @@ class PublishGroupBulletinTool : WriteTool(
             groupCode, null, text, pinned, role,
         ) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("publish_group_bulletin failed: $message")
+            if (!success) rj.qmce.lite.util.QmceLog.w("QMCE-Agent", "publish_group_bulletin failed: $message")
         }
         if (!requested) return err("群公告请求失败")
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {

@@ -72,7 +72,7 @@ fun ContactPickerScreen(
                 }
             }
             items(allBuddies, key = { "${it.categoryId}:${it.uid}" }) { buddy ->
-                val name = buddy.remark.takeIf { it.isNotBlank() } ?: buddy.nick
+                val name = buddy.displayName()
                 Button(
                     onClick = { onSelect(buddy.uid, buddy.uin, name) },
                     modifier = Modifier

@@ -10,8 +10,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import rj.qmce.lite.data.notify.ContactNotifyRepository
-import rj.qmce.lite.data.notify.GroupNotifyRepository
+import rj.qmce.lite.data.notify.SharedNotifyRepositories
 import rj.qmce.lite.data.notify.UiFriendRequest
 import rj.qmce.lite.data.notify.UiGroupNotice
 import rj.qmce.lite.ui.MainActivity
@@ -26,23 +25,24 @@ object QmceContactSystemNotifier {
     private var friendPrimed = false
     private var groupPrimed = false
 
-    private val friendRepo = ContactNotifyRepository { items ->
-        val ctx = appContext ?: return@ContactNotifyRepository
+    private val friendListener: (List<UiFriendRequest>) -> Unit = listener@{ items ->
+        val ctx = appContext ?: return@listener
         val pending = items.filter { it.pending }
         if (!friendPrimed) {
             pending.forEach { seenFriend.add(friendKey(it)) }
             friendPrimed = true
-            return@ContactNotifyRepository
+            return@listener
         }
         pending.forEach { postFriend(ctx, it) }
     }
-    private val groupRepo = GroupNotifyRepository { items ->
-        val ctx = appContext ?: return@GroupNotifyRepository
+
+    private val groupListener: (List<UiGroupNotice>) -> Unit = listener@{ items ->
+        val ctx = appContext ?: return@listener
         val pending = items.filter { it.pending }
         if (!groupPrimed) {
             pending.forEach { seenGroup.add(groupKey(it)) }
             groupPrimed = true
-            return@GroupNotifyRepository
+            return@listener
         }
         pending.forEach { postGroup(ctx, it) }
     }
@@ -54,15 +54,25 @@ object QmceContactSystemNotifier {
         seenFriend.clear()
         seenGroup.clear()
         QmceNotificationChannels.ensure(context)
-        runCatching { friendRepo.start() }
-            .onFailure { Log.w(TAG, "friend repo start failed", it) }
-        runCatching { groupRepo.start() }
-            .onFailure { Log.w(TAG, "group repo start failed", it) }
+        SharedNotifyRepositories.addFriendListener(friendListener)
+        SharedNotifyRepositories.addGroupListener(groupListener)
+        // Kernel awaits may sleep; never run on the main thread.
+        Thread({
+            runCatching { SharedNotifyRepositories.friendRepo.start() }
+                .onFailure { Log.w(TAG, "friend repo start failed", it) }
+            runCatching { SharedNotifyRepositories.groupRepo.start() }
+                .onFailure { Log.w(TAG, "group repo start failed", it) }
+        }, "QMCE-NotifyStart").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     fun stop() {
-        runCatching { friendRepo.stop() }
-        runCatching { groupRepo.stop() }
+        SharedNotifyRepositories.removeFriendListener(friendListener)
+        SharedNotifyRepositories.removeGroupListener(groupListener)
+        runCatching { SharedNotifyRepositories.friendRepo.stop() }
+        runCatching { SharedNotifyRepositories.groupRepo.stop() }
         appContext = null
         friendPrimed = false
         groupPrimed = false
@@ -75,7 +85,7 @@ object QmceContactSystemNotifier {
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
         )
-        return prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, true) &&
+        return prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, false) &&
             prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_CONTACT, true)
     }
 

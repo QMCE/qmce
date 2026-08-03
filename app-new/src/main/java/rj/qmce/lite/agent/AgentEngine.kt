@@ -1,11 +1,16 @@
 package rj.qmce.lite.agent
 
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rj.qmce.lite.agent.AgentRunStatus.Idle
 import rj.qmce.lite.agent.AgentRunStatus.Running
@@ -31,12 +36,17 @@ object AgentEngine {
     private const val EVENT_MONITOR_TIMEOUT_MILLIS = 700_000L // > event_monitor's own 600s cap
     private const val TIMER_TIMEOUT_MILLIS = 6 * 3600_000L + 60_000L
     private const val MAX_TOOL_RESULT_LENGTH = 4_000
+    private const val MAX_LLM_RETRIES = 2
 
     private val client = LlmClient()
     private val runSeq = AtomicLong(0)
     private val lock = Any()
     private var runningJob: Job? = null
     private var activeRunId: Long = 0L
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private const val SYSTEM_PROMPT =
+        "你是 Fluoxetine，QQ 手表上的智能助手，一个聪明、自然、贴合语境的 AI。你可以调用工具帮用户完成 QQ 操作（发消息、撤回、群管理、好友审批、计时器、事件监听等）。用中文回答，简洁友好。你的名字是 Fluoxetine，如果用户问你是谁，就介绍自己是 Fluoxetine。"
 
     /** Start a new run on the subsystem scope. No-op if one is already running. */
     fun start(scope: CoroutineScope) {
@@ -64,44 +74,9 @@ object AgentEngine {
             while (turn < MAX_TURNS) {
                 turn++
                 val history = AgentSession.history.value
+                val messages = listOf(AgentMessage(role = "system", content = SYSTEM_PROMPT)) + history
 
-                val outcome = CompletableDeferred<LlmOutcome>()
-                val textBuffer = StringBuilder()
-                val request = client.stream(
-                    messages = history,
-                    tools = tools,
-                    listener = object : LlmClient.Listener {
-                        override fun onChunk(text: String) {
-                            textBuffer.append(text)
-                            if (AgentSession.currentStreamingText().isEmpty()) {
-                                AgentSession.beginStreamingReply()
-                            }
-                            AgentSession.appendStreamingChunk(text)
-                        }
-
-                        override fun onComplete(toolCalls: List<AgentToolCall>) {
-                            if (outcome.isCompleted) return
-                            outcome.complete(LlmOutcome(textBuffer.toString(), toolCalls))
-                        }
-
-                        override fun onError(message: String, retryable: Boolean) {
-                            if (outcome.isCompleted) return
-                            outcome.complete(LlmOutcome("", emptyList(), error = message))
-                        }
-                    },
-                )
-                val ctxJob = currentCoroutineContext()[Job]
-                ctxJob?.invokeOnCompletion { request.cancel() }
-
-                val result = withTimeoutOrNull(LLM_WAIT_MILLIS) { outcome.await() }
-                if (result == null) {
-                    request.cancel()
-                    AgentSession.finishStreamingReply()
-                    AgentSession.appendErrorMessage("Agent 响应超时，已取消。")
-                    return
-                }
-                AgentSession.finishStreamingReply()
-
+                val result = callLlmWithRetry(messages, tools) ?: return
                 if (result.error != null) {
                     AgentSession.appendErrorMessage("Agent 请求失败: ${result.error}")
                     return
@@ -116,6 +91,14 @@ object AgentEngine {
                 }
 
                 val effectiveCalls = toolCalls.take(MAX_TOOL_CALLS_PER_RESPONSE)
+                val dropped = toolCalls.drop(MAX_TOOL_CALLS_PER_RESPONSE)
+                for (call in dropped) {
+                    AgentSession.addToolResult(
+                        toolCallId = call.id,
+                        toolName = call.name,
+                        result = ToolResult("本轮工具调用数超限，已跳过", isError = true),
+                    )
+                }
                 for (call in effectiveCalls) {
                     val tool = KernelToolRegistry.get(call.name)
                     if (tool == null) {
@@ -126,7 +109,9 @@ object AgentEngine {
                         )
                         continue
                     }
-                    AgentSession.setRunStatus(WaitingApproval)
+                    if (tool.requiresApproval) {
+                        AgentSession.setRunStatus(WaitingApproval)
+                    }
                     val decision = ApprovalController.request(tool, call.arguments)
                     if (decision != ApprovalDecision.Allow) {
                         val reason = when (decision) {
@@ -139,6 +124,7 @@ object AgentEngine {
                             toolName = call.name,
                             result = ToolResult(reason, isError = true),
                         )
+                        AgentSession.setRunStatus(Running)
                         continue
                     }
                     AgentSession.setRunStatus(Running)
@@ -166,11 +152,11 @@ object AgentEngine {
             AgentSession.appendErrorMessage("已达到最大工具调用轮次，请精简请求。")
         } catch (error: CancellationException) {
             // New message superseded this run; stop silently.
-            AgentSession.finishStreamingReply()
+            withContext(Dispatchers.Main.immediate) { AgentSession.finishStreamingReply() }
             throw error
         } catch (error: Exception) {
             QmceLog.w("QMCE-Agent", "run=$runId failed", error)
-            AgentSession.finishStreamingReply()
+            withContext(Dispatchers.Main.immediate) { AgentSession.finishStreamingReply() }
             AgentSession.appendErrorMessage("Agent 运行出错: ${error.message}")
         } finally {
             // Only the current run may clear status/job bookkeeping.
@@ -183,9 +169,69 @@ object AgentEngine {
         }
     }
 
+    private suspend fun callLlmWithRetry(
+        messages: List<AgentMessage>,
+        tools: List<Tool>,
+    ): LlmOutcome? {
+        var attempt = 0
+        while (true) {
+            val outcome = CompletableDeferred<LlmOutcome>()
+            val textBuffer = StringBuilder()
+            val request = client.stream(
+                messages = messages,
+                tools = tools,
+                listener = object : LlmClient.Listener {
+                    override fun onChunk(text: String) {
+                        textBuffer.append(text)
+                        // Handler FIFO keeps chunk order when callbacks arrive off-main.
+                        mainHandler.post {
+                            if (AgentSession.currentStreamingText().isEmpty()) {
+                                AgentSession.beginStreamingReply()
+                            }
+                            AgentSession.appendStreamingChunk(text)
+                        }
+                    }
+
+                    override fun onComplete(toolCalls: List<AgentToolCall>) {
+                        if (outcome.isCompleted) return
+                        outcome.complete(
+                            LlmOutcome(textBuffer.toString(), toolCalls, retryable = false),
+                        )
+                    }
+
+                    override fun onError(message: String, retryable: Boolean) {
+                        if (outcome.isCompleted) return
+                        outcome.complete(
+                            LlmOutcome("", emptyList(), error = message, retryable = retryable),
+                        )
+                    }
+                },
+            )
+            val ctxJob = currentCoroutineContext()[Job]
+            ctxJob?.invokeOnCompletion { request.cancel() }
+
+            val result = withTimeoutOrNull(LLM_WAIT_MILLIS) { outcome.await() }
+            if (result == null) {
+                request.cancel()
+                withContext(Dispatchers.Main.immediate) { AgentSession.finishStreamingReply() }
+                AgentSession.appendErrorMessage("Agent 响应超时，已取消。")
+                return null
+            }
+            withContext(Dispatchers.Main.immediate) { AgentSession.finishStreamingReply() }
+
+            if (result.error != null && result.retryable && attempt < MAX_LLM_RETRIES) {
+                attempt++
+                delay(1_000L * attempt)
+                continue
+            }
+            return result
+        }
+    }
+
     private data class LlmOutcome(
         val streamedText: String,
         val toolCalls: List<AgentToolCall>,
         val error: String? = null,
+        val retryable: Boolean = false,
     )
 }

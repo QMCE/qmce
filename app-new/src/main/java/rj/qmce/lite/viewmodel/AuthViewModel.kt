@@ -75,6 +75,9 @@ class AuthViewModel : ViewModel() {
     private val _statusText = MutableStateFlow("未初始化")
     val statusText: StateFlow<String> = _statusText
 
+    private val _qrRemainingSec = MutableStateFlow(0L)
+    val qrRemainingSec: StateFlow<Long> = _qrRemainingSec
+
     private val _loginUiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
     val loginUiState: StateFlow<LoginUiState> = _loginUiState
 
@@ -227,6 +230,7 @@ class AuthViewModel : ViewModel() {
         buildTime = 0L
         expireTimeSec = 0L
         remainingSec = 0L
+        _qrRemainingSec.value = 0L
         _statusText.value = if (wtService != null) "就绪" else "未初始化"
         _loginUiState.value = LoginUiState.Idle
         _isBusy.value = false
@@ -352,6 +356,7 @@ class AuthViewModel : ViewModel() {
         invalidateRequest(clearQr = false)
         _loginUiState.value = LoginUiState.Expired
         _statusText.value = "二维码已过期"
+        _qrRemainingSec.value = 0L
         _isBusy.value = false
     }
 
@@ -450,6 +455,7 @@ class AuthViewModel : ViewModel() {
                 }
                 if (expireTimeSec > 0 && _loginUiState.value == LoginUiState.QrReady) {
                     remainingSec = ((expireTimeSec * 1000L - elapsed) / 1000L).coerceAtLeast(0L)
+                    _qrRemainingSec.value = remainingSec
                     _statusText.value = "请扫码 (${remainingSec}s)"
                 }
                 val queryRet = withContext(Dispatchers.IO) {
@@ -536,6 +542,7 @@ class AuthViewModel : ViewModel() {
                                 expireTimeSec = expireTime.coerceAtLeast(1L)
                                 queryTimeSec = queryTime.coerceAtLeast(1L)
                                 remainingSec = expireTimeSec
+                                _qrRemainingSec.value = expireTimeSec
                                 setState(LoginUiState.QrReady, "请扫码 (${expireTimeSec}s)", busy = false)
                                 appendLog("二维码 ${bitmap.width}x${bitmap.height} expire=$expireTime query=$queryTime")
                                 val service = wtService

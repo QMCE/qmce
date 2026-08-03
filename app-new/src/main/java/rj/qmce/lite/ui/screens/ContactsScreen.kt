@@ -294,7 +294,7 @@ fun ContactsScreen(
                                                 }
                                             },
                                             secondaryLabel = { Text(buddy.uin.toString(), maxLines = 1) },
-                                        ) { Text(buddy.remark.ifEmpty { buddy.nick }, maxLines = 1) }
+                                        ) { Text(buddy.displayName(), maxLines = 1) }
                                     }
                                 }
                             }
@@ -591,7 +591,7 @@ private fun ContactSearchScreen(
                                     },
                                 ) {
                                     Text(
-                                        buddy.remark.ifEmpty { buddy.nick },
+                                        buddy.displayName(),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                     )

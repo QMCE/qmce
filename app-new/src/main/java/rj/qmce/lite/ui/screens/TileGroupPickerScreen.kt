@@ -6,12 +6,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.foundation.lazy.items
@@ -49,9 +48,8 @@ fun TileGroupPickerScreen(
     val groups by contactsVm.groups.collectAsState()
     val groupsLoading by contactsVm.groupsLoading.collectAsState()
     val groupsError by contactsVm.groupsError.collectAsState()
-    var watchlist by remember {
-        mutableStateOf(QmceWatchlistStore.load(context).filter { it.chatType == 2 })
-    }
+    val allWatchlist by QmceWatchlistStore.entries.collectAsState()
+    val watchlist = remember(allWatchlist) { allWatchlist.filter { it.chatType == 2 } }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val recentContacts = remember {
@@ -90,7 +88,12 @@ fun TileGroupPickerScreen(
     val showFullScreenLoading = allGroups.isEmpty() && groupsLoading
 
     LaunchedEffect(Unit) {
+        QmceWatchlistStore.load(context)
         contactsVm.ensureGroupsLoaded()
+    }
+    LifecycleResumeEffect(Unit) {
+        QmceWatchlistStore.load(context)
+        onPauseOrDispose { }
     }
 
     fun resolvePeerUid(groupCode: Long): String {
@@ -102,7 +105,6 @@ fun TileGroupPickerScreen(
         val others = QmceWatchlistStore.load(context).filter { it.chatType != 2 }
         val selectedGroups = entries.take(QmceWatchlistStore.MAX_ENTRIES)
         QmceWatchlistStore.save(context, others + selectedGroups)
-        watchlist = QmceWatchlistStore.load(context).filter { it.chatType == 2 }
         val first = selectedGroups.firstOrNull()
         if (first != null) {
             QmcePinnedComplicationStore.save(
@@ -147,6 +149,16 @@ fun TileGroupPickerScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                 ) {
                     Text("最多 ${QmceWatchlistStore.MAX_ENTRIES} 个")
+                }
+            }
+            if (watchlist.isEmpty()) {
+                item(key = "empty-watchlist") {
+                    Text(
+                        "尚未添加群聊",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    )
                 }
             }
             if (watchlist.isNotEmpty()) {

@@ -10,6 +10,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,9 @@ fun MainScreen(
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
     var kernelRetryNonce by remember(uin) { mutableIntStateOf(0) }
+    var contactsLoaded by remember(uin) { mutableStateOf(false) }
+    var qzoneLoaded by remember(uin) { mutableStateOf(false) }
+    var kernelReady by remember(uin) { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
@@ -83,9 +87,9 @@ fun MainScreen(
             }
             android.util.Log.d("QMCE", "MainScreen: core services ready=$ready attempt=${index + 1}")
             if (ready) {
+                kernelReady = true
                 chatListVm.loadContacts(activeRuntime)
-                contactsVm.loadBuddies(activeRuntime, forceRefresh = true)
-                qZoneVm.loadFeeds(forceRefresh = true)
+                // Contacts / QZone load lazily when their tab is first opened.
                 return@LaunchedEffect
             }
             if (index < timeouts.lastIndex) {
@@ -96,8 +100,23 @@ fun MainScreen(
         }
         chatListVm.markKernelInitFailed()
         contactsVm.markKernelInitFailed()
-        // Kernel 失败时仍尝试空间（依赖 MSF ticket，不依赖 NT kernel）
-        qZoneVm.loadFeeds(forceRefresh = true)
+        // Kernel 失败时仍允许首次进入空间页时加载
+        kernelReady = true
+    }
+
+    LaunchedEffect(pagerState.currentPage, kernelReady, uin, runtime) {
+        if (!kernelReady) return@LaunchedEffect
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
+        when (pagerState.currentPage) {
+            1 -> if (!contactsLoaded) {
+                contactsLoaded = true
+                contactsVm.loadBuddies(activeRuntime, forceRefresh = true)
+            }
+            2 -> if (!qzoneLoaded) {
+                qzoneLoaded = true
+                qZoneVm.loadFeeds(forceRefresh = true)
+            }
+        }
     }
 
     HorizontalPagerScaffold(

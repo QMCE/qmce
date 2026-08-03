@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 /** Chat-message block sent to the LLM (OpenAI protocol). */
 data class AgentMessage(
-    val role: String, // user | assistant | tool
+    val role: String, // user | assistant | tool | system
     val content: String,
     val toolCallId: String? = null,
     val toolCalls: List<AgentToolCall> = emptyList(),
@@ -40,6 +40,15 @@ data class AgentSessionSummary(
     val unreadCount: Int,
     val busy: Boolean,
     val pendingApprovalCount: Int,
+)
+
+data class AgentPersistSnapshot(
+    val history: List<AgentMessage>,
+    val uiMessages: List<AgentUiMsg>,
+    val lastText: String,
+    val lastActiveMillis: Long,
+    val unreadCount: Int,
+    val markedRead: Boolean,
 )
 
 /**
@@ -95,6 +104,38 @@ object AgentSession {
         pendingApprovalCount = ApprovalController.pendingCount,
     )
 
+    fun snapshotForPersist(): AgentPersistSnapshot = AgentPersistSnapshot(
+        history = _history.value,
+        uiMessages = _uiMessages.value.filterNot { it.streaming },
+        lastText = _lastText.value,
+        lastActiveMillis = _lastActiveMillis.value,
+        unreadCount = _unreadCount.value,
+        markedRead = markedRead,
+    )
+
+    fun restore(
+        history: List<AgentMessage>,
+        uiMessages: List<AgentUiMsg>,
+        lastText: String,
+        lastActiveMillis: Long,
+        unreadCount: Int,
+        markedRead: Boolean,
+    ) {
+        _history.value = history
+        _uiMessages.value = uiMessages.filterNot { it.streaming }
+        _runStatus.value = AgentRunStatus.Idle
+        _busy.value = false
+        _unreadCount.value = unreadCount
+        _lastText.value = lastText
+        _lastActiveMillis.value = lastActiveMillis
+        _streamingText.value = ""
+        this.markedRead = markedRead
+        val maxSeq = uiMessages.mapNotNull {
+            it.stableKey.substringAfterLast('-').toLongOrNull()
+        }.maxOrNull() ?: 0L
+        msgSeq.set(maxSeq)
+    }
+
     fun reset() {
         _history.value = emptyList()
         _uiMessages.value = emptyList()
@@ -117,6 +158,7 @@ object AgentSession {
     fun markRead() {
         markedRead = true
         _unreadCount.value = 0
+        AgentSessionStore.schedulePersist()
     }
 
     /** User sends a message from the chat input. */
@@ -125,12 +167,6 @@ object AgentSession {
         if (trimmed.isBlank()) return
         appendHistory(role = "user", content = trimmed)
         appendUi(isSelf = true, text = trimmed)
-    }
-
-    /** An event-monitor/timer wakes the conversation; rendered as a system-ish note. */
-    fun wakeFromEvent(text: String) {
-        appendHistory(role = "user", content = text)
-        appendUi(isSelf = false, text = text, isSystem = true)
     }
 
     /** Append a tool-call result back into the history (role=tool). */
@@ -143,6 +179,7 @@ object AgentSession {
             name = toolName,
         )
         trimHistory()
+        AgentSessionStore.schedulePersist()
     }
 
     /** Append a complete assistant message (text and/or tool calls). */
@@ -156,10 +193,14 @@ object AgentSession {
         trimHistory()
         if (text.isNotBlank()) {
             appendUi(isSelf = false, text = text)
-            if (!inChat) _unreadCount.value = _unreadCount.value + 1
+            if (!inChat) {
+                markedRead = false
+                _unreadCount.value = _unreadCount.value + 1
+            }
         }
         _lastText.value = text.take(60).ifBlank { if (toolCalls.isNotEmpty()) "(调用工具中…)" else _lastText.value }
         _lastActiveMillis.value = System.currentTimeMillis()
+        AgentSessionStore.schedulePersist()
     }
 
     /** Append an assistant error note (timeout, engine failure). */
@@ -168,7 +209,11 @@ object AgentSession {
         appendUi(isSelf = false, text = text, isSystem = true)
         _lastText.value = text.take(60)
         _lastActiveMillis.value = System.currentTimeMillis()
-        if (!inChat) _unreadCount.value = _unreadCount.value + 1
+        if (!inChat) {
+            markedRead = false
+            _unreadCount.value = _unreadCount.value + 1
+        }
+        AgentSessionStore.schedulePersist()
     }
 
     fun setRunStatus(status: AgentRunStatus) {
@@ -206,6 +251,7 @@ object AgentSession {
     private fun appendHistory(role: String, content: String) {
         _history.value = _history.value + AgentMessage(role = role, content = content)
         trimHistory()
+        AgentSessionStore.schedulePersist()
     }
 
     private fun appendUi(isSelf: Boolean, text: String, isSystem: Boolean = false) {
@@ -216,11 +262,27 @@ object AgentSession {
             time = System.currentTimeMillis(),
             isSystem = isSystem,
         )
+        AgentSessionStore.schedulePersist()
     }
 
+    /**
+     * Trim history to [MAX_HISTORY] while preserving assistant.tool_calls + matching
+     * tool-result pairs (never leave a half turn at the start of the window).
+     */
     private fun trimHistory() {
-        if (_history.value.size > MAX_HISTORY) {
-            _history.value = _history.value.takeLast(MAX_HISTORY)
+        val current = _history.value
+        if (current.size <= MAX_HISTORY) return
+        var start = current.size - MAX_HISTORY
+        while (start > 0 && start < current.size && current[start].role == "tool") {
+            start--
         }
+        // If we landed on an assistant with tool_calls, keep it; if mid-pair, step back.
+        if (start > 0 && current[start].role == "tool") {
+            // Find preceding assistant
+            var i = start
+            while (i > 0 && current[i].role == "tool") i--
+            start = i
+        }
+        _history.value = current.drop(start)
     }
 }

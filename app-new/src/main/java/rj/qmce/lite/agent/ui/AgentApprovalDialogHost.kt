@@ -24,19 +24,26 @@ import rj.qmce.lite.agent.ApprovalController
 fun AgentApprovalDialogHost() {
     val pending by ApprovalController.pending.collectAsState()
     val current = pending.firstOrNull() ?: return
+    val total = pending.size
+    val index = 1
 
     AlertDialog(
         visible = true,
         onDismissRequest = { ApprovalController.decide(current.id, allow = false) },
-        title = { Text("Fluoxetine 请求批准") },
+        title = {
+            Text(
+                if (total > 1) "Fluoxetine 请求批准（$index/$total）"
+                else "Fluoxetine 请求批准",
+            )
+        },
         text = {
             Text(
                 buildString {
                     append(current.toolName)
                     append("\n")
-                    append(current.summary.take(120))
+                    append(current.summary.take(160))
                 },
-                maxLines = 5,
+                maxLines = 6,
                 overflow = TextOverflow.Ellipsis,
             )
         },

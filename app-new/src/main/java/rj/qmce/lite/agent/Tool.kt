@@ -29,6 +29,7 @@ abstract class Tool(
             "parameters" to mapOf(
                 "type" to "object",
                 "properties" to inputSchema,
+                "required" to inputSchema.keys.toList(),
             ),
         ),
     )

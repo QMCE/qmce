@@ -18,7 +18,7 @@ class QmceWatchlistTileService : TileService() {
         requestParams: RequestBuilders.TileRequest,
     ): ListenableFuture<TileBuilders.Tile> {
         val prefs = getSharedPreferences(SettingsViewModel.PREFERENCES_NAME, MODE_PRIVATE)
-        val enabled = prefs.getBoolean(SettingsViewModel.KEY_WEAR_TILES, true)
+        val enabled = prefs.getBoolean(SettingsViewModel.KEY_WEAR_TILES, false)
         val loggedIn = runCatching {
             QmceApplication.ensureRuntime()?.isLogin() == true
         }.getOrDefault(false)
@@ -45,7 +45,7 @@ class QmceWatchlistTileService : TileService() {
             }
             QmceWatchlistTileLayouts.RowData(
                 name = entry.name,
-                abstract = contact?.let(QmceRecentContactText::abstractText) ?: "无摘要",
+                abstract = QmceRecentContactText.tileSubtitle(contact, entry.name),
                 peerUid = entry.peerUid,
                 peerUin = entry.peerUin,
                 chatType = entry.chatType,

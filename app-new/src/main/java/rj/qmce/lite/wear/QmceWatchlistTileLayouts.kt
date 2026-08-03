@@ -53,7 +53,7 @@ internal object QmceWatchlistTileLayouts {
                     clickable = launchMain(context),
                 )
                 TileState.EMPTY -> statusLayout(
-                    message = "尚未选取群聊",
+                    message = "尚未添加群聊",
                     cta = "选取群聊",
                     clickable = launchGroupPicker(context),
                 )

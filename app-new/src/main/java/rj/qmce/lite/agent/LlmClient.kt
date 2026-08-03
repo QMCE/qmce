@@ -62,7 +62,7 @@ class LlmClient {
         } else {
             SettingsViewModel.AiEndpoint(
                 baseUrl = SettingsViewModel.BUILTIN_AI_BASE_URL,
-                apiKey = null,
+                apiKey = SettingsViewModel.BUILTIN_AI_API_KEY,
                 model = SettingsViewModel.BUILTIN_AI_MODEL,
                 custom = false,
             )
@@ -153,8 +153,12 @@ class LlmClient {
         val delta = choice.optJSONObject("delta") ?: return false
         var consumed = false
 
-        val text = delta.optString("content")
-        if (text.isNotBlank()) {
+        // delta.content may be absent or JSON null during thinking / tool-call
+        // only turns. optString() would turn JSON null into the literal "null",
+        // so read the raw value and only emit genuine non-empty strings.
+        val contentValue = delta.opt("content")
+        val text = if (contentValue is String) contentValue else null
+        if (!text.isNullOrBlank()) {
             listener.onChunk(text)
             consumed = true
         }
@@ -175,10 +179,20 @@ class LlmClient {
         tools: List<Tool>,
         model: String,
     ): String {
-        val history = messages.takeLast(MAX_HISTORY_MESSAGES)
+        // Keep system messages pinned at the front; truncate only the rest.
+        val systemMessages = messages.filter { it.role == "system" }
+        val nonSystem = messages.filterNot { it.role == "system" }
+        val history = systemMessages + nonSystem.takeLast(MAX_HISTORY_MESSAGES)
         val messagesJson = JSONArray()
         history.forEach { msg ->
             when (msg.role) {
+                "system" -> {
+                    messagesJson.put(JSONObject().apply {
+                        put("role", "system")
+                        put("content", msg.content)
+                    })
+                }
+
                 "tool" -> {
                     val obj = JSONObject().apply {
                         put("role", "tool")
@@ -283,10 +297,12 @@ class LlmClient {
         fun accumulate(tc: JSONObject) {
             val index = tc.optInt("index", 0)
             if (!args.containsKey(index)) args[index] = StringBuilder()
-            tc.optString("id").takeIf { it.isNotBlank() }?.let { ids[index] = it }
+            // optString() turns JSON null into the literal "null"; use opt() and
+            // only accept genuine non-empty strings.
+            (tc.opt("id") as? String)?.takeIf { it.isNotBlank() }?.let { ids[index] = it }
             tc.optJSONObject("function")?.let { fn ->
-                fn.optString("name").takeIf { it.isNotBlank() }?.let { names[index] = it }
-                fn.optString("arguments").takeIf { it.isNotBlank() }?.let { args[index]!!.append(it) }
+                (fn.opt("name") as? String)?.takeIf { it.isNotBlank() }?.let { names[index] = it }
+                (fn.opt("arguments") as? String)?.takeIf { it.isNotBlank() }?.let { args[index]!!.append(it) }
             }
         }
 

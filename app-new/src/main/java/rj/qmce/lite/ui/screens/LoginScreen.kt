@@ -107,6 +107,7 @@ fun LoginScreen(
 ) {
     val qrBitmap by vm.qrBitmap.collectAsState()
     val statusText by vm.statusText.collectAsState()
+    val qrRemainingSec by vm.qrRemainingSec.collectAsState()
     val loginUiState by vm.loginUiState.collectAsState()
     val isBusy by vm.isBusy.collectAsState()
     val logText by vm.logText.collectAsState()
@@ -130,9 +131,7 @@ fun LoginScreen(
         vm.loginResult.collect { (uin, account) -> onLoginSuccess(uin, account) }
     }
     LaunchedEffect(loginUiState) {
-        if (loginUiState !is AuthViewModel.LoginUiState.Error &&
-            loginUiState !is AuthViewModel.LoginUiState.Expired
-        ) {
+        if (loginUiState !is AuthViewModel.LoginUiState.Error) {
             showErrorDetail = false
         }
         if (loginUiState !is AuthViewModel.LoginUiState.AwaitingAgreement) {
@@ -168,13 +167,9 @@ fun LoginScreen(
         )
 
         LoginGuideStep.Qr -> {
-            if (showErrorDetail) {
+            if (showErrorDetail && loginUiState is AuthViewModel.LoginUiState.Error) {
                 LoginErrorDetailScreen(
-                    message = when (val state = loginUiState) {
-                        is AuthViewModel.LoginUiState.Error -> state.message
-                        is AuthViewModel.LoginUiState.Expired -> "二维码已过期，请重新获取"
-                        else -> statusText
-                    },
+                    message = (loginUiState as AuthViewModel.LoginUiState.Error).message,
                     logText = logText,
                     onRelogin = {
                         showErrorDetail = false
@@ -186,6 +181,7 @@ fun LoginScreen(
                 QrLoginGuide(
                     qrBitmap = qrBitmap,
                     statusText = statusText,
+                    qrRemainingSec = qrRemainingSec,
                     uiState = loginUiState,
                     isBusy = isBusy,
                     scannedAccount = scannedAccount,
@@ -357,6 +353,7 @@ private fun ScreenTypeGuide(
 private fun QrLoginGuide(
     qrBitmap: Bitmap?,
     statusText: String,
+    qrRemainingSec: Long,
     uiState: AuthViewModel.LoginUiState,
     isBusy: Boolean,
     scannedAccount: String?,
@@ -372,14 +369,14 @@ private fun QrLoginGuide(
     BackHandler(onBack = onBack)
     val transformationSpec = rememberTransformationSpec()
     val showConfirm = uiState is AuthViewModel.LoginUiState.AwaitingAgreement
-    val showError = uiState is AuthViewModel.LoginUiState.Error ||
-            uiState is AuthViewModel.LoginUiState.Expired
+    val showLoginError = uiState is AuthViewModel.LoginUiState.Error
+    val showExpired = uiState is AuthViewModel.LoginUiState.Expired
     val showLoading = uiState is AuthViewModel.LoginUiState.Preparing ||
             uiState is AuthViewModel.LoginUiState.RequestingQr ||
             uiState is AuthViewModel.LoginUiState.WaitingPhoneConfirm ||
             uiState is AuthViewModel.LoginUiState.ExchangingTicket ||
             uiState is AuthViewModel.LoginUiState.Binding ||
-            (qrBitmap == null && !showError && !showConfirm)
+            (qrBitmap == null && !showLoginError && !showExpired && !showConfirm)
 
     GuideScrollColumn(
         edgeButton = when {
@@ -405,7 +402,7 @@ private fun QrLoginGuide(
                     }
                 }
             }
-            showError -> {
+            showLoginError -> {
                 {
                     EdgeButton(
                         onClick = onShowErrorDetail,
@@ -419,6 +416,23 @@ private fun QrLoginGuide(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text("错误信息")
+                    }
+                }
+            }
+            showExpired -> {
+                {
+                    EdgeButton(
+                        onClick = onRetry,
+                        modifier = Modifier.fillMaxWidth(),
+                        buttonSize = EdgeButtonSize.Large,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("重新获取")
                     }
                 }
             }
@@ -440,7 +454,8 @@ private fun QrLoginGuide(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 when {
-                    showError -> LoginErrorWarning()
+                    showLoginError -> LoginErrorWarning()
+                    showExpired -> LoginExpiredContent()
                     showConfirm -> LoginConfirmContent(
                         account = scannedAccount,
                         statusText = statusText,
@@ -454,6 +469,11 @@ private fun QrLoginGuide(
                         qrBitmap = qrBitmap,
                         isBusy = isBusy,
                         canRefresh = uiState is AuthViewModel.LoginUiState.QrReady,
+                        remainingSec = if (uiState is AuthViewModel.LoginUiState.QrReady) {
+                            qrRemainingSec
+                        } else {
+                            null
+                        },
                         onRetry = onRetry,
                     )
                     else -> LoginLoadingContent(uiState = uiState, statusText = statusText)
@@ -468,6 +488,7 @@ private fun QrCodeContent(
     qrBitmap: Bitmap,
     isBusy: Boolean,
     canRefresh: Boolean,
+    remainingSec: Long? = null,
     onRetry: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -520,6 +541,16 @@ private fun QrCodeContent(
             contentScale = ContentScale.Fit,
         )
     }
+    if (remainingSec != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "剩余 ${remainingSec}s",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = scheme.onSurface,
+            textAlign = TextAlign.Center,
+        )
+    }
     if (isBusy) {
         Spacer(Modifier.height(10.dp))
         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -539,11 +570,37 @@ private fun QrCodeContent(
             Icon(
                 imageVector = Icons.Default.Refresh,
                 contentDescription = null,
+                tint = scheme.onSurface,
             )
         },
     ) {
-        Text("刷新登陆二维码", style = MaterialTheme.typography.bodySmall)
+        Text(
+            "刷新登陆二维码",
+            style = MaterialTheme.typography.bodySmall,
+            color = scheme.onSurface,
+        )
     }
+}
+
+@Composable
+private fun LoginExpiredContent() {
+    val scheme = MaterialTheme.colorScheme
+    LoginGuideHeaderIcon()
+    Spacer(Modifier.height(18.dp))
+    Text(
+        "二维码已过期",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        color = scheme.onBackground,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "请点击下方重新获取",
+        style = MaterialTheme.typography.bodySmall,
+        textAlign = TextAlign.Center,
+        color = scheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -761,22 +818,32 @@ private fun GuideActionButton(
     transformation: SurfaceTransformation,
     enabled: Boolean = true,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val contentColor = if (enabled) scheme.onSurface else scheme.onSurface.copy(alpha = 0.38f)
+    val subtitleColor = if (enabled) scheme.onSurfaceVariant else scheme.onSurfaceVariant.copy(alpha = 0.38f)
     Button(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier.fillMaxWidth(),
         transformation = transformation,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+        colors = ButtonDefaults.filledTonalButtonColors(
+            containerColor = scheme.surfaceContainerHigh,
+            contentColor = scheme.onSurface,
+            disabledContainerColor = scheme.surfaceContainerHigh.copy(alpha = 0.38f),
+            disabledContentColor = scheme.onSurface.copy(alpha = 0.38f),
         ),
         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
-        icon = { Icon(icon, contentDescription = null) },
+        icon = { Icon(icon, contentDescription = null, tint = contentColor) },
         secondaryLabel = {
-            Text(subtitle, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                subtitle,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = subtitleColor,
+            )
         },
     ) {
-        Text(title, fontWeight = FontWeight.Medium, maxLines = 1)
+        Text(title, fontWeight = FontWeight.Medium, maxLines = 1, color = contentColor)
     }
 }
 

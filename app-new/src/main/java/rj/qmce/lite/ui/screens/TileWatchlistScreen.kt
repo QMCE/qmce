@@ -3,6 +3,8 @@ package rj.qmce.lite.ui.screens
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -10,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -32,14 +35,21 @@ fun TileWatchlistScreen(
     @Suppress("UNUSED_PARAMETER") onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    var watchlist by remember {
-        mutableStateOf(QmceWatchlistStore.load(context))
-    }
+    val allWatchlist by QmceWatchlistStore.entries.collectAsState()
+    val watchlist = remember(allWatchlist) { allWatchlist }
     var pinned by remember {
         mutableStateOf(QmcePinnedComplicationStore.load(context))
     }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
+
+    LaunchedEffect(Unit) {
+        QmceWatchlistStore.load(context)
+    }
+    LifecycleResumeEffect(Unit) {
+        QmceWatchlistStore.load(context)
+        onPauseOrDispose { }
+    }
 
     QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
@@ -67,12 +77,21 @@ fun TileWatchlistScreen(
                         .transformedHeight(this, transformationSpec),
                 )
             }
+            if (watchlist.isEmpty()) {
+                item(key = "watchlist-empty") {
+                    Text(
+                        "尚未添加群聊",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec),
+                    )
+                }
+            }
             watchlist.forEach { entry ->
                 item(key = "wl-${entry.chatType}-${entry.peerUid}") {
                     Button(
                         onClick = {
                             QmceWatchlistStore.remove(context, entry.peerUid, entry.chatType)
-                            watchlist = QmceWatchlistStore.load(context)
                             QmceWearSurfaces.requestDataRefresh(context)
                         },
                         modifier = Modifier
@@ -105,7 +124,6 @@ fun TileWatchlistScreen(
                         onClick = {
                             if (!inList) {
                                 QmceWatchlistStore.add(context, entry)
-                                watchlist = QmceWatchlistStore.load(context)
                             }
                             QmcePinnedComplicationStore.save(
                                 context,

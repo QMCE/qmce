@@ -599,8 +599,9 @@ fun SyncDataSettingsScreen(
     val operationStatus by myVm.operationStatus.collectAsState()
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    val watchlistCount = rj.qmce.lite.wear.QmceWatchlistStore.load(context)
-        .count { it.chatType == 2 }
+    val watchlistEntries by rj.qmce.lite.wear.QmceWatchlistStore.entries.collectAsState()
+    LaunchedEffect(Unit) { rj.qmce.lite.wear.QmceWatchlistStore.load(context) }
+    val watchlistCount = watchlistEntries.count { it.chatType == 2 }
     val isWear = rj.qmce.lite.util.QmceDevice.isWear(context)
     QmceScreenScaffold(
         scrollState = listState,

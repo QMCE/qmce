@@ -70,7 +70,7 @@ fun ProfileScreen(
         ?.takeIf(File::isFile)
     val avatarModel: Any? = localAvatar ?: buddy.avatarUrls.firstOrNull()
     val avatarSource = localAvatar?.absolutePath ?: buddy.avatarUrls.firstOrNull()
-    val displayName = buddy.remark.ifBlank { buddy.nick }.ifBlank { "QQ用户" }
+    val displayName = buddy.displayName()
 
     avatarTarget?.let { target ->
         FullscreenMediaViewer(

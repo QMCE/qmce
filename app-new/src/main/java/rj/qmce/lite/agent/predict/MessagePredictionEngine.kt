@@ -15,6 +15,7 @@ import rj.qmce.lite.agent.ReadOnlyTool
 import rj.qmce.lite.agent.ToolResult
 import rj.qmce.lite.agent.kernel.msgRecordToText
 import rj.qmce.lite.data.chat.ChatRepository
+import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.util.QmceLog
 
 /**
@@ -116,9 +117,10 @@ object MessagePredictionEngine {
     ): PredictionUiState {
         val collected = CollectState(peerUid, chatType)
         collected.messages.addAll(initial.take(INITIAL_COUNT))
+        val selfName = resolveSelfName()
         QmceLog.d(
             TAG,
-            "predict start peer=$peerUid chatType=$chatType seed=${collected.messages.size}",
+            "predict start peer=$peerUid chatType=$chatType seed=${collected.messages.size} self=$selfName",
         )
 
         try {
@@ -134,7 +136,7 @@ object MessagePredictionEngine {
                 val textBuffer = StringBuilder()
                 val request = client.stream(
                     messages = listOf(
-                        AgentMessage(role = "system", content = SYSTEM_PROMPT),
+                        AgentMessage(role = "system", content = systemPromptFor(selfName)),
                         AgentMessage(role = "user", content = transcript),
                     ),
                     tools = listOf(collected.tool()),
@@ -260,5 +262,16 @@ object MessagePredictionEngine {
         val error: String? = null,
     )
 
-    private const val SYSTEM_PROMPT = "你是 Fluoxetine，QQ 手表里的智能回复助手。基于下面的聊天记录，预测用户接下来最可能发送的 1~3 条消息。要求：口语自然、贴合上下文与说话风格；群聊考虑回复最新话题；只输出一个 JSON 字符串数组（如 [\"好的，马上到\",\"哈哈哈\",\"晚上一起吃饭吗？\"]），不要输出任何其他文字；若上下文不足可调用 get_more_messages 获取更多历史。"
+    /** Best-effort current logged-in user's display name (fall back to QQ number). */
+    private fun resolveSelfName(): String {
+        val runtime = runCatching { QmceApplication.ensureRuntime() }.getOrNull() ?: return "用户"
+        val uin = runCatching { runtime.currentUin.orEmpty() }.getOrDefault("")
+        val nick = runCatching {
+            KernelBridge.getSelfProfileService()?.getCurrentAccountNickName(uin)
+        }.getOrNull()?.trim()
+        return nick?.takeIf { it.isNotBlank() } ?: uin.ifBlank { "用户" }
+    }
+
+    private fun systemPromptFor(selfName: String): String =
+        "你是智能回复助手，现在代替 QQ 用户「$selfName」预测其接下来最可能发送的消息。基于下面的聊天记录，预测该用户最可能发送的 1~3 条消息。要求：口语自然、贴合上下文与该用户的说话风格；群聊考虑回复最新话题；只输出一个 JSON 字符串数组（如 [\"好的，马上到\",\"哈哈哈\",\"晚上一起吃饭吗？\"]），不要输出任何其他文字；若上下文不足可调用 get_more_messages 获取更多历史。"
 }

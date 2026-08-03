@@ -265,6 +265,7 @@ fun ChatDetailScreen(
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var followNewMessages by remember(peerUid, chatType) { mutableStateOf(true) }
     var atBottom by remember(peerUid, chatType) { mutableStateOf(true) }
+    var showJumpBottom by remember(peerUid, chatType) { mutableStateOf(false) }
     val listScrollScope = rememberCoroutineScope()
     var isHistoryRequestPending by remember(peerUid, chatType) { mutableStateOf(false) }
     var pendingHistoryAnchor by remember(peerUid, chatType) { mutableStateOf<HistoryAnchor?>(null) }
@@ -506,7 +507,24 @@ fun ChatDetailScreen(
                                         state.firstVisibleItemOffset < previous.firstVisibleItemOffset
                                 )
             } == true
+            val movedTowardBottom = previousState?.let { previous ->
+                state.firstVisibleItemIndex > previous.firstVisibleItemIndex ||
+                        (
+                                state.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
+                                        state.firstVisibleItemOffset > previous.firstVisibleItemOffset
+                                )
+            } == true
             atBottom = state.atBottom
+            if (state.atBottom) {
+                showJumpBottom = false
+            } else if (state.isScrolling) {
+                when {
+                    movedTowardBottom -> showJumpBottom = true
+                    movedTowardTop -> showJumpBottom = false
+                }
+            } else {
+                showJumpBottom = false
+            }
             if (state.isScrolling) {
                 followNewMessages = state.atBottom && !movedTowardTop
             }
@@ -791,7 +809,7 @@ fun ChatDetailScreen(
                             }
                             }
                             val showScrollToBottom =
-                                initialPositioned && !multiSelectMode && !atBottom
+                                initialPositioned && !multiSelectMode && showJumpBottom
                             val showMessageNav =
                                 initialPositioned &&
                                     !multiSelectMode &&
@@ -1207,20 +1225,6 @@ private fun CallPage(
     val transformationSpec = rememberTransformationSpec()
     QmceScreenScaffold(
         scrollState = listState,
-        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
-        edgeButton = {
-            EdgeButton(
-                onClick = { onRequestCall(CallMode.Voice) },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Call,
-                    contentDescription = null,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text("语音通话")
-            }
-        },
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -1265,6 +1269,28 @@ private fun CallPage(
                         }
                         .padding(horizontal = 18.dp, vertical = 4.dp),
                 )
+            }
+            item(key = "call-voice") {
+                Button(
+                    onClick = { onRequestCall(CallMode.Voice) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Call, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("语音通话")
+                }
             }
             item(key = "call-video") {
                 Button(
@@ -1463,11 +1489,11 @@ internal fun MessageBubble(
     }
     val containerColor = when {
         hasMediaBubbleBackground(message) -> Color.Transparent
-        message.isSelf -> MaterialTheme.colorScheme.primary
+        message.isSelf -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val messageContentColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.onPrimary
+        MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }

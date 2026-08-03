@@ -59,7 +59,7 @@ class MessageSummaryClient {
         } else {
             SettingsViewModel.AiEndpoint(
                 baseUrl = SettingsViewModel.BUILTIN_AI_BASE_URL,
-                apiKey = null,
+                apiKey = SettingsViewModel.BUILTIN_AI_API_KEY,
                 model = SettingsViewModel.BUILTIN_AI_MODEL,
                 custom = false,
             )

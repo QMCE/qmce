@@ -794,6 +794,21 @@ fun ChatInputScreen(
                                 initial = msgs,
                             )
                         },
+                        onRetry = {
+                            val msgs = vm.messages.value.takeLast(20).map { ui ->
+                                PredictionMessage(
+                                    sender = if (ui.isSelf) "我" else ui.senderNick.ifBlank { ui.senderUid },
+                                    text = ui.text,
+                                    msgId = ui.msgId,
+                                    msgTime = ui.time,
+                                )
+                            }
+                            MessagePredictionController.retry(
+                                peerUid = peerUid,
+                                chatType = chatType,
+                                initial = msgs,
+                            )
+                        },
                         onSendSuggestion = { suggestion ->
                             MessagePredictionController.reset()
                             onSend(suggestion, activeReplyTarget)
@@ -829,6 +844,7 @@ fun ChatInputScreen(
 private fun PredictionSection(
     predictionState: PredictionUiState,
     onPredict: () -> Unit,
+    onRetry: () -> Unit,
     onSendSuggestion: (String) -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -883,15 +899,24 @@ private fun PredictionSection(
         }
 
         is PredictionUiState.Error -> {
-            Text(
-                text = predictionState.message,
-                color = scheme.error,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = predictionState.message,
+                    color = scheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                CompactButton(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                ) { Text("重试") }
+            }
         }
     }
 }

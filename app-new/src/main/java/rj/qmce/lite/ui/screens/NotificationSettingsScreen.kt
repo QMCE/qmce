@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -46,7 +47,9 @@ fun NotificationSettingsScreen(
     val transformationSpec = rememberTransformationSpec()
     val isWear = QmceDevice.isWear(context)
     val showLiveUpdates = isWear && Build.VERSION.SDK_INT >= 37
-    val watchlistCount = QmceWatchlistStore.load(context).count { it.chatType == 2 }
+    val watchlistEntries by QmceWatchlistStore.entries.collectAsState()
+    LaunchedEffect(Unit) { QmceWatchlistStore.load(context) }
+    val watchlistCount = watchlistEntries.count { it.chatType == 2 }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { }

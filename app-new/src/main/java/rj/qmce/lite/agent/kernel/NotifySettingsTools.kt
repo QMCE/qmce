@@ -1,6 +1,8 @@
 package rj.qmce.lite.agent.kernel
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rj.qmce.lite.agent.ToolResult
 import rj.qmce.lite.agent.WriteTool
@@ -8,6 +10,7 @@ import rj.qmce.lite.data.chat.ChatSettingsRepository
 import rj.qmce.lite.data.notify.ContactNotifyRepository
 import rj.qmce.lite.data.notify.GroupNotifyRepository
 import rj.qmce.lite.data.notify.UiGroupNotice
+import rj.qmce.lite.util.QmceLog
 
 /** Approve a friend request. */
 class ApproveFriendTool : WriteTool(
@@ -21,13 +24,13 @@ class ApproveFriendTool : WriteTool(
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val uid = requireString(input, "uid") ?: return err("缺少 uid")
-        val reqTime = requireLong(input, "reqTime") ?: System.currentTimeMillis()
+        val reqTime = requireLong(input, "reqTime") ?: (System.currentTimeMillis() / 1000L)
         val accept = (input["accept"] as? Boolean) ?: true
         val repository = ContactNotifyRepository(onListChanged = {})
         val deferred = CompletableDeferred<Boolean>()
         repository.approve(uid, reqTime, accept) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("approve_friend failed: $message")
+            if (!success) QmceLog.w("QMCE-Agent", "approve_friend failed: $message")
         }
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
             ok("好友申请已处理")
@@ -56,7 +59,7 @@ class SetChatTopTool : WriteTool(
         val deferred = CompletableDeferred<Boolean>()
         val requested = ChatSettingsRepository.setTop(chatType, peerUid, peerUin, enabled) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("set_chat_top failed: $message")
+            if (!success) QmceLog.w("QMCE-Agent", "set_chat_top failed: $message")
         }
         if (!requested) return err("设置置顶请求失败")
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
@@ -86,7 +89,7 @@ class SetChatMutedTool : WriteTool(
         val deferred = CompletableDeferred<Boolean>()
         val requested = ChatSettingsRepository.setMuted(chatType, peerUid, peerUin, muted) { success, message ->
             deferred.complete(success)
-            if (!success) kotlin.io.println("set_chat_muted failed: $message")
+            if (!success) QmceLog.w("QMCE-Agent", "set_chat_muted failed: $message")
         }
         if (!requested) return err("设置免打扰请求失败")
         return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
@@ -111,22 +114,33 @@ class ApproveGroupNoticeTool : WriteTool(
         val seq = requireLong(input, "seq") ?: return err("缺少 seq")
         val groupCode = requireLong(input, "groupCode") ?: return err("缺少 groupCode")
         val accept = (input["accept"] as? Boolean) ?: true
-        val noticesHolder = mutableListOf<UiGroupNotice>()
+
+        val noticesDeferred = CompletableDeferred<List<UiGroupNotice>>()
         val repository = GroupNotifyRepository { list ->
-            synchronized(noticesHolder) { noticesHolder.clear(); noticesHolder.addAll(list) }
+            if (!noticesDeferred.isCompleted && list.isNotEmpty()) {
+                noticesDeferred.complete(list)
+            }
         }
-        val notice = synchronized(noticesHolder) {
-            noticesHolder.firstOrNull { it.seq == seq && it.groupCode == groupCode }
-        } ?: return err("找不到对应的群通知（seq=$seq）")
-        val deferred = CompletableDeferred<Boolean>()
-        repository.operate(notice, accept) { success, message ->
-            deferred.complete(success)
-            if (!success) kotlin.io.println("approve_group_notice failed: $message")
+        withContext(Dispatchers.IO) {
+            repository.start()
+            repository.refresh()
         }
-        return if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
-            ok("群通知已处理")
-        } else {
-            err("群通知处理失败")
+        return try {
+            val notices = withTimeoutOrNull(8_000) { noticesDeferred.await() } ?: emptyList()
+            val notice = notices.firstOrNull { it.seq == seq && it.groupCode == groupCode }
+                ?: return err("找不到对应的群通知（seq=$seq）")
+            val deferred = CompletableDeferred<Boolean>()
+            repository.operate(notice, accept) { success, message ->
+                deferred.complete(success)
+                if (!success) QmceLog.w("QMCE-Agent", "approve_group_notice failed: $message")
+            }
+            if (withTimeoutOrNull(5_000) { deferred.await() } == true) {
+                ok("群通知已处理")
+            } else {
+                err("群通知处理失败")
+            }
+        } finally {
+            repository.stop()
         }
     }
 }

@@ -80,6 +80,20 @@ class ContactNotifyRepository(
         }
     }
 
+    /** Re-fetch the buddy request list so the UI reflects approvals/decisions. */
+    fun refresh() {
+        val service = buddyService ?: KernelBridge.getBuddyService() ?: return
+        runCatching {
+            service.getBuddyReq(object : IOperateCallback {
+                override fun onResult(code: Int, errMsg: String?) {
+                    Log.d(TAG, "buddy refresh: code=$code errMsg=$errMsg")
+                }
+            })
+        }.onFailure {
+            Log.w(TAG, "buddy refresh failed", it)
+        }
+    }
+
     fun approve(uid: String, reqTime: Long, accept: Boolean, callback: (Boolean, String?) -> Unit) {
         val service = buddyService ?: KernelBridge.getBuddyService()
         if (service == null) {

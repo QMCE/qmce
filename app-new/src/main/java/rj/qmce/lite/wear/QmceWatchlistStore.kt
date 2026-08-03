@@ -1,6 +1,9 @@
 package rj.qmce.lite.wear
 
 import android.content.Context
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import rj.qmce.lite.viewmodel.SettingsViewModel
@@ -13,9 +16,39 @@ data class WatchlistEntry(
 )
 
 object QmceWatchlistStore {
-    const val MAX_ENTRIES = 5
+    const val MAX_ENTRIES = 2
+
+    private val _entries = MutableStateFlow<List<WatchlistEntry>>(emptyList())
+    val entries: StateFlow<List<WatchlistEntry>> = _entries.asStateFlow()
 
     fun load(context: Context): List<WatchlistEntry> {
+        val loaded = readFromPrefs(context)
+        _entries.value = loaded
+        return loaded
+    }
+
+    fun save(context: Context, entries: List<WatchlistEntry>) {
+        val normalized = entries.take(MAX_ENTRIES)
+        writeToPrefs(context, normalized)
+        _entries.value = normalized
+    }
+
+    fun add(context: Context, entry: WatchlistEntry): Boolean {
+        val current = load(context).toMutableList()
+        if (current.any { it.peerUid == entry.peerUid && it.chatType == entry.chatType }) {
+            return false
+        }
+        if (current.size >= MAX_ENTRIES) return false
+        current.add(entry)
+        save(context, current)
+        return true
+    }
+
+    fun remove(context: Context, peerUid: String, chatType: Int) {
+        save(context, load(context).filterNot { it.peerUid == peerUid && it.chatType == chatType })
+    }
+
+    private fun readFromPrefs(context: Context): List<WatchlistEntry> {
         val raw = context.getSharedPreferences(
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
@@ -40,9 +73,9 @@ object QmceWatchlistStore {
         }.getOrDefault(emptyList())
     }
 
-    fun save(context: Context, entries: List<WatchlistEntry>) {
+    private fun writeToPrefs(context: Context, entries: List<WatchlistEntry>) {
         val arr = JSONArray()
-        entries.take(MAX_ENTRIES).forEach { e ->
+        entries.forEach { e ->
             arr.put(
                 JSONObject()
                     .put("peerUid", e.peerUid)
@@ -55,20 +88,5 @@ object QmceWatchlistStore {
             .edit()
             .putString(SettingsViewModel.KEY_WATCHLIST_JSON, arr.toString())
             .apply()
-    }
-
-    fun add(context: Context, entry: WatchlistEntry): Boolean {
-        val current = load(context).toMutableList()
-        if (current.any { it.peerUid == entry.peerUid && it.chatType == entry.chatType }) {
-            return false
-        }
-        if (current.size >= MAX_ENTRIES) return false
-        current.add(entry)
-        save(context, current)
-        return true
-    }
-
-    fun remove(context: Context, peerUid: String, chatType: Int) {
-        save(context, load(context).filterNot { it.peerUid == peerUid && it.chatType == chatType })
     }
 }

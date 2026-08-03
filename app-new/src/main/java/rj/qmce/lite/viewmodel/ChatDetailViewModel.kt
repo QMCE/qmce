@@ -34,6 +34,7 @@ import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.ai.MessageSummaryClient
 import rj.qmce.lite.data.chat.ChatRepository
+import rj.qmce.lite.data.chat.ChatSendPipeline
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
@@ -578,18 +579,18 @@ class ChatDetailViewModel : ViewModel() {
                     TAG,
                     "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue"
                 )
-                if (errorCode == 0) {
+                if (errorCode == 0 || list.isNullOrEmpty()) {
                     synchronized(messageLock) { msgList.clear() }
                     mergeMessages(list.orEmpty(), c)
                     emitMessages()
-                    _hasOlderMessages.value = needContinue
+                    _hasOlderMessages.value = if (errorCode == 0) needContinue else false
                     _statusText.value = ""
                 } else {
                     _statusText.value = "消息记录加载失败: ${errMsg ?: errorCode}"
                 }
             }
         if (!requested) {
-            _statusText.value = "消息记录加载请求失败"
+            _statusText.value = ""
         }
     }
 
@@ -813,102 +814,50 @@ class ChatDetailViewModel : ViewModel() {
             runWhenMessageServiceReady { sendImage(context, uri) }
             return
         }
-
-        // Copy image to a temp file so we can compute md5
-        val tmpFile = File(context.cacheDir, "send_img_${System.currentTimeMillis()}.jpg")
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
-            } ?: run {
-                _statusText.value = "读取图片失败"
-                return
-            }
-        } catch (e: Exception) {
-            _statusText.value = "读取图片失败: ${e.message}"
-            return
-        }
-
-        val md5 = md5File(tmpFile)
-        val fileName = tmpFile.name
-        val fileSize = tmpFile.length()
-
-        // Resolve kernel-managed file paths (original + thumbnail)
-        val origPath = chatRepository.getMobileQQSendPath(
-            RichMediaFilePathInfo(2, 0, md5, fileName, 1, 0, null, "", true),
-        ) ?: tmpFile.absolutePath
-
-        val thumbPath = chatRepository.getMobileQQSendPath(
-            RichMediaFilePathInfo(2, 0, md5, fileName, 2, 720, null, "", true),
-        )
-
-        // Copy to kernel paths if different from tmp
-        if (origPath != tmpFile.absolutePath) {
-            runCatching { tmpFile.copyTo(File(origPath), overwrite = true) }
-        }
-        if (thumbPath != null && thumbPath != tmpFile.absolutePath) {
-            runCatching { tmpFile.copyTo(File(thumbPath), overwrite = true) }
-        }
-
-        // Decode dimensions
-        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(origPath, opts)
-        val width = opts.outWidth.takeIf { it > 0 } ?: 800
-        val height = opts.outHeight.takeIf { it > 0 } ?: 600
-
-        // picType: 0x3E8=jpg, 0x3E9=png, 0x3EA=webp, 0x7D0=gif
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        val picType = when (ext) {
-            "jpg", "jpeg" -> 1000
-            "png" -> 1001
-            "webp" -> 1002
-            "gif" -> 2000
-            "bmp" -> 1005
-            else -> 1001 // default png
-        }
-
-        val picElement = PicElement().apply {
-            sourcePath = origPath
-            this.fileName = fileName
-            this.fileSize = fileSize
-            md5HexStr = md5
-            picWidth = width
-            picHeight = height
-            this.picType = picType
-            picSubType = 0
-            original = true
-            storeID = 0
-        }
-
-        val element = MsgElement().apply {
-            elementType = 2 // PIC
-            elementId = 0
-            this.picElement = picElement
-        }
-        val elements = arrayListOf(element)
-        val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-            Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
-            if (code == 0) {
-                val now = System.currentTimeMillis() / 1000
-                val rec = MsgRecord().apply {
-                    peerUid = c.peerUid
-                    chatType = c.chatType
-                    msgTime = now
-                    senderUin = selfUin
-                    sendNickName = ""
-                    sendStatus = 2
+        val appContext = context.applicationContext
+        _statusText.value = "正在准备图片…"
+        Thread {
+            runCatching {
+                val element = ChatSendPipeline.buildPicElementFromUri(
+                    appContext,
+                    uri,
+                    pathResolver = { info -> chatRepository.getMobileQQSendPath(info) },
+                    md5File = ::md5File,
+                )
+                val elements = arrayListOf(element)
+                val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
+                    Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
+                    if (code == 0) {
+                        val now = System.currentTimeMillis() / 1000
+                        val rec = MsgRecord().apply {
+                            peerUid = c.peerUid
+                            chatType = c.chatType
+                            msgTime = now
+                            senderUin = selfUin
+                            sendNickName = ""
+                            sendStatus = 2
+                        }
+                        runCatching {
+                            val f = MsgRecord::class.java.getDeclaredField("elements")
+                            f.isAccessible = true
+                            f.set(rec, arrayListOf(element))
+                        }
+                        RecentMessageStore.put(peerId, rec)
+                        Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
+                        _statusText.value = ""
+                    } else {
+                        _statusText.value = "发送图片失败: $errMsg"
+                    }
                 }
-                runCatching {
-                    val f = MsgRecord::class.java.getDeclaredField("elements")
-                    f.isAccessible = true
-                    f.set(rec, arrayListOf(element))
-                }
-                RecentMessageStore.put(peerId, rec)
-                Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
-            } else {
-                _statusText.value = "发送图片失败: $errMsg"
+                if (!sent) _statusText.value = "消息服务不可用"
+            }.onFailure {
+                Log.w(TAG, "sendImage failed", it)
+                _statusText.value = "读取图片失败: ${it.message}"
             }
+        }.apply {
+            isDaemon = true
+            start()
         }
-        if (!sent) _statusText.value = "消息服务不可用"
     }
 
     fun sendVideo(context: Context, uri: Uri) {
@@ -1697,12 +1646,36 @@ class ChatDetailViewModel : ViewModel() {
         val records = synchronized(messageLock) { msgList.toList() }
         records.forEach { record ->
             val senderUid = record.senderUid.trim()
-            val senderNick = record.sendNickName?.trim().orEmpty()
+            val senderNick = resolveSenderDisplayName(record)
             if (senderUid.isNotEmpty() && senderNick.isNotEmpty()) {
                 replyNicknameCache.putIfAbsent(senderUid, senderNick)
             }
         }
         _messages.value = records.map(::toUiMsg)
+    }
+
+    private fun resolveSenderDisplayName(rec: MsgRecord): String {
+        if (rec.chatType == 2) {
+            sequenceOf(rec.sendMemberName, rec.sendRemarkName, rec.sendNickName)
+                .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+                .firstOrNull()
+                ?.let { return it }
+            val senderUid = rec.senderUid.trim()
+            if (senderUid.isNotEmpty()) {
+                _groupMembers.value.firstOrNull { it.uid == senderUid }
+                    ?.displayName
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return it }
+                return senderUid
+            }
+            return rec.senderUin.takeIf { it > 0L }?.toString().orEmpty()
+        }
+        return sequenceOf(rec.sendRemarkName, rec.sendNickName)
+            .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
+            ?: rec.senderUid.trim().takeIf { it.isNotEmpty() }
+            ?: rec.senderUin.takeIf { it > 0L }?.toString()
+            ?: ""
     }
 
     private fun toUiMsg(rec: MsgRecord, forwardRootMessageId: Long? = null): UiMsg {
@@ -1712,7 +1685,7 @@ class ChatDetailViewModel : ViewModel() {
             msgId = rec.msgId,
             msgSeq = rec.msgSeq,
             senderUid = rec.senderUid,
-            senderNick = rec.sendNickName ?: "",
+            senderNick = resolveSenderDisplayName(rec),
             time = rec.msgTime,
             peerUid = rec.peerUid,
             chatType = rec.chatType,

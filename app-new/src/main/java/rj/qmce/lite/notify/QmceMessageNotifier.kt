@@ -36,6 +36,7 @@ object QmceMessageNotifier {
     private var registerAttempts = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private var retryRunnable: Runnable? = null
+    private val postedIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
 
     const val EXTRA_PEER_UID = "PEER_UID"
     const val EXTRA_PEER_UIN = "PEER_UIN"
@@ -74,8 +75,10 @@ object QmceMessageNotifier {
     }
 
     fun cancelAllMessageNotifications(context: Context) {
-        // Best-effort: cancel contact channel tags by rebuilding common ids is hard;
-        // cancelAll is too broad (would kill keepalive). Skip blanket cancel.
+        val nm = NotificationManagerCompat.from(context)
+        val ids = synchronized(postedIds) { postedIds.toList().also { postedIds.clear() } }
+        ids.forEach { id -> runCatching { nm.cancel(id) } }
+        Log.i(TAG, "cancelled ${ids.size} tracked message notifications")
     }
 
     private fun tryRegister(app: Context) {
@@ -167,7 +170,7 @@ object QmceMessageNotifier {
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
         )
-        if (!prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, true)) {
+        if (!prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, false)) {
             Log.i(TAG, "gate: notify disabled")
             return
         }
@@ -213,7 +216,7 @@ object QmceMessageNotifier {
         }
 
         val title = QmceRecentContactText.displayName(contact)
-        val text = QmceRecentContactText.abstractText(contact)
+        val text = QmceRecentContactText.abstractText(contact).ifBlank { "新消息" }
         val id = notifyId(peerUid, chatType)
         postNow(
             context,
@@ -251,6 +254,7 @@ object QmceMessageNotifier {
         )
         runCatching {
             NotificationManagerCompat.from(context).notify(id, notification)
+            postedIds.add(id)
             Log.i(TAG, "posted id=$id chatType=${contact.chatType} title=$title")
         }.onFailure { Log.w(TAG, "notify failed", it) }
     }

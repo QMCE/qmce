@@ -606,7 +606,7 @@ private fun WearApp() {
                                     val fakeContact = RecentContactInfo().apply {
                                         peerUid = buddy.uid
                                         peerUin = buddy.uin
-                                        peerName = buddy.remark.ifBlank { buddy.nick }
+                                        peerName = buddy.displayName()
                                         chatType = 1
                                         id = buddy.uin.toString()
                                         avatarPath = buddy.avatarPath
@@ -1310,76 +1310,6 @@ private fun ChatInputRoute(
             }
         },
         onReportingPageChanged = onReportingPageChanged,
-        onBack = { navController.popBackStack() },
-    )
-}
-
-/** Agent chat screen wrapper (reuses AgentChatScreen). */
-@Composable
-private fun AgentChatRoute(
-    onOpenInput: () -> Unit,
-    onBack: () -> Unit,
-) {
-    rj.qmce.lite.agent.ui.AgentChatScreen(
-        onOpenInput = onOpenInput,
-        onBack = onBack,
-    )
-}
-
-/**
- * Agent input route: reuses ChatInputScreen (shared UI + voice-text backfill),
- * but routes plain-text send to the Agent subsystem instead of a real chat.
- */
-@Composable
-private fun AgentChatInputRoute(
-    chatDetailVm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
-    navController: androidx.navigation.NavHostController,
-) {
-    ChatInputScreen(
-        vm = chatDetailVm,
-        peerUid = rj.qmce.lite.agent.AgentSession.PEER_UID,
-        peerUin = "0",
-        chatType = rj.qmce.lite.agent.AgentSession.CHAT_TYPE,
-        editingText = "",
-        replyTarget = null,
-        openToolsOnLaunch = false,
-        onConsumeReplyTarget = chatDetailVm::consumePendingReplyTarget,
-        onSend = { text, _ -> rj.qmce.lite.agent.AgentSubsystem.sendUserMessage(text) },
-        onSendEdited = { text -> rj.qmce.lite.agent.AgentSubsystem.sendUserMessage(text) },
-        onSendMixed = { _, _, _, _, _ ->
-            // Mixed content (images/faces/@) not supported in Agent text input.
-        },
-        onSendVideo = { _ ->
-            // Video sending to the Agent pseudo contact is not supported.
-        },
-        onOpenVoiceRecorder = {
-            navController.navigate("agentVoiceRecord") {
-                launchSingleTop = true
-            }
-        },
-        onReportingPageChanged = {},
-        onBack = { navController.popBackStack() },
-    )
-}
-
-/**
- * Agent voice-to-text route: reuses VoiceRecordScreen; the transcribed text is
- * routed to the Agent input box via the shared pendingVoiceText backfill.
- */
-@Composable
-private fun AgentVoiceRecordRoute(
-    chatDetailVm: rj.qmce.lite.viewmodel.ChatDetailViewModel,
-    navController: androidx.navigation.NavHostController,
-) {
-    VoiceRecordScreen(
-        onSendVoice = { _, _, _ -> },
-        onTranscribedText = { text ->
-            chatDetailVm.setPendingVoiceText(text)
-            navController.popBackStack()
-            navController.navigate("agentChatInput") {
-                launchSingleTop = true
-            }
-        },
         onBack = { navController.popBackStack() },
     )
 }

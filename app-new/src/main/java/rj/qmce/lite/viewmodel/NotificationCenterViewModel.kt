@@ -2,12 +2,13 @@ package rj.qmce.lite.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import rj.qmce.lite.data.notify.ContactNotifyRepository
-import rj.qmce.lite.data.notify.GroupNotifyRepository
+import kotlinx.coroutines.withContext
+import rj.qmce.lite.data.notify.SharedNotifyRepositories
 import rj.qmce.lite.data.notify.UiFriendRequest
 import rj.qmce.lite.data.notify.UiGroupNotice
 import rj.qmce.lite.kernel.KernelBridge
@@ -30,12 +31,15 @@ data class GroupNotifyState(
 
 class NotificationCenterViewModel : ViewModel() {
 
-    private val friendRepo = ContactNotifyRepository { items ->
+    private val friendRepo = SharedNotifyRepositories.friendRepo
+    private val groupRepo = SharedNotifyRepositories.groupRepo
+
+    private val friendListener: (List<UiFriendRequest>) -> Unit = { items ->
         _friendState.update {
             it.copy(loading = false, items = items, error = null)
         }
     }
-    private val groupRepo = GroupNotifyRepository { items ->
+    private val groupListener: (List<UiGroupNotice>) -> Unit = { items ->
         _groupState.update {
             it.copy(loading = false, items = items, error = null)
         }
@@ -54,9 +58,12 @@ class NotificationCenterViewModel : ViewModel() {
         if (friendActive) return
         friendActive = true
         _friendState.value = FriendNotifyState(loading = true)
+        SharedNotifyRepositories.addFriendListener(friendListener)
         viewModelScope.launch {
-            if (!KernelBridge.areCoreServicesReady()) {
-                KernelBridge.awaitCoreServices(timeoutMillis = 15_000)
+            withContext(Dispatchers.IO) {
+                if (!KernelBridge.areCoreServicesReady()) {
+                    KernelBridge.awaitCoreServices(timeoutMillis = 15_000)
+                }
             }
             if (KernelBridge.getBuddyService() == null) {
                 _friendState.update {
@@ -68,14 +75,16 @@ class NotificationCenterViewModel : ViewModel() {
                 }
                 return@launch
             }
-            friendRepo.start()
+            withContext(Dispatchers.IO) { friendRepo.start() }
+            friendRepo.refresh()
         }
     }
 
     fun leaveFriendRequests() {
         if (!friendActive) return
         friendActive = false
-        friendRepo.stop()
+        SharedNotifyRepositories.removeFriendListener(friendListener)
+        // Do not stop shared repos — system notifier owns lifecycle.
         _friendState.value = FriendNotifyState()
     }
 
@@ -83,9 +92,12 @@ class NotificationCenterViewModel : ViewModel() {
         if (groupActive) return
         groupActive = true
         _groupState.value = GroupNotifyState(loading = true)
+        SharedNotifyRepositories.addGroupListener(groupListener)
         viewModelScope.launch {
-            if (!KernelBridge.areCoreServicesReady()) {
-                KernelBridge.awaitCoreServices(timeoutMillis = 15_000)
+            withContext(Dispatchers.IO) {
+                if (!KernelBridge.areCoreServicesReady()) {
+                    KernelBridge.awaitCoreServices(timeoutMillis = 15_000)
+                }
             }
             if (KernelBridge.getGroupService() == null) {
                 _groupState.update {
@@ -97,14 +109,15 @@ class NotificationCenterViewModel : ViewModel() {
                 }
                 return@launch
             }
-            groupRepo.start()
+            withContext(Dispatchers.IO) { groupRepo.start() }
+            groupRepo.refresh()
         }
     }
 
     fun leaveGroupNotices() {
         if (!groupActive) return
         groupActive = false
-        groupRepo.stop()
+        SharedNotifyRepositories.removeGroupListener(groupListener)
         _groupState.value = GroupNotifyState()
     }
 
@@ -122,6 +135,7 @@ class NotificationCenterViewModel : ViewModel() {
                     },
                 )
             }
+            if (success) friendRepo.refresh()
         }
     }
 
@@ -139,12 +153,13 @@ class NotificationCenterViewModel : ViewModel() {
                     },
                 )
             }
+            if (success) groupRepo.refresh()
         }
     }
 
     override fun onCleared() {
-        friendRepo.stop()
-        groupRepo.stop()
+        SharedNotifyRepositories.removeFriendListener(friendListener)
+        SharedNotifyRepositories.removeGroupListener(groupListener)
         super.onCleared()
     }
 }

@@ -77,7 +77,7 @@ class ReadMessagesTool : ReadOnlyTool(
             val sender = record.sendNickName?.takeIf { it.isNotBlank() }
                 ?: record.senderUin.takeIf { it > 0L }?.toString()
                 ?: "未知"
-            "$sender: ${msgRecordToText(record)}"
+            "id=${record.msgId} $sender: ${msgRecordToText(record)}"
         }
         return ok(lines.joinToString("\n"))
     }
@@ -119,7 +119,7 @@ class SendMessageTool : WriteTool(
         val sent = repository.sendMessage(contact, arrayListOf(element)) { code, errMsg ->
             deferred.complete(code == 0)
             if (code != 0) {
-                kotlin.io.println("send_message failed: code=$code err=$errMsg")
+                rj.qmce.lite.util.QmceLog.w("QMCE-Agent", "send_message failed: code=$code err=$errMsg")
             }
         }
         if (!sent) return err("消息服务不可用")
@@ -169,7 +169,7 @@ class RecallMessageTool : WriteTool(
 /** Mark a chat as read. */
 class MarkReadTool : ReadOnlyTool(
     name = "mark_read",
-    description = "将会话标记为已读。参数：peerUid、chatType。",
+    description = "将会话标记为已读（会清除该会话未读数）。参数：peerUid、chatType。",
     inputSchema = mapOf(
         "peerUid" to schemaString("会话 UID"),
         "chatType" to schemaInt("会话类型：1=私聊，2=群聊"),

@@ -73,6 +73,15 @@ fun AgentSettingsScreen(
                     transformation = SurfaceTransformation(transformationSpec),
                 ) { Text("启用 Fluoxetine") }
             }
+            item(key = "agent-send-packet") {
+                SwitchButton(
+                    checked = settings.agentSendPacketEnabled,
+                    onCheckedChange = settingsVm::setAgentSendPacketEnabled,
+                    enabled = settings.agentEnabled,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) { Text("启用 send_packet（高危）") }
+            }
             item(key = "agent-tools-header") {
                 QmceListHeader(
                     text = "已暴露工具",

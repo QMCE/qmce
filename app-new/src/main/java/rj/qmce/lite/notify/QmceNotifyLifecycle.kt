@@ -24,6 +24,7 @@ object QmceNotifyLifecycle {
 
     fun onLoggedOut(context: Context) {
         val app = context.applicationContext
+        QmceMessageNotifier.cancelAllMessageNotifications(app)
         QmceMessageNotifier.stop()
         QmceContactSystemNotifier.stop()
         QmceMessageRefreshScheduler.stop()

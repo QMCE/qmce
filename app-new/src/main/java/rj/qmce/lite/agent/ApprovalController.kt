@@ -90,6 +90,11 @@ object ApprovalController {
     }
 
     private fun summarize(tool: Tool, input: Map<String, Any>): String {
+        if (tool.name == "send_message") {
+            val text = (input["text"] as? String)?.take(80).orEmpty()
+            val peer = (input["peerUid"] as? String).orEmpty()
+            return "发送到 $peer：$text"
+        }
         val sb = StringBuilder(tool.name)
         sb.append("(")
         val entries = input.entries.take(6).joinToString(", ") { (k, v) ->

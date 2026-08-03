@@ -62,7 +62,15 @@ class ContactsViewModel : ViewModel() {
         val avatarUrls: List<String>,
         val categoryId: Int,
         val categoryName: String,
-    )
+    ) {
+        /** C2C: remark > nick > uid > uin */
+        fun displayName(): String =
+            remark.takeIf { it.isNotBlank() }
+                ?: nick.takeIf { it.isNotBlank() }
+                ?: uid.takeIf { it.isNotBlank() }
+                ?: uin.takeIf { it > 0L }?.toString()
+                ?: "QQ用户"
+    }
 
     data class UiCategory(
         val id: Int,
@@ -522,6 +530,8 @@ class ContactsViewModel : ViewModel() {
         val allUids = list.flatMap { it.buddyUids }.distinct()
         val nickMap =
             runCatching { buddySvc.getBuddyNick(ArrayList(allUids)) }.getOrNull() ?: emptyMap()
+        val remarkMap =
+            runCatching { buddySvc.getBuddyRemark(ArrayList(allUids)) }.getOrNull() ?: emptyMap()
         val uinsByUid = LinkedHashMap<String, Long>()
         var lastResolvedCount = -1
 
@@ -531,7 +541,7 @@ class ContactsViewModel : ViewModel() {
                 ?.let { service -> runCatching { SdkCompat.getRecentContactFromCache(service, 1) }.getOrNull() }
                 .orEmpty()
         val initialRecentByUid = initialRecentList.associateBy { it.peerUid }
-        publishCategories(buildCategories(list, nickMap, initialRecentByUid, uinsByUid))
+        publishCategories(buildCategories(list, nickMap, remarkMap, initialRecentByUid, uinsByUid))
         _statusText.value = ""
         _loading.value = false
 
@@ -563,7 +573,7 @@ class ContactsViewModel : ViewModel() {
                     .orEmpty()
             val recentByUid = recentList.associateBy { it.peerUid }
             if (uinsByUid.size != lastResolvedCount || lastResolvedCount == -1) {
-                publishCategories(buildCategories(list, nickMap, recentByUid, uinsByUid))
+                publishCategories(buildCategories(list, nickMap, remarkMap, recentByUid, uinsByUid))
                 _statusText.value = ""
                 lastResolvedCount = uinsByUid.size
                 Log.d(TAG, "contacts avatars: resolved=${uinsByUid.size}/${allUids.size}")
@@ -600,8 +610,7 @@ class ContactsViewModel : ViewModel() {
         }
     }
 
-    private fun buddyDisplayName(buddy: UiBuddy): String =
-        buddy.remark.ifEmpty { buddy.nick }
+    private fun buddyDisplayName(buddy: UiBuddy): String = buddy.displayName()
 
     override fun onCleared() {
         synchronized(loadLock) {
@@ -617,6 +626,7 @@ class ContactsViewModel : ViewModel() {
     private fun buildCategories(
         list: List<BuddyListCategory>,
         nickMap: Map<String, String>,
+        remarkMap: Map<String, String>,
         recentByUid: Map<String?, com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo>,
         uinsByUid: Map<String, Long>,
     ): List<UiCategory> {
@@ -636,8 +646,12 @@ class ContactsViewModel : ViewModel() {
                     UiBuddy(
                         uid = uid,
                         uin = uin,
-                        nick = nickMap[uid]?.takeIf { it.isNotBlank() } ?: uid,
-                        remark = "",
+                        nick = nickMap[uid]?.takeIf { it.isNotBlank() }
+                            ?: recent?.peerName?.takeIf { it.isNotBlank() }
+                            ?: uid,
+                        remark = remarkMap[uid]?.takeIf { it.isNotBlank() }
+                            ?: recent?.remark?.takeIf { it.isNotBlank() }
+                            ?: "",
                         avatarPath = recent?.avatarPath.orEmpty(),
                         avatarUrls = listOfNotNull(recent?.avatarUrl?.takeIf { it.isNotBlank() }) + fallbackUrls,
                         categoryId = category.categoryId,

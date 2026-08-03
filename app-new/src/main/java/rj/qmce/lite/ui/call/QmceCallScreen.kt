@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -236,6 +237,8 @@ private fun CallControls(
                 CallIconButton(
                     icon = Icons.Default.CallEnd,
                     contentDescription = "拒绝",
+                    buttonSize = 60.dp,
+                    iconSize = 28.dp,
                     containerColor = MaterialTheme.colorScheme.errorContainer,
                     contentColor = MaterialTheme.colorScheme.onErrorContainer,
                     onClick = {
@@ -328,6 +331,8 @@ private fun CallControls(
             CallIconButton(
                 icon = Icons.Default.CallEnd,
                 contentDescription = if (state.phase == CallPhase.Ending) "挂断中" else "挂断",
+                buttonSize = 60.dp,
+                iconSize = 28.dp,
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
                 enabled = state.phase != CallPhase.Ending,
@@ -348,6 +353,8 @@ private fun CallIconButton(
     icon: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,
+    buttonSize: Dp = 44.dp,
+    iconSize: Dp = 22.dp,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     enabled: Boolean = true,
@@ -356,7 +363,7 @@ private fun CallIconButton(
     FilledIconButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.size(44.dp),
+        modifier = modifier.size(buttonSize),
         colors = IconButtonDefaults.filledIconButtonColors(
             containerColor = containerColor,
             contentColor = contentColor,
@@ -365,7 +372,7 @@ private fun CallIconButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(22.dp),
+            modifier = Modifier.size(iconSize),
         )
     }
 }
@@ -399,6 +406,7 @@ private fun CallVideoSurface(
             }
         },
         update = {
+            layer?.bind(selfUin, peerUin)
             layer?.updateMediaState(
                 localHasVideo = localHasVideo,
                 remoteHasVideo = remoteHasVideo,
@@ -407,6 +415,22 @@ private fun CallVideoSurface(
         },
         modifier = Modifier.fillMaxSize(),
     )
+    LaunchedEffect(layer, remoteHasVideo, channelReady) {
+        if (layer == null || !remoteHasVideo) return@LaunchedEffect
+        layer?.updateMediaState(
+            localHasVideo = localHasVideo,
+            remoteHasVideo = remoteHasVideo,
+            channelReady = channelReady,
+        )
+        if (channelReady) {
+            delay(150)
+            layer?.updateMediaState(
+                localHasVideo = localHasVideo,
+                remoteHasVideo = remoteHasVideo,
+                channelReady = channelReady,
+            )
+        }
+    }
     DisposableEffect(context, layer) {
         onDispose {
             layer?.let { currentLayer ->

@@ -175,9 +175,18 @@ object QmceCallController {
 
         return runCatching {
             ensureEngine()
+            val currentPhase = _state.value.phase
+            if (currentPhase == CallPhase.Idle || currentPhase == CallPhase.Ended) {
+                clearStaleQavSession(_state.value.peer?.uin)
+            }
             val existing = QavBussinessCtrl.t().i.b
-            if (existing != null && !existing.b() && !existing.c()) {
-                return CallStartResult.Rejected("已有通话进行中")
+            if (existing != null) {
+                if (!existing.b() && !existing.c()) {
+                    return CallStartResult.Rejected("已有通话进行中")
+                }
+                clearStaleQavSession(
+                    _state.value.peer?.uin ?: existing.e.takeIf { it > 0L }?.toString(),
+                )
             }
             if (_state.value.phase == CallPhase.Idle || _state.value.phase == CallPhase.Ended) {
                 releaseServiceBinding(stopService = false)
@@ -303,6 +312,7 @@ object QmceCallController {
         }
         mainHandler.postDelayed({
             if (generation == activeGeneration && _state.value.phase == CallPhase.Ending) {
+                clearStaleQavSession(peer.uin)
                 end("通话已结束")
             }
         }, HANGUP_FALLBACK_DELAY_MS)
@@ -358,6 +368,7 @@ object QmceCallController {
 
     fun resetEndedState() {
         if (_state.value.phase == CallPhase.Ended) {
+            clearStaleQavSession(_state.value.peer?.uin)
             _state.value = CallUiState()
         }
     }
@@ -582,6 +593,7 @@ object QmceCallController {
 
     private fun end(message: String) {
         QmceIncomingCallAlert.stop()
+        val peerUin = _state.value.peer?.uin
         activeGeneration += 1
         val generation = activeGeneration
         pendingOutgoing = null
@@ -593,6 +605,7 @@ object QmceCallController {
         )
         mainHandler.post {
             if (generation == activeGeneration) {
+                clearStaleQavSession(peerUin)
                 releaseServiceBinding(stopService = false)
             }
         }
@@ -704,7 +717,8 @@ object QmceCallController {
         qavBinder = null
         businessCallback = null
         if (binder != null && callback != null) {
-            try { binder.E(callback) } catch (_: Throwable) {}
+            runCatching { binder.E(callback) }
+                .onFailure { Log.w(TAG, "unregister QAV business callback failed", it) }
         }
         if (serviceBindingActive) {
             serviceBindingActive = false
@@ -716,6 +730,36 @@ object QmceCallController {
         if (stopService) {
             stopCallService()
         }
+    }
+
+    private fun clearStaleQavSession(peerUin: String?) {
+        runCatching {
+            val ctrl = QavBussinessCtrl.t()
+            val sessionManager = ctrl.i
+            val existing = sessionManager.b
+                ?: peerUin?.takeIf { it.isNotBlank() }?.let { sessionManager.b(it) }
+            if (existing == null) return@runCatching
+
+            val resolvedPeerUin = peerUin?.takeIf { it.isNotBlank() }
+                ?: existing.e.takeIf { it > 0L }?.toString()
+            if (resolvedPeerUin.isNullOrBlank()) return@runCatching
+
+            val phase = _state.value.phase
+            val sessionEnded = existing.b() || existing.c()
+            if (
+                !sessionEnded &&
+                phase !in activePhases &&
+                phase != CallPhase.Incoming &&
+                phase != CallPhase.Ending
+            ) {
+                runCatching {
+                    qavBinder?.K(resolvedPeerUin, CLOSE_REASON_HANG_UP)
+                        ?: ctrl.q(resolvedPeerUin, CLOSE_REASON_HANG_UP)
+                }.onFailure { Log.w(TAG, "force hang up stale QAV session failed", it) }
+            }
+            runCatching { ctrl.r(resolvedPeerUin) }
+                .onFailure { Log.w(TAG, "close stale QAV session failed", it) }
+        }.onFailure { Log.w(TAG, "clear stale QAV session failed", it) }
     }
 
     private fun stopCallService() {

@@ -110,6 +110,25 @@ class GroupNotifyRepository(
         cachedNotifies = emptyList()
     }
 
+    /** Re-fetch the group notices so the UI reflects decisions. */
+    fun refresh() {
+        val service = groupService ?: KernelBridge.getGroupService() ?: return
+        runCatching {
+            service.getSingleScreenNotifies(
+                false,
+                0L,
+                FETCH_COUNT,
+                object : IOperateCallback {
+                    override fun onResult(code: Int, errMsg: String?) {
+                        Log.d(TAG, "group refresh: code=$code errMsg=$errMsg")
+                    }
+                },
+            )
+        }.onFailure {
+            Log.w(TAG, "group refresh failed", it)
+        }
+    }
+
     fun operate(notice: UiGroupNotice, accept: Boolean, callback: (Boolean, String?) -> Unit) {
         val service = groupService ?: KernelBridge.getGroupService()
         if (service == null) {
