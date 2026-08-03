@@ -1,0 +1,96 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main, master, 'upgrade/**']
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  pull_request:
+    branches: [main, master]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      buildRelease:
+        description: 'Also build the release APK'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Assemble APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # README baseline: JDK 17+, AGP 9.3, Gradle 9.5.
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # The ubuntu runner ships an Android SDK with ANDROID_HOME preset;
+      # install the exact components this project pins (compileSdk 37,
+      # build-tools 37.0.0) with the bundled sdkmanager directly instead of
+      # a third-party action.
+      - name: Install Android SDK components
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          # Since SDK 36 the platform packages carry a minor version:
+          # "platforms;android-37.0" (a bare "android-37" does not exist).
+          "$SDKMANAGER" --install "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+
+      # Gradle build/configuration caches. The wrapper downloads its
+      # distribution from the Tencent mirror pinned in
+      # gradle-wrapper.properties, which is reachable from GitHub runners.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew :app-new:assembleDebug --stacktrace
+
+      - name: Build release APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.buildRelease }}
+        run: ./gradlew :app-new:assembleRelease --stacktrace
+
+      # NOTE: the APK embeds Tencent's proprietary watch-QQ runtime (see
+      # README disclaimer) — keep artifact retention short.
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: qmce-debug
+          path: app-new/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      - name: Upload release APK
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.buildRelease }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: qmce-release
+          path: app-new/build/outputs/apk/release/*.apk
+          retention-days: 7
+
+      - name: Upload build reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports
+          path: |
+            app-new/build/reports/
+            build/reports/
+          retention-days: 7
+          if-no-files-found: ignore

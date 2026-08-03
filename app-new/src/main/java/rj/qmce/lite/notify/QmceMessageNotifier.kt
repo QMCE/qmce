@@ -170,7 +170,7 @@ object QmceMessageNotifier {
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
         )
-        if (!prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, false)) {
+        if (!prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, true)) {
             Log.i(TAG, "gate: notify disabled")
             return
         }

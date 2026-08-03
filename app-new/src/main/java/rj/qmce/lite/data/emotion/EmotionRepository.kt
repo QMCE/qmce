@@ -47,6 +47,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.TabEmojiInfo
 import com.tencent.qqnt.watch.emotion.popemo.EmoMsgUtils
 import com.tencent.mobileqq.data.MarkFaceMessage
+import com.tencent.image.URLDrawable
 import com.tencent.qphone.base.util.BaseApplication
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -340,29 +341,43 @@ object EmotionRepository {
         )
     }.getOrNull()?.takeUnless { it is ColorDrawable }
 
-    private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? = runCatching {
-        val serverIndex = face.serverId ?: serverIdForLocal(face.faceIndex)
-        val localIndex = face.faceIndex
-        val animated = face.isAnimatedSticker()
-        val file = buildList {
-            if (animated) {
-                add(EmotionAssetBridge.resourceFile("sysface_res/apng/s$serverIndex.png"))
-                if (localIndex != serverIndex) {
-                    add(EmotionAssetBridge.resourceFile("sysface_res/apng/s$localIndex.png"))
-                }
-            }
-            add(EmotionAssetBridge.resourceFile("sysface_res/static/s$serverIndex.png"))
-            if (localIndex != serverIndex) {
-                add(EmotionAssetBridge.resourceFile("sysface_res/static/s$localIndex.png"))
-            }
-        }.filterNotNull()
-            .firstOrNull(File::isFile)
+    private fun qfaceEmojiId(face: Selection.SystemFace): String =
+        QFaceRemoteStore.resolveEmojiId(
+            serverId = face.serverId,
+            faceIndex = face.faceIndex,
+            stickerId = face.stickerId,
+        ) ?: face.faceIndex.toString()
+
+    private fun qfacePngDrawable(face: Selection.SystemFace): Drawable? = runCatching {
+        val file = QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Png)
+            ?.takeIf(File::isFile)
             ?: return@runCatching null
         val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@runCatching null
         BitmapDrawable(BaseApplication.getContext().resources, bitmap)
     }.onFailure {
-        Log.d(TAG, "local system-face drawable unavailable face=${face.faceIndex}", it)
+        Log.d(TAG, "qface png unavailable face=${face.faceIndex}", it)
     }.getOrNull()
+
+    private fun qfaceApngDrawable(face: Selection.SystemFace): Drawable? = runCatching {
+        val file = QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Apng)
+            ?.takeIf(File::isFile)
+            ?: return@runCatching null
+        urlDrawableFromFile(file, useApng = true)
+    }.onFailure {
+        Log.d(TAG, "qface apng unavailable face=${face.faceIndex}", it)
+    }.getOrNull()
+
+    private fun urlDrawableFromFile(file: File, useApng: Boolean): Drawable? = runCatching {
+        val options = URLDrawable.URLDrawableOptions.obtain().apply {
+            mUseApngImage = useApng
+            mPlayGifImage = true
+            mUseMemoryCache = true
+        }
+        URLDrawable.getDrawable(file, options)?.takeUnless { it is ColorDrawable }
+    }.getOrNull()
+
+    private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? =
+        qfacePngDrawable(face)
 
     private fun localEmojiDrawable(localIndex: Int): Drawable? = runCatching {
         val file = EmotionAssetBridge.resourceFile(
@@ -381,25 +396,33 @@ object EmotionRepository {
     fun loadSystemFaceDrawable(
         face: Selection.SystemFace,
         onResult: (Drawable?) -> Unit,
+        preferStatic: Boolean = false,
     ) {
-        Thread {
+        ioExecutor.execute {
             val localFallback = if (face.isEmoji) {
                 runCatching { localEmojiDrawable(face.faceIndex) }.getOrNull()
             } else {
                 runCatching { localSystemFaceDrawable(face) }.getOrNull()
             }
-            mainHandler.post {
-                if (face.isEmoji) {
-                    onResult(localFallback ?: systemFaceDrawable(face))
-                    return@post
-                }
-                if (face.isAnimatedSticker()) {
+            if (face.isEmoji) {
+                mainHandler.post { onResult(localFallback ?: systemFaceDrawable(face)) }
+                return@execute
+            }
+            if (face.isAnimatedSticker() && !preferStatic) {
+                val apng = runCatching { qfaceApngDrawable(face) }.getOrNull()
+                mainHandler.post {
+                    if (apng != null) {
+                        onResult(apng)
+                        return@post
+                    }
                     if (localFallback != null) onResult(localFallback)
                     loadAnimatedSystemFaceFallback(face) { animated ->
                         if (animated != null) onResult(animated)
                     }
-                    return@post
                 }
+                return@execute
+            }
+            mainHandler.post {
                 val official = officialSystemFaceDrawable(face)
                 if (official != null) {
                     if (isLibraWrapper(official)) {
@@ -427,9 +450,6 @@ object EmotionRepository {
                 }
                 onResult(localFallback ?: systemFaceDrawable(face))
             }
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
@@ -515,12 +535,18 @@ object EmotionRepository {
                 onResult(null)
                 return@post
             }
-            val jsonPath = runCatching { info.b() }.getOrNull()
+            val jsonPath = resolveAnimatedFaceJsonPath(face, info)
             val svgPath = runCatching {
                 QQSysAndEmojiResMgr.getInstance()
                     .getAniStickerResPath(info.e, info.b, info.c)
                     .takeIf(::isReadableFile)
             }.getOrNull()
+            if (jsonPath.isNullOrBlank() && svgPath.isNullOrBlank()) {
+                Log.w(
+                    TAG,
+                    "animated face json missing local=${face.faceIndex} sticker=${face.stickerId}",
+                )
+            }
             val hasResultOrSurprise = !info.f.isNullOrBlank() || !info.g.isNullOrBlank()
             val builder = AniStickerHelper.Builder(helperView).apply {
                 val size = (64f * context.resources.displayMetrics.density).toInt()
@@ -584,7 +610,12 @@ object EmotionRepository {
                         "animated face load local=${face.faceIndex} server=${face.serverId} " +
                         "path=$jsonPath cache=${info.a()} exists=${jsonPath?.let(::File)?.isFile}",
                     )
-                EmotionSdkAccess.loadLottieWithPath(downloader, jsonPath, builder, listener)
+                EmotionSdkAccess.loadLottieWithPath(
+                    downloader,
+                    jsonPath ?: svgPath.orEmpty(),
+                    builder,
+                    listener,
+                )
             }.onFailure {
                 Log.w(TAG, "animated face load invocation failed local=${face.faceIndex}", it)
                 if (attempt < ANIMATED_FACE_MAX_RETRIES) {
@@ -597,6 +628,36 @@ object EmotionRepository {
                 }
             }
         }
+    }
+
+    fun warmupEmotionAssets() {
+        ioExecutor.execute {
+            val context = runCatching { BaseApplication.getContext() }.getOrNull()
+                ?: return@execute
+            EmotionAssetBridge.ensure(context)
+            QFaceRemoteStore.refreshIndexBlocking(context)
+            EmotionAssetBridge.ensure(context)
+            Log.i(
+                TAG,
+                "warmupEmotionAssets animated=${QFaceRemoteStore.animatedIds().size}",
+            )
+        }
+    }
+
+    @Deprecated("Use warmupEmotionAssets", ReplaceWith("warmupEmotionAssets()"))
+    fun warmupLottieRuntime() = warmupEmotionAssets()
+
+    private fun resolveAnimatedFaceJsonPath(
+        face: Selection.SystemFace,
+        info: AniStickerInfo,
+    ): String? {
+        val candidates = buildList {
+            runCatching { info.b() }.getOrNull()?.let(::add)
+            runCatching {
+                QQSysAndEmojiResMgr.getInstance().getAniStickerResPath(info.e, info.b, info.c)
+            }.getOrNull()?.let(::add)
+        }
+        return candidates.firstOrNull(::isReadableFile)
     }
 
     private fun ensureLottieRuntime(): Boolean {
@@ -753,7 +814,11 @@ object EmotionRepository {
         if (faceType == 3 || (stickerType ?: 0) > 0) return true
         val bundled = bundledFaceMapping.byLocalId[faceIndex]
             ?: serverId?.let(bundledFaceMapping.byServerId::get)
-        return (bundled?.stickerType ?: 0) > 0
+        if ((bundled?.stickerType ?: 0) > 0) return true
+        val animated = QFaceRemoteStore.animatedIds()
+        if (faceIndex in animated) return true
+        if (serverId != null && serverId in animated) return true
+        return stickerId?.let { QFaceRemoteStore.lookupByAniStickerId(it) } != null
     }
 
     /**
@@ -816,7 +881,13 @@ object EmotionRepository {
 
     /** Text that remains visible when a QQ resource drawable is not available in this process. */
     fun systemFaceText(face: Selection.SystemFace): String =
-        if (face.isEmoji) emojiText(face.faceIndex) ?: face.label else face.label
+        if (face.isEmoji) {
+            emojiText(face.faceIndex) ?: face.label
+        } else {
+            QFaceRemoteStore.lookup(qfaceEmojiId(face))?.describe
+                ?.takeIf(String::isNotBlank)
+                ?: face.label
+        }
 
     private fun emojiText(index: Int): String? = runCatching {
         val unicode = EmoJIConstant.EMOJI_CODES.getOrNull(index) ?: return@runCatching null
@@ -833,9 +904,10 @@ object EmotionRepository {
         } ?: return emptyList()
         val epId = face.emojiPackageId
         return buildList {
-            face.staticFacePath.takeIf(String::isNotBlank)?.let(::add)
             face.dynamicFacePath.takeIf(String::isNotBlank)?.let(::add)
-            addAll(marketFaceStorageCandidates(context, epId, eId))
+            addAll(marketFaceDynamicCandidates(context, epId, eId))
+            face.staticFacePath.takeIf(String::isNotBlank)?.let(::add)
+            addAll(marketFaceStaticCandidates(context, epId, eId))
         }.distinct()
     }
 
@@ -886,13 +958,16 @@ object EmotionRepository {
             EmotionAssetBridge.bundledAnimatedIds()
                 .filterNot(knownServerIds::contains)
                 .forEach { id ->
+                    val entry = QFaceRemoteStore.lookup(id.toString())
                     add(
                         BundledSystemFace(
                             localId = id,
                             serverId = id,
-                            description = "/超表情$id",
-                            packId = "1",
-                            stickerId = id.toString(),
+                            description = entry?.describe?.takeIf(String::isNotBlank)
+                                ?: "/超表情$id",
+                            packId = entry?.aniStickerPackId?.takeIf { it > 0 }?.toString() ?: "1",
+                            stickerId = entry?.aniStickerId?.takeIf { it > 0 }?.toString()
+                                ?: id.toString(),
                             stickerType = 1,
                         ),
                     )
@@ -959,12 +1034,9 @@ object EmotionRepository {
         element: MarketFaceElement,
         onResult: (Drawable?) -> Unit,
     ) {
-        Thread {
+        ioExecutor.execute {
             val info = resolveMarketFaceInfo(element)
             deliverMarketFaceDrawable(info, selection, onResult)
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
@@ -973,12 +1045,9 @@ object EmotionRepository {
         element: MarketFaceElement,
         onResult: (Drawable?) -> Unit,
     ) {
-        Thread {
+        ioExecutor.execute {
             val info = resolveMarketFaceInfo(element)
             deliverMarketFaceDrawable(info, null, onResult)
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
@@ -1560,7 +1629,7 @@ object EmotionRepository {
             if (face == null) {
                 post(onResult, MarketFacePreview(path = null, drawable = null))
             } else {
-                loadSystemFaceDrawable(face) { drawable ->
+                loadSystemFaceDrawable(face, preferStatic = true) { drawable ->
                     onResult(MarketFacePreview(path = null, drawable = drawable))
                 }
             }
@@ -1801,7 +1870,24 @@ object EmotionRepository {
         )
     }
 
-    private fun marketFaceStorageCandidates(
+    private fun marketFaceDynamicCandidates(
+        context: Context?,
+        epId: Int,
+        eId: String,
+    ): List<String> {
+        val epIdText = epId.toString()
+        val roots = marketFaceRoots(context, epId)
+        return buildList {
+            safeStoragePath { MarketFaceStoragePaths.emoticonImagePath(epIdText, eId) }?.let(::add)
+            safeStoragePath { MarketFaceStoragePaths.emoticonAPNGPath(epIdText, eId) }?.let(::add)
+            roots.forEach { root ->
+                add(File(root, eId).absolutePath)
+                add(File(root, "${eId}_apng").absolutePath)
+            }
+        }.filter(String::isNotBlank).distinct()
+    }
+
+    private fun marketFaceStaticCandidates(
         context: Context?,
         epId: Int,
         eId: String,
@@ -1815,14 +1901,17 @@ object EmotionRepository {
                 add(File(root, "${eId}_aio.png").absolutePath)
                 add(File(root, "${eId}_thu.png").absolutePath)
             }
-            safeStoragePath { MarketFaceStoragePaths.emoticonImagePath(epIdText, eId) }?.let(::add)
-            safeStoragePath { MarketFaceStoragePaths.emoticonAPNGPath(epIdText, eId) }?.let(::add)
-            roots.forEach { root ->
-                add(File(root, eId).absolutePath)
-                add(File(root, "${eId}_apng").absolutePath)
-            }
         }.filter(String::isNotBlank).distinct()
     }
+
+    /** Chat path order: dynamic first, then static previews. */
+    private fun marketFaceStorageCandidates(
+        context: Context?,
+        epId: Int,
+        eId: String,
+    ): List<String> =
+        (marketFaceDynamicCandidates(context, epId, eId) +
+            marketFaceStaticCandidates(context, epId, eId)).distinct()
 
     private fun marketFaceRoots(
         context: Context?,

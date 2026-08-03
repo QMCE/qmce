@@ -85,7 +85,7 @@ object QmceContactSystemNotifier {
             SettingsViewModel.PREFERENCES_NAME,
             Context.MODE_PRIVATE,
         )
-        return prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, false) &&
+        return prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_ENABLED, true) &&
             prefs.getBoolean(SettingsViewModel.KEY_NOTIFY_CONTACT, true)
     }
 

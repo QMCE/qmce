@@ -1334,7 +1334,7 @@ private fun EmotionOptionButton(
     LaunchedEffect(face) {
         val generation = loadGeneration.incrementAndGet()
         drawable = null
-        EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
+        EmotionRepository.loadSystemFaceDrawable(face, preferStatic = true) { loaded ->
             if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
                 drawable = loaded
             }

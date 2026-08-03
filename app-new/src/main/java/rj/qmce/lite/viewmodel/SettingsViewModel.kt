@@ -31,7 +31,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val aiApiKey: String = "",
         val aiModel: String = "",
         val contactsSortMode: String = DEFAULT_CONTACTS_SORT_MODE,
-        val notifyEnabled: Boolean = false,
+        val notifyEnabled: Boolean = true,
         val notifyC2c: Boolean = true,
         val notifyGroup: Boolean = true,
         val notifyContact: Boolean = true,
@@ -86,7 +86,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         contactsSortMode = preferences.getString(KEY_CONTACTS_SORT_MODE, DEFAULT_CONTACTS_SORT_MODE)
             .orEmpty()
             .ifBlank { DEFAULT_CONTACTS_SORT_MODE },
-        notifyEnabled = preferences.getBoolean(KEY_NOTIFY_ENABLED, false),
+        notifyEnabled = preferences.getBoolean(KEY_NOTIFY_ENABLED, true),
         notifyC2c = preferences.getBoolean(KEY_NOTIFY_C2C, true),
         notifyGroup = preferences.getBoolean(KEY_NOTIFY_GROUP, true),
         notifyContact = preferences.getBoolean(KEY_NOTIFY_CONTACT, true),

@@ -74,6 +74,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -111,6 +112,8 @@ import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.size.Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -128,6 +131,7 @@ import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.data.chat.PttTranslationPhase
 import rj.qmce.lite.data.chat.PttTranslationState
+import rj.qmce.lite.data.emotion.EmotionPlayGate
 import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.data.reporting.OfficialReportBridge
@@ -1829,29 +1833,75 @@ private fun LocalMarketFace(
     content: ChatDetailViewModel.MessageContent.MarketFace,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val cachedPaths = remember(content.element) {
         EmotionRepository.cachedMarketFacePaths(context, content.element)
     }
     val candidatePaths = remember(content.staticPath, content.dynamicPath, cachedPaths) {
-        (listOf(content.staticPath, content.dynamicPath) + cachedPaths)
+        (listOf(content.dynamicPath, content.staticPath) + cachedPaths)
             .filterNotNull()
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
     }
     val size = mediaSize(content.width, content.height)
+    val sizePx = with(density) {
+        Size(size.width.roundToPx(), size.height.roundToPx())
+    }
     val marketFaceKey = remember(content.element) {
         content.element?.let { "${it.emojiPackageId}:${it.emojiId}" } ?: content.name
     }
     var failedPaths by remember(marketFaceKey) { mutableStateOf(emptySet<String>()) }
-    var localPath by remember(marketFaceKey, candidatePaths) {
+    val animatedCandidate = remember(candidatePaths, failedPaths) {
+        candidatePaths.firstOrNull { path ->
+            path !in failedPaths &&
+                LocalMediaResolver.resolveFile(path) != null &&
+                isLikelyAnimatedMarketFace(path)
+        }
+    }
+    val staticCandidate = remember(candidatePaths, failedPaths, content.staticPath) {
+        sequenceOf(content.staticPath)
+            .plus(candidatePaths)
+            .filterNotNull()
+            .firstOrNull { path ->
+                path !in failedPaths &&
+                    LocalMediaResolver.resolveFile(path) != null &&
+                    !isLikelyAnimatedMarketFace(path)
+            }
+    }
+    var allowAnimated by remember(marketFaceKey) { mutableStateOf(false) }
+    DisposableEffect(marketFaceKey) {
+        allowAnimated = EmotionPlayGate.tryAcquire(marketFaceKey)
+        onDispose {
+            EmotionPlayGate.release(marketFaceKey)
+            allowAnimated = false
+        }
+    }
+    val preferredPath = when {
+        allowAnimated && animatedCandidate != null -> animatedCandidate
+        staticCandidate != null -> staticCandidate
+        allowAnimated -> animatedCandidate
+        else -> staticCandidate
+    }
+    var localPath by remember(marketFaceKey, preferredPath, candidatePaths, failedPaths) {
         mutableStateOf(
-            candidatePaths.firstOrNull { path ->
-                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
-            },
+            preferredPath
+                ?: candidatePaths.firstOrNull { path ->
+                    path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+                },
         )
     }
+    LaunchedEffect(preferredPath, failedPaths) {
+        if (preferredPath != null && preferredPath !in failedPaths) {
+            localPath = preferredPath
+        }
+    }
     val localFile = localPath?.let(LocalMediaResolver::resolveFile)
+    val isGif = localFile != null && isLikelyGifFile(localFile)
+    val isDynamicSelection = allowAnimated &&
+        animatedCandidate != null &&
+        localPath == animatedCandidate
+    val useOfficialApng = isDynamicSelection && !isGif
     var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
     var officialDrawableVersion by remember(marketFaceKey) { mutableStateOf(0) }
     var officialRetry by remember(marketFaceKey) { mutableStateOf(0) }
@@ -1859,7 +1909,11 @@ private fun LocalMarketFace(
         if (localPath != null && localPath !in failedPaths) return@LaunchedEffect
         val deadline = System.currentTimeMillis() + 8_000L
         while (System.currentTimeMillis() < deadline) {
-            val nextPath = candidatePaths.firstOrNull { path ->
+            val nextPath = (if (allowAnimated) {
+                listOfNotNull(animatedCandidate, staticCandidate)
+            } else {
+                listOfNotNull(staticCandidate)
+            } + candidatePaths).firstOrNull { path ->
                 path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
             }
             if (nextPath != null) {
@@ -1869,35 +1923,26 @@ private fun LocalMarketFace(
             delay(150L)
         }
     }
-    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry) {
+    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry, useOfficialApng, allowAnimated) {
         val element = content.element
-        if (localPath == null && element != null && officialDrawable == null && officialRetry <= 2) {
+        val needOfficial = (localPath == null || useOfficialApng) &&
+            element != null &&
+            officialRetry <= 2
+        if (needOfficial && (officialDrawable == null || useOfficialApng)) {
             if (officialRetry > 0) delay(400L)
-            EmotionRepository.loadMarketFaceDrawable(element) { drawable ->
-                officialDrawable = drawable
-                officialDrawableVersion++
-                if (drawable == null && officialRetry < 2) officialRetry++
+            EmotionRepository.loadMarketFaceDrawable(element!!) { drawable ->
+                if (drawable != null) {
+                    officialDrawable = drawable
+                    officialDrawableVersion++
+                } else if (officialRetry < 2) {
+                    officialRetry++
+                }
             }
         }
     }
-    if (localFile != null && localPath !in failedPaths) {
-        Box(
-            modifier = Modifier
-                .size(size.width, size.height)
-                .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
-        ) {
-            AsyncImage(
-                model = localFile,
-                contentDescription = content.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                onError = {
-                    localPath?.let { path -> failedPaths = failedPaths + path }
-                    localPath = null
-                },
-            )
-        }
-    } else if (officialDrawable != null) {
+    val showOfficial = officialDrawable != null && (localFile == null || useOfficialApng)
+    if (showOfficial) {
+        val currentDrawable = officialDrawable
         val currentDrawableVersion = officialDrawableVersion
         AndroidView(
             factory = { viewContext ->
@@ -1907,13 +1952,73 @@ private fun LocalMarketFace(
             },
             update = { imageView ->
                 imageView.tag = currentDrawableVersion
-                imageView.setImageDrawable(officialDrawable)
+                if (imageView.drawable !== currentDrawable) {
+                    imageView.setImageDrawable(currentDrawable)
+                }
+                currentDrawable?.setVisible(true, true)
+                (currentDrawable as? android.graphics.drawable.Animatable)?.start()
+                imageView.invalidate()
             },
             modifier = Modifier.size(size.width, size.height),
         )
+        DisposableEffect(currentDrawable, marketFaceKey) {
+            onDispose {
+                (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
+                currentDrawable?.setVisible(false, false)
+            }
+        }
+    } else if (localFile != null && localPath !in failedPaths && !useOfficialApng) {
+        val displayFile = if (allowAnimated || localPath != animatedCandidate) {
+            localFile
+        } else {
+            staticCandidate?.let(LocalMediaResolver::resolveFile) ?: localFile
+        }
+        Box(
+            modifier = Modifier
+                .size(size.width, size.height)
+                .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(displayFile)
+                    .size(sizePx)
+                    .build(),
+                contentDescription = content.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                onError = {
+                    localPath?.let { path -> failedPaths = failedPaths + path }
+                    localPath = null
+                },
+            )
+        }
     } else {
         MessageFallback(content.name)
     }
+}
+
+private fun isLikelyAnimatedMarketFace(path: String): Boolean {
+    val lower = path.lowercase(Locale.US)
+    if (lower.endsWith(".gif")) return true
+    if (lower.endsWith("_aio.png") || lower.endsWith("_thu.png")) return false
+    if (lower.contains("apng") || lower.endsWith("_apng")) return true
+    if (lower.endsWith(".png")) return false
+    val file = LocalMediaResolver.resolveFile(path) ?: return true
+    return isLikelyGifFile(file) || !file.name.contains('.')
+}
+
+private fun isLikelyGifFile(file: File): Boolean {
+    if (file.name.lowercase(Locale.US).endsWith(".gif")) return true
+    return runCatching {
+        file.inputStream().use { input ->
+            val header = ByteArray(4)
+            if (input.read(header) < 4) return@runCatching false
+            header[0] == 'G'.code.toByte() &&
+                header[1] == 'I'.code.toByte() &&
+                header[2] == 'F'.code.toByte() &&
+                header[3] == '8'.code.toByte()
+        }
+    }.getOrDefault(false)
 }
 
 @Composable
@@ -1944,12 +2049,25 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
     val isAnimated = remember(face) {
         face.faceType == 3 || (face.stickerType ?: 0) > 0
     }
-    var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
+    val playKey = remember(face) {
+        "sysface:${face.serverId ?: face.faceIndex}:${face.stickerId.orEmpty()}"
+    }
+    var allowAnimated by remember(playKey) { mutableStateOf(!isAnimated) }
+    DisposableEffect(playKey, isAnimated) {
+        allowAnimated = if (isAnimated) EmotionPlayGate.tryAcquire(playKey) else true
+        onDispose {
+            if (isAnimated) EmotionPlayGate.release(playKey)
+        }
+    }
+    var drawable by remember(face, allowAnimated) { mutableStateOf<Drawable?>(null) }
     val loadGeneration = remember { AtomicLong(0L) }
-    LaunchedEffect(face) {
+    LaunchedEffect(face, allowAnimated) {
         val generation = loadGeneration.incrementAndGet()
         drawable = null
-        EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
+        EmotionRepository.loadSystemFaceDrawable(
+            face = face,
+            preferStatic = isAnimated && !allowAnimated,
+        ) { loaded ->
             if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
                 drawable = loaded
             }
@@ -1972,14 +2090,20 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             update = { imageView ->
                 if (imageView.drawable !== currentDrawable) {
                     imageView.setImageDrawable(currentDrawable)
-                    currentDrawable?.setVisible(true, true)
+                }
+                currentDrawable?.setVisible(true, true)
+                if (allowAnimated) {
+                    (currentDrawable as? android.graphics.drawable.Animatable)?.start()
+                } else {
+                    (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
                 }
                 imageView.invalidate()
             },
             modifier = Modifier.size(size),
         )
-        DisposableEffect(currentDrawable) {
+        DisposableEffect(currentDrawable, allowAnimated) {
             onDispose {
+                (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
                 currentDrawable?.setVisible(false, false)
             }
         }
@@ -1991,9 +2115,20 @@ private fun GiphyMessageContent(
     content: ChatDetailViewModel.MessageContent.Giphy,
     onOpen: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val mediaUrl = content.mediaUrl
+    val playKey = remember(mediaUrl) { "giphy:${mediaUrl.orEmpty()}" }
+    var allowAnimated by remember(playKey) { mutableStateOf(false) }
+    DisposableEffect(playKey) {
+        allowAnimated = EmotionPlayGate.tryAcquire(playKey)
+        onDispose { EmotionPlayGate.release(playKey) }
+    }
     var failed by remember(mediaUrl) { mutableStateOf(false) }
     val size = mediaSize(content.width, content.height)
+    val sizePx = with(density) {
+        Size(size.width.roundToPx(), size.height.roundToPx())
+    }
     if (mediaUrl == null || failed) {
         MediaPlaceholder(size, if (mediaUrl == null) "GIF不可用" else "GIF加载失败")
     } else {
@@ -2005,13 +2140,20 @@ private fun GiphyMessageContent(
             ),
             contentPadding = PaddingValues(0.dp),
         ) {
-            AsyncImage(
-                model = mediaUrl,
-                contentDescription = "GIF 动图",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Fit,
-                onError = { failed = true },
-            )
+            if (allowAnimated) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(mediaUrl)
+                        .size(sizePx)
+                        .build(),
+                    contentDescription = "GIF 动图",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    onError = { failed = true },
+                )
+            } else {
+                MediaPlaceholder(size, "GIF")
+            }
         }
     }
 }

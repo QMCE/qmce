@@ -17,6 +17,7 @@ import androidx.multidex.MultiDex
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.gif.GifDecoder
+import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.microsoft.appcenter.AppCenter
 import com.microsoft.appcenter.analytics.Analytics
@@ -34,6 +35,7 @@ import mqq.app.IAccountCallback
 import mqq.app.MobileQQ
 import rj.qmce.lite.data.LoginPrefs
 import rj.qmce.lite.data.emotion.EmotionAssetBridge
+import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.update.OtaUpdateSession
 import rj.qmce.lite.kernel.KernelBridge
@@ -75,7 +77,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 Constants.LogoutReason.expired,
                 Constants.LogoutReason.suspend,
                 -> {
-                    if (isLoginTransitionSuppressing()) {
+                    // Only suppress during active login transition — not post-login grace.
+                    if (loginTransitionActive.get()) {
                         QmceLog.w(
                             "QMCE",
                             "account: suppress transitional logout reason=$reason " +
@@ -93,6 +96,11 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
 
     override fun newImageLoader(context: coil3.PlatformContext): ImageLoader {
         return ImageLoader.Builder(context)
+            .memoryCache {
+                MemoryCache.Builder()
+                    .maxSizePercent(context, 0.12)
+                    .build()
+            }
             .components {
                 add(GifDecoder.Factory())
                 add(OkHttpNetworkFetcherFactory())
@@ -307,6 +315,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         }.onFailure {
             QmceLog.w("QMCE", "URLDrawable runtime unavailable; emotion fallback remains enabled", it)
         }
+        runCatching { EmotionRepository.warmupEmotionAssets() }
+            .onFailure { QmceLog.w("QMCE", "emotion assets warmup schedule failed", it) }
     }
 
     private fun isMainProcess(): Boolean {
