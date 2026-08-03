@@ -68,6 +68,10 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                     QmceLog.d("QMCE", "account: ignore logout reason=$reason")
                     return
                 }
+                Constants.LogoutReason.kicked,
+                Constants.LogoutReason.secKicked,
+                Constants.LogoutReason.forceLogout,
+                -> Unit
                 Constants.LogoutReason.expired,
                 Constants.LogoutReason.suspend,
                 -> {
@@ -79,34 +83,11 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                         )
                         return
                     }
-                    // Do not auto-logout: keep account + UI; toast only.
-                    notifyForcedOffline(reason)
-                    return
-                }
-                Constants.LogoutReason.kicked,
-                Constants.LogoutReason.secKicked,
-                Constants.LogoutReason.forceLogout,
-                -> {
-                    notifyForcedOffline(reason)
-                    return
                 }
             }
-        }
-
-        private fun notifyForcedOffline(reason: Constants.LogoutReason) {
-            val message = when (reason) {
-                Constants.LogoutReason.expired,
-                Constants.LogoutReason.suspend,
-                -> "登录已过期，可稍后重新登录"
-                else -> "账号已在其他设备登录"
-            }
-            QmceLog.important("QMCE", "account: forced offline ignored reason=$reason")
-            Handler(Looper.getMainLooper()).post {
-                runCatching {
-                    val ctx = sMobileQQ ?: return@post
-                    android.widget.Toast.makeText(ctx, message, android.widget.Toast.LENGTH_LONG).show()
-                }
-            }
+            clearExpiredLoginState()
+            _logoutReason.value = reason
+            QmceLog.important("QMCE", "account: official logout reason=$reason")
         }
     }
 
