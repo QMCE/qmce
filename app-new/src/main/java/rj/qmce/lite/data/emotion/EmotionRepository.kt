@@ -373,7 +373,7 @@ object EmotionRepository {
             mPlayGifImage = true
             mUseMemoryCache = true
         }
-        URLDrawable.getDrawable(file, options)?.takeUnless { it is ColorDrawable }
+        URLDrawable.getDrawable(file, options)
     }.getOrNull()
 
     private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? =
@@ -395,8 +395,8 @@ object EmotionRepository {
      */
     fun loadSystemFaceDrawable(
         face: Selection.SystemFace,
-        onResult: (Drawable?) -> Unit,
         preferStatic: Boolean = false,
+        onResult: (Drawable?) -> Unit,
     ) {
         ioExecutor.execute {
             val localFallback = if (face.isEmoji) {
