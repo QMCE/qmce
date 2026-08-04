@@ -358,23 +358,74 @@ object EmotionRepository {
         Log.d(TAG, "qface png unavailable face=${face.faceIndex}", it)
     }.getOrNull()
 
-    private fun qfaceApngDrawable(face: Selection.SystemFace): Drawable? = runCatching {
-        val file = QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Apng)
-            ?.takeIf(File::isFile)
-            ?: return@runCatching null
-        urlDrawableFromFile(file, useApng = true)
-    }.onFailure {
-        Log.d(TAG, "qface apng unavailable face=${face.faceIndex}", it)
-    }.getOrNull()
+    private fun loadQFaceApngDrawable(
+        face: Selection.SystemFace,
+        fallback: Drawable?,
+        onResult: (Drawable?) -> Unit,
+    ) {
+        runCatching {
+            val file = QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Apng)
+                ?.takeIf(File::isFile)
+                ?: return@runCatching null
+            urlDrawableFromFile(file, useApng = true)
+        }.onFailure {
+            Log.d(TAG, "qface apng unavailable face=${face.faceIndex}", it)
+        }.getOrNull()?.let { drawable ->
+            mainHandler.post {
+                deliverUrlDrawableWhenReady(
+                    drawable = drawable,
+                    face = face,
+                    fallback = fallback,
+                    onResult = onResult,
+                )
+            }
+            return
+        }
+        mainHandler.post {
+            loadAnimatedSystemFaceFallback(face) { animated ->
+                if (animated != null) onResult(animated)
+            }
+        }
+    }
 
     private fun urlDrawableFromFile(file: File, useApng: Boolean): Drawable? = runCatching {
+        val transparent = ColorDrawable(0)
         val options = URLDrawable.URLDrawableOptions.obtain().apply {
             mUseApngImage = useApng
             mPlayGifImage = true
             mUseMemoryCache = true
+            mLoadingDrawable = transparent
+            mFailedDrawable = transparent
         }
         URLDrawable.getDrawable(file, options)
     }.getOrNull()
+
+    private fun deliverUrlDrawableWhenReady(
+        drawable: Drawable,
+        face: Selection.SystemFace,
+        fallback: Drawable?,
+        onResult: (Drawable?) -> Unit,
+    ) {
+        if (!isOfficialUrlDrawable(drawable)) {
+            onResult(drawable)
+            return
+        }
+        when (officialUrlDrawableStatus(drawable)) {
+            URLDrawable.SUCCESSED -> onResult(drawable)
+            URLDrawable.FAILED, URLDrawable.CANCLED -> onResult(fallback)
+            else -> {
+                installOfficialUrlDrawableListener(
+                    drawable = drawable,
+                    face = face,
+                    fallback = fallback,
+                    deliver = onResult,
+                )
+                startOfficialUrlDrawableDownload(drawable) {
+                    onResult(drawable)
+                }
+            }
+        }
+    }
 
     private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? =
         qfacePngDrawable(face)
@@ -392,6 +443,8 @@ object EmotionRepository {
     /**
      * Official system-face drawables can be URLDrawable instances.  The first call may only create
      * the loading drawable, so notify the UI again from the official URLDrawable callback.
+     *
+     * Animated faces deliver a static PNG first, then upgrade to APNG when ready.
      */
     fun loadSystemFaceDrawable(
         face: Selection.SystemFace,
@@ -408,18 +461,19 @@ object EmotionRepository {
                 mainHandler.post { onResult(localFallback ?: systemFaceDrawable(face)) }
                 return@execute
             }
-            if (face.isAnimatedSticker() && !preferStatic) {
-                val apng = runCatching { qfaceApngDrawable(face) }.getOrNull()
-                mainHandler.post {
-                    if (apng != null) {
-                        onResult(apng)
-                        return@post
-                    }
-                    if (localFallback != null) onResult(localFallback)
-                    loadAnimatedSystemFaceFallback(face) { animated ->
-                        if (animated != null) onResult(animated)
-                    }
+            if (face.isAnimatedSticker()) {
+                if (localFallback != null) {
+                    mainHandler.post { onResult(localFallback) }
                 }
+                if (preferStatic) {
+                    if (localFallback == null) {
+                        mainHandler.post {
+                            onResult(officialSystemFaceDrawable(face) ?: systemFaceDrawable(face))
+                        }
+                    }
+                    return@execute
+                }
+                loadQFaceApngDrawable(face, fallback = localFallback, onResult = onResult)
                 return@execute
             }
             mainHandler.post {

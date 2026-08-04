@@ -1,4 +1,7 @@
-@file:OptIn(androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class)
+@file:OptIn(
+    androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+)
 
 package rj.qmce.lite.ui.screens
 
@@ -18,6 +21,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -131,7 +136,6 @@ import rj.qmce.lite.data.chat.PttPlaybackPhase
 import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.data.chat.PttTranslationPhase
 import rj.qmce.lite.data.chat.PttTranslationState
-import rj.qmce.lite.data.emotion.EmotionPlayGate
 import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.data.reporting.OfficialReportBridge
@@ -1491,8 +1495,10 @@ internal fun MessageBubble(
         SystemTipLine(systemTip.text)
         return
     }
+    val isFaceOnlyMessage = message.contents.isNotEmpty() &&
+        message.contents.all { it is ChatDetailViewModel.MessageContent.Face }
     val containerColor = when {
-        hasMediaBubbleBackground(message) -> Color.Transparent
+        hasMediaBubbleBackground(message) || isFaceOnlyMessage -> Color.Transparent
         message.isSelf -> MaterialTheme.colorScheme.primaryContainer
         else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
@@ -1503,7 +1509,7 @@ internal fun MessageBubble(
     }
     val alignment = if (message.isSelf) Arrangement.End else Arrangement.Start
     val bubbleShape = messageBubbleShape(message.isSelf)
-    val isSingleMedia = message.contents.singleOrNull().let {
+    val isSingleMedia = isFaceOnlyMessage || message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
                 it is ChatDetailViewModel.MessageContent.Giphy ||
                 it is ChatDetailViewModel.MessageContent.Video
@@ -1583,30 +1589,26 @@ internal fun MessageBubble(
                 onClick = { onTap?.invoke() },
                 onLongClick = { onLongClick(message) },
             ) {
-                message.contents.forEachIndexed { index, content ->
-                    MessageContentItem(
-                        message = message,
-                        contentIndex = index,
-                        content = content,
-                        messageShape = bubbleShape,
-                        ensureImageCached = ensureImageCached,
-                        ensureVideoCached = ensureVideoCached,
-                        onOpenMedia = onOpenMedia,
-                        onOpenVideo = onOpenVideo,
-                        onOpenForward = onOpenForward,
-                        onLongClick = { onLongClick(message) },
-                        onOpenReply = onOpenReply,
-                        onOpenFile = onOpenFile,
-                        inlineKeyboardActions = inlineKeyboardActions,
-                        onClickInlineKeyboard = { keyboard, button ->
-                            onClickInlineKeyboard(message, keyboard, button)
-                        },
-                        voicePlaybackState = voicePlaybackState,
-                        voiceTranslationState = voiceTranslationState,
-                        onToggleVoice = onToggleVoice,
-                        onRequestCall = onRequestCall,
-                    )
-                }
+                MessageContentsLayout(
+                    message = message,
+                    messageShape = bubbleShape,
+                    ensureImageCached = ensureImageCached,
+                    ensureVideoCached = ensureVideoCached,
+                    onOpenMedia = onOpenMedia,
+                    onOpenVideo = onOpenVideo,
+                    onOpenForward = onOpenForward,
+                    onLongClick = { onLongClick(message) },
+                    onOpenReply = onOpenReply,
+                    onOpenFile = onOpenFile,
+                    inlineKeyboardActions = inlineKeyboardActions,
+                    onClickInlineKeyboard = { keyboard, button ->
+                        onClickInlineKeyboard(message, keyboard, button)
+                    },
+                    voicePlaybackState = voicePlaybackState,
+                    voiceTranslationState = voiceTranslationState,
+                    onToggleVoice = onToggleVoice,
+                    onRequestCall = onRequestCall,
+                )
             }
             // TODO: 换一个时间分割线 现在的很丑
             /*
@@ -1619,6 +1621,100 @@ internal fun MessageBubble(
              */
         }
     }
+}
+
+@Composable
+private fun MessageContentsLayout(
+    message: ChatDetailViewModel.UiMsg,
+    messageShape: RoundedCornerShape,
+    ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit,
+    onOpenMedia: (ViewerMedia) -> Unit,
+    onOpenVideo: (VideoPlayback) -> Unit,
+    onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
+    onLongClick: () -> Unit,
+    onOpenReply: (ChatDetailViewModel.MessageContent.Reply) -> Unit,
+    onOpenFile: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.File) -> Unit,
+    inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState>,
+    onClickInlineKeyboard: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
+    voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState?,
+    voiceTranslationState: (ChatDetailViewModel.MessageContent.Voice) -> PttTranslationState?,
+    onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit,
+    onRequestCall: ((CallMode) -> Unit)?,
+) {
+    val runs = remember(message.contents) { groupMessageContentRuns(message.contents) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        runs.forEach { run ->
+            when (run) {
+                is MessageContentRun.Faces -> {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        run.items.forEach { (_, face) ->
+                            FaceMessageContent(face)
+                        }
+                    }
+                }
+
+                is MessageContentRun.Single -> {
+                    MessageContentItem(
+                        message = message,
+                        contentIndex = run.index,
+                        content = run.content,
+                        messageShape = messageShape,
+                        ensureImageCached = ensureImageCached,
+                        ensureVideoCached = ensureVideoCached,
+                        onOpenMedia = onOpenMedia,
+                        onOpenVideo = onOpenVideo,
+                        onOpenForward = onOpenForward,
+                        onLongClick = onLongClick,
+                        onOpenReply = onOpenReply,
+                        onOpenFile = onOpenFile,
+                        inlineKeyboardActions = inlineKeyboardActions,
+                        onClickInlineKeyboard = onClickInlineKeyboard,
+                        voicePlaybackState = voicePlaybackState,
+                        voiceTranslationState = voiceTranslationState,
+                        onToggleVoice = onToggleVoice,
+                        onRequestCall = onRequestCall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private sealed interface MessageContentRun {
+    data class Faces(
+        val items: List<Pair<Int, ChatDetailViewModel.MessageContent.Face>>,
+    ) : MessageContentRun
+
+    data class Single(
+        val index: Int,
+        val content: ChatDetailViewModel.MessageContent,
+    ) : MessageContentRun
+}
+
+private fun groupMessageContentRuns(
+    contents: List<ChatDetailViewModel.MessageContent>,
+): List<MessageContentRun> {
+    val runs = ArrayList<MessageContentRun>()
+    var faceBuffer = ArrayList<Pair<Int, ChatDetailViewModel.MessageContent.Face>>()
+    fun flushFaces() {
+        if (faceBuffer.isEmpty()) return
+        runs += MessageContentRun.Faces(faceBuffer)
+        faceBuffer = ArrayList()
+    }
+    contents.forEachIndexed { index, content ->
+        if (content is ChatDetailViewModel.MessageContent.Face) {
+            faceBuffer += index to content
+        } else {
+            flushFaces()
+            runs += MessageContentRun.Single(index, content)
+        }
+    }
+    flushFaces()
+    return runs
 }
 
 @Composable
@@ -1869,20 +1965,8 @@ private fun LocalMarketFace(
                     !isLikelyAnimatedMarketFace(path)
             }
     }
-    var allowAnimated by remember(marketFaceKey) { mutableStateOf(false) }
-    DisposableEffect(marketFaceKey) {
-        allowAnimated = EmotionPlayGate.tryAcquire(marketFaceKey)
-        onDispose {
-            EmotionPlayGate.release(marketFaceKey)
-            allowAnimated = false
-        }
-    }
-    val preferredPath = when {
-        allowAnimated && animatedCandidate != null -> animatedCandidate
-        staticCandidate != null -> staticCandidate
-        allowAnimated -> animatedCandidate
-        else -> staticCandidate
-    }
+    // Prefer dynamic while composed (viewport); LazyColumn dispose stops playback below.
+    val preferredPath = animatedCandidate ?: staticCandidate
     var localPath by remember(marketFaceKey, preferredPath, candidatePaths, failedPaths) {
         mutableStateOf(
             preferredPath
@@ -1898,9 +1982,8 @@ private fun LocalMarketFace(
     }
     val localFile = localPath?.let(LocalMediaResolver::resolveFile)
     val isGif = localFile != null && isLikelyGifFile(localFile)
-    val isDynamicSelection = allowAnimated &&
-        animatedCandidate != null &&
-        localPath == animatedCandidate
+    val isDynamicSelection =
+        animatedCandidate != null && localPath == animatedCandidate
     val useOfficialApng = isDynamicSelection && !isGif
     var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
     var officialDrawableVersion by remember(marketFaceKey) { mutableStateOf(0) }
@@ -1909,13 +1992,10 @@ private fun LocalMarketFace(
         if (localPath != null && localPath !in failedPaths) return@LaunchedEffect
         val deadline = System.currentTimeMillis() + 8_000L
         while (System.currentTimeMillis() < deadline) {
-            val nextPath = (if (allowAnimated) {
-                listOfNotNull(animatedCandidate, staticCandidate)
-            } else {
-                listOfNotNull(staticCandidate)
-            } + candidatePaths).firstOrNull { path ->
-                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
-            }
+            val nextPath = (listOfNotNull(animatedCandidate, staticCandidate) + candidatePaths)
+                .firstOrNull { path ->
+                    path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+                }
             if (nextPath != null) {
                 localPath = nextPath
                 return@LaunchedEffect
@@ -1923,7 +2003,7 @@ private fun LocalMarketFace(
             delay(150L)
         }
     }
-    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry, useOfficialApng, allowAnimated) {
+    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry, useOfficialApng) {
         val element = content.element
         val needOfficial = (localPath == null || useOfficialApng) &&
             element != null &&
@@ -1948,6 +2028,7 @@ private fun LocalMarketFace(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 }
             },
             update = { imageView ->
@@ -1968,11 +2049,6 @@ private fun LocalMarketFace(
             }
         }
     } else if (localFile != null && localPath !in failedPaths && !useOfficialApng) {
-        val displayFile = if (allowAnimated || localPath != animatedCandidate) {
-            localFile
-        } else {
-            staticCandidate?.let(LocalMediaResolver::resolveFile) ?: localFile
-        }
         Box(
             modifier = Modifier
                 .size(size.width, size.height)
@@ -1980,7 +2056,7 @@ private fun LocalMarketFace(
         ) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
-                    .data(displayFile)
+                    .data(localFile)
                     .size(sizePx)
                     .build(),
                 contentDescription = content.name,
@@ -2049,26 +2125,16 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
     val isAnimated = remember(face) {
         face.faceType == 3 || (face.stickerType ?: 0) > 0
     }
-    val playKey = remember(face) {
-        "sysface:${face.serverId ?: face.faceIndex}:${face.stickerId.orEmpty()}"
-    }
-    var allowAnimated by remember(playKey) { mutableStateOf(!isAnimated) }
-    DisposableEffect(playKey, isAnimated) {
-        allowAnimated = if (isAnimated) EmotionPlayGate.tryAcquire(playKey) else true
-        onDispose {
-            if (isAnimated) EmotionPlayGate.release(playKey)
-        }
-    }
-    var drawable by remember(face, allowAnimated) { mutableStateOf<Drawable?>(null) }
+    var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
     val loadGeneration = remember { AtomicLong(0L) }
-    LaunchedEffect(face, allowAnimated) {
+    LaunchedEffect(face) {
         val generation = loadGeneration.incrementAndGet()
-        drawable = null
+        // Keep the previous drawable visible until a replacement arrives (no blank flash).
         EmotionRepository.loadSystemFaceDrawable(
             face = face,
-            preferStatic = isAnimated && !allowAnimated,
+            preferStatic = false,
         ) { loaded ->
-            if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
+            if (loadGeneration.get() == generation && loaded != null) {
                 drawable = loaded
             }
         }
@@ -2080,11 +2146,13 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
         MessageFallback(fallbackText)
     } else {
         val currentDrawable = drawable
-        val size = if (isAnimated) 120.dp else 34.dp
+        val size = if (isAnimated) 48.dp else 34.dp
         AndroidView(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
+                    adjustViewBounds = true
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 }
             },
             update = { imageView ->
@@ -2092,16 +2160,12 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
                     imageView.setImageDrawable(currentDrawable)
                 }
                 currentDrawable?.setVisible(true, true)
-                if (allowAnimated) {
-                    (currentDrawable as? android.graphics.drawable.Animatable)?.start()
-                } else {
-                    (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
-                }
+                (currentDrawable as? android.graphics.drawable.Animatable)?.start()
                 imageView.invalidate()
             },
             modifier = Modifier.size(size),
         )
-        DisposableEffect(currentDrawable, allowAnimated) {
+        DisposableEffect(currentDrawable) {
             onDispose {
                 (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
                 currentDrawable?.setVisible(false, false)
@@ -2118,12 +2182,6 @@ private fun GiphyMessageContent(
     val context = LocalContext.current
     val density = LocalDensity.current
     val mediaUrl = content.mediaUrl
-    val playKey = remember(mediaUrl) { "giphy:${mediaUrl.orEmpty()}" }
-    var allowAnimated by remember(playKey) { mutableStateOf(false) }
-    DisposableEffect(playKey) {
-        allowAnimated = EmotionPlayGate.tryAcquire(playKey)
-        onDispose { EmotionPlayGate.release(playKey) }
-    }
     var failed by remember(mediaUrl) { mutableStateOf(false) }
     val size = mediaSize(content.width, content.height)
     val sizePx = with(density) {
@@ -2140,20 +2198,16 @@ private fun GiphyMessageContent(
             ),
             contentPadding = PaddingValues(0.dp),
         ) {
-            if (allowAnimated) {
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(mediaUrl)
-                        .size(sizePx)
-                        .build(),
-                    contentDescription = "GIF 动图",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                    onError = { failed = true },
-                )
-            } else {
-                MediaPlaceholder(size, "GIF")
-            }
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(mediaUrl)
+                    .size(sizePx)
+                    .build(),
+                contentDescription = "GIF 动图",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                onError = { failed = true },
+            )
         }
     }
 }
