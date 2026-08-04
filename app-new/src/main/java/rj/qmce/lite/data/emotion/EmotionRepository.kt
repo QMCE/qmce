@@ -264,29 +264,25 @@ object EmotionRepository {
 
     fun systemFaceDrawable(face: Selection.SystemFace): Drawable? {
         if (face.isEmoji) {
-            return runCatching { QQEmojiUtil.getEmojiDrawable(face.faceIndex) }.getOrNull()
-                ?: localEmojiDrawable(face.faceIndex)
+            return localEmojiDrawable(face.faceIndex).usable()
+                ?: runCatching { QQEmojiUtil.getEmojiDrawable(face.faceIndex) }.getOrNull().usable()
                 ?: runCatching {
                     SystemAndEmojiEmotionInfo(face.faceType, face.faceIndex, face.label).getDrawable()
-                }.getOrNull()
+                }.getOrNull().usable()
+                ?: qfacePngDrawable(face).usable()
         }
-        officialSystemFaceDrawable(face)?.let { return it }
+        officialSystemFaceDrawable(face)?.usable()?.let { return it }
         if (face.isAnimatedSticker()) {
             animatedDrawableCache[animatedFaceKey(face)]?.let {
                 runCatching { it.getDrawable() }.getOrNull()
-            }?.takeUnless { it is ColorDrawable }?.let { return it }
+            }?.usable()?.let { return it }
         }
-        localSystemFaceDrawable(face)?.let { return it }
-        kernelRenderedFaceDrawable(face)
-            ?.takeUnless { it is ColorDrawable }
-            ?.let { return it }
+        localSystemFaceDrawable(face)?.usable()?.let { return it }
+        kernelRenderedFaceDrawable(face)?.usable()?.let { return it }
         runCatching {
             SystemAndEmojiEmotionInfo(face.faceType, face.faceIndex, face.label).getDrawable()
-        }.getOrNull()
-            ?.takeUnless { it is ColorDrawable }
-            ?.let { return it }
-        return runCatching { QQSysFaceUtil.getFaceDrawable(face.faceIndex) }.getOrNull()
-            ?.takeUnless { it is ColorDrawable }
+        }.getOrNull()?.usable()?.let { return it }
+        return runCatching { QQSysFaceUtil.getFaceDrawable(face.faceIndex) }.getOrNull().usable()
     }
 
     private fun officialSystemFaceDrawable(face: Selection.SystemFace): Drawable? {
@@ -349,14 +345,19 @@ object EmotionRepository {
         ) ?: face.faceIndex.toString()
 
     private fun qfacePngDrawable(face: Selection.SystemFace): Drawable? = runCatching {
-        val file = QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Png)
-            ?.takeIf(File::isFile)
-            ?: return@runCatching null
+        val file = qfacePngFile(face) ?: return@runCatching null
         val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return@runCatching null
         BitmapDrawable(BaseApplication.getContext().resources, bitmap)
     }.onFailure {
         Log.d(TAG, "qface png unavailable face=${face.faceIndex}", it)
     }.getOrNull()
+
+    /** Local/remote QFace PNG file for notification preview. */
+    fun qfacePngFileForNotify(face: Selection.SystemFace): File? = qfacePngFile(face)
+
+    private fun qfacePngFile(face: Selection.SystemFace): File? =
+        QFaceRemoteStore.ensureAsset(qfaceEmojiId(face), QFaceRemoteStore.Kind.Png)
+            ?.takeIf(File::isFile)
 
     private fun loadQFaceApngDrawable(
         face: Selection.SystemFace,
@@ -406,26 +407,35 @@ object EmotionRepository {
         fallback: Drawable?,
         onResult: (Drawable?) -> Unit,
     ) {
+        fun deliverReady(ready: Drawable?) {
+            if (ready != null) {
+                (ready as? android.graphics.drawable.Animatable)?.start()
+            }
+            onResult(ready)
+        }
         if (!isOfficialUrlDrawable(drawable)) {
-            onResult(drawable)
+            deliverReady(drawable)
             return
         }
         when (officialUrlDrawableStatus(drawable)) {
-            URLDrawable.SUCCESSED -> onResult(drawable)
-            URLDrawable.FAILED, URLDrawable.CANCLED -> onResult(fallback)
+            URLDrawable.SUCCESSED -> deliverReady(drawable)
+            URLDrawable.FAILED, URLDrawable.CANCLED -> deliverReady(fallback)
             else -> {
                 installOfficialUrlDrawableListener(
                     drawable = drawable,
                     face = face,
                     fallback = fallback,
-                    deliver = onResult,
+                    deliver = ::deliverReady,
                 )
                 startOfficialUrlDrawableDownload(drawable) {
-                    onResult(drawable)
+                    deliverReady(drawable)
                 }
             }
         }
     }
+
+    private fun Drawable?.usable(): Drawable? =
+        takeUnless { it == null || it is ColorDrawable }
 
     private fun localSystemFaceDrawable(face: Selection.SystemFace): Drawable? =
         qfacePngDrawable(face)
@@ -452,15 +462,17 @@ object EmotionRepository {
         onResult: (Drawable?) -> Unit,
     ) {
         ioExecutor.execute {
-            val localFallback = if (face.isEmoji) {
-                runCatching { localEmojiDrawable(face.faceIndex) }.getOrNull()
-            } else {
-                runCatching { localSystemFaceDrawable(face) }.getOrNull()
-            }
             if (face.isEmoji) {
-                mainHandler.post { onResult(localFallback ?: systemFaceDrawable(face)) }
+                val emoji = localEmojiDrawable(face.faceIndex).usable()
+                    ?: runCatching { QQEmojiUtil.getEmojiDrawable(face.faceIndex) }.getOrNull().usable()
+                    ?: runCatching {
+                        SystemAndEmojiEmotionInfo(face.faceType, face.faceIndex, face.label).getDrawable()
+                    }.getOrNull().usable()
+                    ?: qfacePngDrawable(face).usable()
+                mainHandler.post { onResult(emoji) }
                 return@execute
             }
+            val localFallback = runCatching { localSystemFaceDrawable(face) }.getOrNull().usable()
             if (face.isAnimatedSticker()) {
                 if (localFallback != null) {
                     mainHandler.post { onResult(localFallback) }
@@ -468,7 +480,10 @@ object EmotionRepository {
                 if (preferStatic) {
                     if (localFallback == null) {
                         mainHandler.post {
-                            onResult(officialSystemFaceDrawable(face) ?: systemFaceDrawable(face))
+                            onResult(
+                                officialSystemFaceDrawable(face).usable()
+                                    ?: systemFaceDrawable(face).usable(),
+                            )
                         }
                     }
                     return@execute
@@ -476,11 +491,19 @@ object EmotionRepository {
                 loadQFaceApngDrawable(face, fallback = localFallback, onResult = onResult)
                 return@execute
             }
+            // Classic system face: prefer QFace PNG, then official chain.
+            if (localFallback != null) {
+                mainHandler.post { onResult(localFallback) }
+            }
             mainHandler.post {
-                val official = officialSystemFaceDrawable(face)
+                val official = officialSystemFaceDrawable(face).usable()
                 if (official != null) {
                     if (isLibraWrapper(official)) {
-                        onResult(localFallback ?: official)
+                        if (localFallback != null) {
+                            // Already delivered local; skip empty Libra wrapper.
+                            return@post
+                        }
+                        onResult(official)
                     } else {
                         onResult(official)
                     }
@@ -490,19 +513,21 @@ object EmotionRepository {
                                 drawable = official,
                                 face = face,
                                 fallback = localFallback,
-                                deliver = onResult,
+                                deliver = { d -> onResult(d.usable() ?: localFallback) },
                             )
                             startOfficialUrlDrawableDownload(official) {
-                                onResult(official)
+                                onResult(official.usable() ?: localFallback)
                             }
                         }.onFailure {
                             Log.d(TAG, "official system-face drawable unavailable face=${face.faceIndex}", it)
-                            onResult(localFallback)
+                            if (localFallback == null) onResult(null)
                         }
                     }
                     return@post
                 }
-                onResult(localFallback ?: systemFaceDrawable(face))
+                if (localFallback == null) {
+                    onResult(systemFaceDrawable(face).usable())
+                }
             }
         }
     }
@@ -809,7 +834,10 @@ object EmotionRepository {
             arrayOf(listenerClass),
         ) { _, method, args ->
             when (method.name) {
-                "onLoadSuccessed" -> deliver(drawable)
+                "onLoadSuccessed" -> {
+                    (drawable as? android.graphics.drawable.Animatable)?.start()
+                    deliver(drawable)
+                }
                 "onLoadCanceled", "onLoadFialed" -> {
                     Log.d(TAG, "system face drawable load failed face=${face.faceIndex}")
                     if (!retried.compareAndSet(false, true) || !restartOfficialUrlDrawable(drawable)) {

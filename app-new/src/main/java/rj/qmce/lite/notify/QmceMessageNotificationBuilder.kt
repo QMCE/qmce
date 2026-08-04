@@ -25,6 +25,7 @@ import java.util.concurrent.Executors
 
 internal object QmceMessageNotificationBuilder {
     private const val TAG = "QmceMessageNotif"
+    private const val MAX_HISTORY = 5
     private val io = Executors.newSingleThreadExecutor { r ->
         Thread(r, "qmce-notify-avatar").apply { isDaemon = true }
     }
@@ -61,6 +62,7 @@ internal object QmceMessageNotificationBuilder {
         title: String,
         text: String,
         visuals: Visuals,
+        priorMessages: List<NotificationCompat.MessagingStyle.Message> = emptyList(),
     ): android.app.Notification {
         val chatType = contact.chatType
         val channel = if (chatType == 2) {
@@ -76,23 +78,31 @@ internal object QmceMessageNotificationBuilder {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val senderIcon = visuals.senderIcon ?: visuals.conversationIcon.takeIf { chatType != 2 }
+        // Group: never attach sender avatar to Person (covers largeIcon / MessagingStyle avatar).
+        val senderIcon = if (chatType == 2) {
+            null
+        } else {
+            visuals.senderIcon ?: visuals.conversationIcon
+        }
         val self = selfPerson()
         val sender = senderPerson(contact, title, chatType, senderIcon)
         val msgTimeMs = contact.msgTime.takeIf { it > 0L }?.let { t ->
             if (t < 10_000_000_000L) t * 1000L else t
         } ?: System.currentTimeMillis()
-        val message = NotificationCompat.MessagingStyle.Message(text, msgTimeMs, sender)
+        val messageText = if (visuals.imageUri != null) " " else text
+        val message = NotificationCompat.MessagingStyle.Message(messageText, msgTimeMs, sender)
         visuals.imageUri?.let { uri ->
             message.setData("image/jpeg", uri)
         }
         val style = NotificationCompat.MessagingStyle(self)
             .setGroupConversation(chatType == 2)
-            .addMessage(message)
         if (chatType == 2) {
             style.conversationTitle = title
         }
-        val allowShortcut = QmceRecentViewedChats.contains(context, peerUid, chatType)
+        priorMessages.takeLast(MAX_HISTORY).forEach { style.addMessage(it) }
+        style.addMessage(message)
+        val allowShortcut = chatType == 2 ||
+            QmceRecentViewedChats.contains(context, peerUid, chatType)
         val sid = shortcutId(chatType, peerUid)
         if (allowShortcut) {
             pushShortcut(context, sid, title, intent, visuals.conversationIcon)
@@ -111,6 +121,7 @@ internal object QmceMessageNotificationBuilder {
                 builder.setLocusId(LocusIdCompat(sid))
             }
         }
+        // largeIcon is conversation (group) avatar only — never sender.
         if (visuals.conversationIcon != null) {
             builder.setLargeIcon(visuals.conversationIcon)
         }
@@ -127,7 +138,7 @@ internal object QmceMessageNotificationBuilder {
             val conversation = loadConversationAvatar(contact, chatType)
                 ?.let(QmceNotifyBitmaps::toCircle)
             val sender = if (chatType == 2) {
-                loadSenderAvatar(contact)?.let(QmceNotifyBitmaps::toCircle)
+                null
             } else {
                 conversation
             }
@@ -164,16 +175,30 @@ internal object QmceMessageNotificationBuilder {
     }
 
     private fun loadConversationAvatar(contact: RecentContactInfo, chatType: Int): Bitmap? {
+        val peerCode = contact.peerUin.takeIf { it > 0L }
+            ?: contact.peerUid?.toLongOrNull()?.takeIf { it > 0L }
+        // Group: prefer official group qlogo so avatarPath (often last sender) never wins.
+        if (chatType == 2 && peerCode != null) {
+            val groupUrl = "https://p.qlogo.cn/gh/$peerCode/$peerCode/100"
+            fetchBitmap(groupUrl)?.let { return it }
+            Log.d(TAG, "group qlogo failed code=$peerCode, trying local/avatarUrl")
+        }
         val path = contact.avatarPath?.removePrefix("file://")?.takeIf { it.isNotBlank() }
-        if (path != null) {
+        if (path != null && chatType != 2) {
             val file = File(path)
             if (file.isFile) {
                 val local = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
                 if (local != null) return local
             }
         }
-        val peerCode = contact.peerUin.takeIf { it > 0L }
-            ?: contact.peerUid?.toLongOrNull()?.takeIf { it > 0L }
+        // For groups, only use avatarPath after qlogo failed (may still be wrong, last resort).
+        if (chatType == 2 && path != null) {
+            val file = File(path)
+            if (file.isFile) {
+                val local = runCatching { BitmapFactory.decodeFile(file.absolutePath) }.getOrNull()
+                if (local != null) return local
+            }
+        }
         val candidates = buildList {
             contact.avatarUrl?.takeIf { it.isNotBlank() }?.let(::add)
             if (chatType == 2 && peerCode != null) {
@@ -188,11 +213,6 @@ internal object QmceMessageNotificationBuilder {
             Log.d(TAG, "avatar fetch failed chatType=$chatType code=$peerCode url=$url")
         }
         return null
-    }
-
-    private fun loadSenderAvatar(contact: RecentContactInfo): Bitmap? {
-        val senderUin = contact.senderUin.takeIf { it > 0L } ?: return null
-        return fetchBitmap("https://q1.qlogo.cn/g?b=qq&nk=$senderUin&s=100")
     }
 
     private fun fetchBitmap(url: String): Bitmap? = runCatching {

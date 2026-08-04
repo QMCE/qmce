@@ -6,6 +6,7 @@
 package rj.qmce.lite.ui.screens
 
 import android.content.pm.PackageManager
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.text.format.Formatter
 import android.widget.ImageView
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -91,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1569,8 +1572,15 @@ internal fun MessageBubble(
             }
             MessageCard(
                 modifier = Modifier
-                    .width(IntrinsicSize.Max)
-                    .height(IntrinsicSize.Max)
+                    .then(
+                        if (isFaceOnlyMessage) {
+                            Modifier.wrapContentWidth()
+                        } else {
+                            Modifier
+                                .width(IntrinsicSize.Max)
+                                .height(IntrinsicSize.Max)
+                        },
+                    )
                     .widthIn(max = MessageBubbleMaxWidth)
                     .then(
                         if (isHighlighted) {
@@ -1647,12 +1657,18 @@ private fun MessageContentsLayout(
         runs.forEach { run ->
             when (run) {
                 is MessageContentRun.Faces -> {
+                    val multi = run.items.size >= 2
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         run.items.forEach { (_, face) ->
-                            FaceMessageContent(face)
+                            val forcedSize = when {
+                                multi -> 36.dp
+                                face.faceType == 3 || (face.stickerType ?: 0) > 0 -> 56.dp
+                                else -> 32.dp
+                            }
+                            FaceMessageContent(face, forcedSize = forcedSize)
                         }
                     }
                 }
@@ -1758,7 +1774,9 @@ private fun MessageContentItem(
         )
 
         is ChatDetailViewModel.MessageContent.Face -> {
-            FaceMessageContent(content)
+            val forcedSize =
+                if (content.faceType == 3 || (content.stickerType ?: 0) > 0) 56.dp else 32.dp
+            FaceMessageContent(content, forcedSize = forcedSize)
         }
 
         is ChatDetailViewModel.MessageContent.FaceBubble -> {
@@ -1965,7 +1983,6 @@ private fun LocalMarketFace(
                     !isLikelyAnimatedMarketFace(path)
             }
     }
-    // Prefer dynamic while composed (viewport); LazyColumn dispose stops playback below.
     val preferredPath = animatedCandidate ?: staticCandidate
     var localPath by remember(marketFaceKey, preferredPath, candidatePaths, failedPaths) {
         mutableStateOf(
@@ -1981,10 +1998,6 @@ private fun LocalMarketFace(
         }
     }
     val localFile = localPath?.let(LocalMediaResolver::resolveFile)
-    val isGif = localFile != null && isLikelyGifFile(localFile)
-    val isDynamicSelection =
-        animatedCandidate != null && localPath == animatedCandidate
-    val useOfficialApng = isDynamicSelection && !isGif
     var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
     var officialDrawableVersion by remember(marketFaceKey) { mutableStateOf(0) }
     var officialRetry by remember(marketFaceKey) { mutableStateOf(0) }
@@ -2003,12 +2016,11 @@ private fun LocalMarketFace(
             delay(150L)
         }
     }
-    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry, useOfficialApng) {
+    // Always try official animated drawable when element is present.
+    LaunchedEffect(marketFaceKey, content.element, officialRetry) {
         val element = content.element
-        val needOfficial = (localPath == null || useOfficialApng) &&
-            element != null &&
-            officialRetry <= 2
-        if (needOfficial && (officialDrawable == null || useOfficialApng)) {
+        val needOfficial = element != null && officialRetry <= 2
+        if (needOfficial && officialDrawable == null) {
             if (officialRetry > 0) delay(400L)
             EmotionRepository.loadMarketFaceDrawable(element!!) { drawable ->
                 if (drawable != null) {
@@ -2020,7 +2032,7 @@ private fun LocalMarketFace(
             }
         }
     }
-    val showOfficial = officialDrawable != null && (localFile == null || useOfficialApng)
+    val showOfficial = officialDrawable != null
     if (showOfficial) {
         val currentDrawable = officialDrawable
         val currentDrawableVersion = officialDrawableVersion
@@ -2048,7 +2060,7 @@ private fun LocalMarketFace(
                 currentDrawable?.setVisible(false, false)
             }
         }
-    } else if (localFile != null && localPath !in failedPaths && !useOfficialApng) {
+    } else if (localFile != null && localPath !in failedPaths) {
         Box(
             modifier = Modifier
                 .size(size.width, size.height)
@@ -2078,9 +2090,13 @@ private fun isLikelyAnimatedMarketFace(path: String): Boolean {
     if (lower.endsWith(".gif")) return true
     if (lower.endsWith("_aio.png") || lower.endsWith("_thu.png")) return false
     if (lower.contains("apng") || lower.endsWith("_apng")) return true
+    if (lower.contains("emoticonimagepath") || lower.contains("emoticon_image")) return true
     if (lower.endsWith(".png")) return false
     val file = LocalMediaResolver.resolveFile(path) ?: return true
-    return isLikelyGifFile(file) || !file.name.contains('.')
+    if (isLikelyGifFile(file)) return true
+    // No extension — often official dynamic cache files.
+    if (!file.name.contains('.')) return true
+    return false
 }
 
 private fun isLikelyGifFile(file: File): Boolean {
@@ -2098,7 +2114,10 @@ private fun isLikelyGifFile(file: File): Boolean {
 }
 
 @Composable
-private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face) {
+private fun FaceMessageContent(
+    content: ChatDetailViewModel.MessageContent.Face,
+    forcedSize: Dp,
+) {
     val face = remember(
         content.faceType,
         content.faceIndex,
@@ -2122,9 +2141,6 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             surpriseId = content.surpriseId,
         )
     }
-    val isAnimated = remember(face) {
-        face.faceType == 3 || (face.stickerType ?: 0) > 0
-    }
     var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
     val loadGeneration = remember { AtomicLong(0L) }
     LaunchedEffect(face) {
@@ -2134,7 +2150,10 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             face = face,
             preferStatic = false,
         ) { loaded ->
-            if (loadGeneration.get() == generation && loaded != null) {
+            if (loadGeneration.get() == generation &&
+                loaded != null &&
+                loaded !is ColorDrawable
+            ) {
                 drawable = loaded
             }
         }
@@ -2146,12 +2165,11 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
         MessageFallback(fallbackText)
     } else {
         val currentDrawable = drawable
-        val size = if (isAnimated) 48.dp else 34.dp
         AndroidView(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
-                    adjustViewBounds = true
+                    adjustViewBounds = false
                     setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 }
             },
@@ -2163,7 +2181,7 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
                 (currentDrawable as? android.graphics.drawable.Animatable)?.start()
                 imageView.invalidate()
             },
-            modifier = Modifier.size(size),
+            modifier = Modifier.size(forcedSize),
         )
         DisposableEffect(currentDrawable) {
             onDispose {

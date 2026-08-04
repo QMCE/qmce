@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.tencent.qqnt.kernel.invorker.IExpandNotificationListener
@@ -36,7 +37,7 @@ object QmceMessageNotifier {
     private var registerAttempts = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private var retryRunnable: Runnable? = null
-    private val postedIds = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+    private val postedKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     const val EXTRA_PEER_UID = "PEER_UID"
     const val EXTRA_PEER_UIN = "PEER_UIN"
@@ -45,6 +46,16 @@ object QmceMessageNotifier {
     const val EXTRA_OPEN_CHAT = "open_chatfragment"
     const val EXTRA_OPEN_NOTIFY_CENTER = "open_notification_center"
     const val EXTRA_OPEN_TILE_GROUP_PICKER = "open_tile_group_picker"
+
+    fun peerKey(contact: RecentContactInfo): String =
+        contact.peerUid?.takeIf { it.isNotBlank() }
+            ?: contact.peerUin.takeIf { it > 0L }?.toString().orEmpty()
+
+    fun peerKey(peerUid: String, peerUin: Long = 0L): String =
+        peerUid.takeIf { it.isNotBlank() }
+            ?: peerUin.takeIf { it > 0L }?.toString().orEmpty()
+
+    fun notifyTag(chatType: Int, peer: String): String = "msg:$chatType:$peer"
 
     fun start(context: Context) {
         val app = context.applicationContext
@@ -70,15 +81,23 @@ object QmceMessageNotifier {
     }
 
     fun cancelForChat(context: Context, peerUid: String, chatType: Int) {
-        NotificationManagerCompat.from(context)
-            .cancel(notifyId(peerUid, chatType))
+        val peer = peerKey(peerUid)
+        val tag = notifyTag(chatType, peer)
+        val id = notifyId(peer, chatType)
+        NotificationManagerCompat.from(context).cancel(tag, id)
+        postedKeys.remove("$tag#$id")
     }
 
     fun cancelAllMessageNotifications(context: Context) {
         val nm = NotificationManagerCompat.from(context)
-        val ids = synchronized(postedIds) { postedIds.toList().also { postedIds.clear() } }
-        ids.forEach { id -> runCatching { nm.cancel(id) } }
-        Log.i(TAG, "cancelled ${ids.size} tracked message notifications")
+        val keys = synchronized(postedKeys) { postedKeys.toList().also { postedKeys.clear() } }
+        keys.forEach { key ->
+            val parts = key.split('#', limit = 2)
+            if (parts.size == 2) {
+                runCatching { nm.cancel(parts[0], parts[1].toIntOrNull() ?: 0) }
+            }
+        }
+        Log.i(TAG, "cancelled ${keys.size} tracked message notifications")
     }
 
     private fun tryRegister(app: Context) {
@@ -198,15 +217,13 @@ object QmceMessageNotifier {
             )
             return
         }
-        val peerUid = contact.peerUid.orEmpty().ifBlank {
-            contact.peerUin.takeIf { it > 0L }?.toString().orEmpty()
-        }
-        if (peerUid.isBlank() && contact.peerUin <= 0L) {
+        val peer = peerKey(contact)
+        if (peer.isBlank()) {
             Log.i(TAG, "gate: empty peer")
             return
         }
-        if (QmceForegroundSession.matches(peerUid, chatType)) {
-            cancelForChat(context, peerUid, chatType)
+        if (QmceForegroundSession.matches(peer, chatType)) {
+            cancelForChat(context, peer, chatType)
             Log.i(TAG, "gate: foreground session")
             return
         }
@@ -217,19 +234,21 @@ object QmceMessageNotifier {
 
         val title = QmceRecentContactText.displayName(contact)
         val text = QmceRecentContactText.abstractText(contact).ifBlank { "新消息" }
-        val id = notifyId(peerUid, chatType)
+        val id = notifyId(peer, chatType)
+        val tag = notifyTag(chatType, peer)
         postNow(
             context,
             contact,
-            peerUid,
+            peer,
             title,
             text,
             QmceMessageNotificationBuilder.Visuals(null, null, null),
+            tag,
             id,
         )
         QmceMessageNotificationBuilder.loadVisualsAsync(context, contact) { visuals ->
             mainHandler.post {
-                postNow(context, contact, peerUid, title, text, visuals, id)
+                postNow(context, contact, peer, title, text, visuals, tag, id)
             }
         }
         QmceWearSurfaces.requestDataRefresh(context)
@@ -242,8 +261,10 @@ object QmceMessageNotifier {
         title: String,
         text: String,
         visuals: QmceMessageNotificationBuilder.Visuals,
+        tag: String,
         id: Int,
     ) {
+        val prior = extractPriorMessages(context, tag, id)
         val notification = QmceMessageNotificationBuilder.build(
             context = context,
             contact = contact,
@@ -251,12 +272,30 @@ object QmceMessageNotifier {
             title = title,
             text = text,
             visuals = visuals,
+            priorMessages = prior,
         )
         runCatching {
-            NotificationManagerCompat.from(context).notify(id, notification)
-            postedIds.add(id)
-            Log.i(TAG, "posted id=$id chatType=${contact.chatType} title=$title")
+            NotificationManagerCompat.from(context).notify(tag, id, notification)
+            postedKeys.add("$tag#$id")
+            Log.i(TAG, "posted tag=$tag id=$id chatType=${contact.chatType} title=$title")
         }.onFailure { Log.w(TAG, "notify failed", it) }
+    }
+
+    private fun extractPriorMessages(
+        context: Context,
+        tag: String,
+        id: Int,
+    ): List<NotificationCompat.MessagingStyle.Message> {
+        val notification = runCatching {
+            val nm = context.getSystemService(android.app.NotificationManager::class.java)
+            nm?.activeNotifications
+                ?.firstOrNull { it.id == id && it.tag == tag }
+                ?.notification
+        }.getOrNull() ?: return emptyList()
+        val style = NotificationCompat.MessagingStyle
+            .extractMessagingStyleFromNotification(notification)
+            ?: return emptyList()
+        return style.messages.orEmpty()
     }
 
     private fun canPost(context: Context): Boolean {

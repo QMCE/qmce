@@ -83,20 +83,22 @@ import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportLifecycle
 import rj.qmce.lite.data.reporting.OfficialReportPage
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.ui.screens.AboutHubScreen
 import rj.qmce.lite.ui.screens.AboutScreen
-import rj.qmce.lite.ui.screens.AiSettingsScreen
 import rj.qmce.lite.ui.screens.AppearanceSettingsScreen
+import rj.qmce.lite.ui.screens.BackgroundSettingsScreen
+import rj.qmce.lite.ui.screens.CallSettingsScreen
 import rj.qmce.lite.ui.screens.ChatDetailScreen
 import rj.qmce.lite.ui.screens.ChatComposerMenuScreen
 import rj.qmce.lite.ui.screens.ChatInputScreen
 import rj.qmce.lite.ui.screens.EmotionPickerScreen
 import rj.qmce.lite.ui.screens.ChatMembersScreen
 import rj.qmce.lite.ui.screens.ChatSettingsScreen
-import rj.qmce.lite.ui.screens.CheckUpdateScreen
 import rj.qmce.lite.ui.screens.ContactPickerScreen
+import rj.qmce.lite.ui.screens.DataSettingsScreen
 import rj.qmce.lite.ui.screens.DeveloperToolsSettingsScreen
-import rj.qmce.lite.ui.screens.DiagnosticsSettingsScreen
 import rj.qmce.lite.ui.screens.ForceExitConfirmationScreen
+import rj.qmce.lite.ui.screens.IntelligenceSettingsScreen
 import rj.qmce.lite.ui.screens.InteractionSettingsScreen
 import rj.qmce.lite.ui.screens.LocalImagePickerScreen
 import rj.qmce.lite.ui.screens.LoginScreen
@@ -121,8 +123,6 @@ import rj.qmce.lite.ui.screens.GroupManagementScreen
 import rj.qmce.lite.ui.screens.GroupMemberProfileScreen
 import rj.qmce.lite.ui.screens.SettingsClearChatCacheScreen
 import rj.qmce.lite.ui.screens.SettingsScreen
-import rj.qmce.lite.ui.screens.StorageSettingsScreen
-import rj.qmce.lite.ui.screens.SyncDataSettingsScreen
 import rj.qmce.lite.ui.screens.VoiceRecordScreen
 import rj.qmce.lite.ui.theme.QmceTheme
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
@@ -926,38 +926,41 @@ private fun WearApp() {
                                     launchSingleTop = true
                                 }
                             },
-                            onOpenSyncData = {
-                                navController.navigate("syncDataSettings") {
+                            onOpenBackground = {
+                                navController.navigate("backgroundSettings") {
                                     launchSingleTop = true
                                 }
                             },
-                            onOpenStorage = {
-                                navController.navigate("storageSettings") { launchSingleTop = true }
-                            },
-                            onOpenDeveloperTools = {
-                                navController.navigate("developerToolsSettings") {
+                            onOpenCall = {
+                                navController.navigate("callSettings") {
                                     launchSingleTop = true
                                 }
                             },
-                            onOpenAiSettings = {
-                                navController.navigate("aiSettings") { launchSingleTop = true }
+                            onOpenData = {
+                                navController.navigate("dataSettings") {
+                                    launchSingleTop = true
+                                }
                             },
-                            onOpenAgentSettings = {
-                                navController.navigate("agentSettings") { launchSingleTop = true }
+                            onOpenIntelligence = {
+                                navController.navigate("intelligenceSettings") {
+                                    launchSingleTop = true
+                                }
                             },
-                            onOpenAbout = {
-                                navController.navigate("about") { launchSingleTop = true }
-                            },
-                            onCheckUpdate = {
-                                navController.navigate("checkUpdate") { launchSingleTop = true }
-                            },
-                            onOpenDiagnostics = {
-                                navController.navigate("diagnostics") { launchSingleTop = true }
+                            onOpenAboutHub = {
+                                navController.navigate("aboutHub") {
+                                    launchSingleTop = true
+                                }
                             },
                         )
                     }
                     composable("notificationSettings") {
                         NotificationSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("backgroundSettings") {
+                        BackgroundSettingsScreen(
                             settingsVm = settingsVm,
                             onOpenWatchlist = {
                                 navController.navigate("tileGroupPicker") {
@@ -966,6 +969,89 @@ private fun WearApp() {
                             },
                             onBack = { navController.popBackStack() },
                         )
+                    }
+                    composable("callSettings") {
+                        CallSettingsScreen(
+                            settingsVm = settingsVm,
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("dataSettings") {
+                        DataSettingsScreen(
+                            runtime = runtime,
+                            chatListVm = chatListVm,
+                            contactsVm = contactsVm,
+                            qZoneVm = qZoneVm,
+                            myVm = myVm,
+                            storageVm = storageVm,
+                            onOpenClearCache = {
+                                navController.navigate("settingsClearChatCache") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("intelligenceSettings") {
+                        IntelligenceSettingsScreen(
+                            settingsVm = settingsVm,
+                            onOpenAgentDetails = {
+                                navController.navigate("agentSettings") {
+                                    launchSingleTop = true
+                                }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    composable("aboutHub") {
+                        AboutHubScreen(
+                            settingsVm = settingsVm,
+                            onOpenAbout = {
+                                navController.navigate("about") { launchSingleTop = true }
+                            },
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                    // Legacy redirects
+                    composable("syncDataSettings") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("dataSettings") {
+                                launchSingleTop = true
+                                popUpTo("syncDataSettings") { inclusive = true }
+                            }
+                        }
+                    }
+                    composable("storageSettings") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("dataSettings") {
+                                launchSingleTop = true
+                                popUpTo("storageSettings") { inclusive = true }
+                            }
+                        }
+                    }
+                    composable("aiSettings") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("intelligenceSettings") {
+                                launchSingleTop = true
+                                popUpTo("aiSettings") { inclusive = true }
+                            }
+                        }
+                    }
+                    composable("checkUpdate") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("aboutHub") {
+                                launchSingleTop = true
+                                popUpTo("checkUpdate") { inclusive = true }
+                            }
+                        }
+                    }
+                    composable("diagnostics") {
+                        LaunchedEffect(Unit) {
+                            navController.navigate("aboutHub") {
+                                launchSingleTop = true
+                                popUpTo("diagnostics") { inclusive = true }
+                            }
+                        }
                     }
                     composable("tileWatchlist") {
                         LaunchedEffect(Unit) {
@@ -1000,21 +1086,6 @@ private fun WearApp() {
                             onBack = { navController.popBackStack() },
                         )
                     }
-                    composable("syncDataSettings") {
-                        SyncDataSettingsScreen(
-                            runtime = runtime,
-                            chatListVm = chatListVm,
-                            contactsVm = contactsVm,
-                            qZoneVm = qZoneVm,
-                            myVm = myVm,
-                            onOpenTileGroupPicker = {
-                                navController.navigate("tileGroupPicker") {
-                                    launchSingleTop = true
-                                }
-                            },
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
                     composable("developerToolsSettings") {
                         DeveloperToolsSettingsScreen(
                             onOpenPacketTool = {
@@ -1025,38 +1096,9 @@ private fun WearApp() {
                             onBack = { navController.popBackStack() },
                         )
                     }
-                    composable("aiSettings") {
-                        AiSettingsScreen(
-                            settingsVm = settingsVm,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
                     composable("agentSettings") {
                         rj.qmce.lite.agent.ui.AgentSettingsScreen(
                             settingsVm = settingsVm,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                    composable("checkUpdate") {
-                        CheckUpdateScreen(
-                            onBack = { navController.popBackStack() },
-                            settingsVm = settingsVm,
-                        )
-                    }
-                    composable("diagnostics") {
-                        DiagnosticsSettingsScreen(
-                            settingsVm = settingsVm,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                    composable("storageSettings") {
-                        StorageSettingsScreen(
-                            storageVm = storageVm,
-                            onOpenClearCache = {
-                                navController.navigate("settingsClearChatCache") {
-                                    launchSingleTop = true
-                                }
-                            },
                             onBack = { navController.popBackStack() },
                         )
                     }
@@ -1265,8 +1307,9 @@ private fun officialPageId(route: String?, mainPage: Int): String? = when (route
     "qzoneImagePicker" -> OfficialReportBridge.PageIds.ALBUM_SELECTION
     "settingsClearChatCache" -> OfficialReportBridge.PageIds.CLEARS_MESSAGES
     "settings", "appearanceSettings", "interactionSettings", "notificationSettings",
+    "backgroundSettings", "callSettings", "dataSettings", "intelligenceSettings", "aboutHub",
     "tileWatchlist", "tileGroupPicker", "syncDataSettings", "storageSettings", "packetToolSettings",
-    "checkUpdate", "diagnostics", "about" ->
+    "aiSettings", "checkUpdate", "diagnostics", "about", "developerToolsSettings" ->
         OfficialReportBridge.PageIds.SETTINGS
     "chatSettings" -> OfficialReportBridge.PageIds.SETTINGS
     else -> null
