@@ -71,6 +71,8 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object EmotionRepository {
     private const val TAG = "QMCE-Emotion"
+    private val pendingUrlListenersLock = Any()
+    private val pendingUrlListeners = java.util.WeakHashMap<Drawable, Any>()
     sealed interface Selection {
         val label: String
 
@@ -835,10 +837,12 @@ object EmotionRepository {
         ) { _, method, args ->
             when (method.name) {
                 "onLoadSuccessed" -> {
+                    synchronized(pendingUrlListenersLock) { pendingUrlListeners.remove(drawable) }
                     (drawable as? android.graphics.drawable.Animatable)?.start()
                     deliver(drawable)
                 }
                 "onLoadCanceled", "onLoadFialed" -> {
+                    synchronized(pendingUrlListenersLock) { pendingUrlListeners.remove(drawable) }
                     Log.d(TAG, "system face drawable load failed face=${face.faceIndex}")
                     if (!retried.compareAndSet(false, true) || !restartOfficialUrlDrawable(drawable)) {
                         deliver(fallback)
@@ -847,6 +851,7 @@ object EmotionRepository {
             }
             null
         }
+        synchronized(pendingUrlListenersLock) { pendingUrlListeners[drawable] = listener }
         drawable.javaClass.getMethod("setURLDrawableListener", listenerClass)
             .invoke(drawable, listener)
     }
@@ -1212,17 +1217,22 @@ object EmotionRepository {
                 arrayOf(listenerClass),
             ) { _, method, _ ->
                 when (method.name) {
-                    "onLoadSuccessed", "onFileDownloaded" -> mainHandler.post {
-                        onResult(drawable)
+                    "onLoadSuccessed", "onFileDownloaded" -> {
+                        synchronized(pendingUrlListenersLock) { pendingUrlListeners.remove(drawable) }
+                        mainHandler.post { onResult(drawable) }
                     }
-                    "onLoadCanceled", "onLoadFialed" -> mainHandler.post {
-                        if (!retried.compareAndSet(false, true) || !restartOfficialUrlDrawable(drawable)) {
-                            onResult(null)
+                    "onLoadCanceled", "onLoadFialed" -> {
+                        synchronized(pendingUrlListenersLock) { pendingUrlListeners.remove(drawable) }
+                        mainHandler.post {
+                            if (!retried.compareAndSet(false, true) || !restartOfficialUrlDrawable(drawable)) {
+                                onResult(null)
+                            }
                         }
                     }
                 }
                 null
             }
+            synchronized(pendingUrlListenersLock) { pendingUrlListeners[drawable] = listener }
             drawable.javaClass.getMethod("setURLDrawableListener", listenerClass)
                 .invoke(drawable, listener)
         }.onFailure {
