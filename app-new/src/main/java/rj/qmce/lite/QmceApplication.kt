@@ -47,7 +47,6 @@ import rj.qmce.lite.viewmodel.SettingsViewModel
 import java.lang.reflect.Method
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.system.exitProcess
 
 
@@ -73,21 +72,13 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 Constants.LogoutReason.kicked,
                 Constants.LogoutReason.secKicked,
                 Constants.LogoutReason.forceLogout,
-                -> Unit
                 Constants.LogoutReason.expired,
                 Constants.LogoutReason.suspend,
                 -> {
-                    // Only suppress during active login transition — not post-login grace.
-                    if (loginTransitionActive.get()) {
-                        QmceLog.w(
-                            "QMCE",
-                            "account: suppress transitional logout reason=$reason " +
-                                "(login transition active)",
-                        )
-                        return
-                    }
+                    // Always force UI back to login — never suppress expired/kicked.
                 }
             }
+            forcedOfflineLatch.set(true)
             clearExpiredLoginState()
             _logoutReason.value = reason
             QmceLog.important("QMCE", "account: official logout reason=$reason")
@@ -113,39 +104,47 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         private val _logoutReason = MutableStateFlow<Constants.LogoutReason?>(null)
         val logoutReason = _logoutReason.asStateFlow()
 
+        /** Latched until the next intentional [beginLoginTransition]; blocks re-entering main. */
+        private val forcedOfflineLatch = AtomicBoolean(false)
+
         private val loginTransitionActive = AtomicBoolean(false)
-        private val suppressForcedLogoutUntilMs = AtomicLong(0L)
-        private const val LOGIN_ESTABLISHED_GRACE_MS = 5_000L
 
         fun beginLoginTransition() {
+            forcedOfflineLatch.set(false)
+            _logoutReason.value = null
             loginTransitionActive.set(true)
-            suppressForcedLogoutUntilMs.set(0L)
             QmceLog.d("QMCE", "account: login transition begin")
         }
 
         fun endLoginTransition() {
             loginTransitionActive.set(false)
-            suppressForcedLogoutUntilMs.set(0L)
             QmceLog.d("QMCE", "account: login transition end")
         }
 
-        fun markLoginEstablished() {
-            _logoutReason.value = null
+        /**
+         * Call only after bind/core ready when entering the logged-in UI.
+         * Returns false if a forced offline (expired/kicked/…) already latched — caller must
+         * keep [isLoggedIn] false.
+         */
+        fun markLoginEstablished(): Boolean {
+            if (forcedOfflineLatch.get() || _logoutReason.value != null) {
+                loginTransitionActive.set(false)
+                QmceLog.w(
+                    "QMCE",
+                    "account: refuse markLoginEstablished " +
+                        "(forcedOffline=${forcedOfflineLatch.get()} reason=${_logoutReason.value})",
+                )
+                return false
+            }
             loginTransitionActive.set(false)
-            suppressForcedLogoutUntilMs.set(
-                System.currentTimeMillis() + LOGIN_ESTABLISHED_GRACE_MS,
-            )
-            QmceLog.important("QMCE", "account: login established; grace=${LOGIN_ESTABLISHED_GRACE_MS}ms")
+            QmceLog.important("QMCE", "account: login established")
+            return true
         }
+
+        fun isForcedOfflineLatched(): Boolean = forcedOfflineLatch.get()
 
         fun consumeLogoutReason() {
             _logoutReason.value = null
-        }
-
-        private fun isLoginTransitionSuppressing(): Boolean {
-            if (loginTransitionActive.get()) return true
-            val until = suppressForcedLogoutUntilMs.get()
-            return until > 0L && System.currentTimeMillis() < until
         }
 
         fun forceExit(context: Context) {

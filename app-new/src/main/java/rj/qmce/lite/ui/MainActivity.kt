@@ -39,6 +39,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -191,6 +192,8 @@ private fun WearApp() {
     var qZoneCommentDraft by remember { mutableStateOf("") }
     var qZoneDetailTarget by remember { mutableStateOf<QZoneViewModel.FeedItem?>(null) }
     var loginPageId by remember { mutableStateOf<String?>(OfficialReportBridge.PageIds.WELCOME) }
+    var preferLoginQr by remember { mutableStateOf(false) }
+    var loginSessionKey by remember { mutableStateOf(0) }
     settingsVm = viewModel()
     val settings by settingsVm.settings.collectAsState()
     val loginEnterScope = rememberCoroutineScope()
@@ -219,7 +222,9 @@ private fun WearApp() {
         selectedGroupMember = null
         loggedUin = ""
         isLoggedIn = false
-        loginPageId = OfficialReportBridge.PageIds.WELCOME
+        preferLoginQr = true
+        loginSessionKey += 1
+        loginPageId = OfficialReportBridge.PageIds.LOGIN
         onlineDesc = null
         onlineKnown = false
         onlineTermKind = null
@@ -277,11 +282,27 @@ private fun WearApp() {
                         )
                     }
                     withContext(Dispatchers.Main) {
-                        QmceApplication.markLoginEstablished()
-                        loggedUin = uin
-                        isLoggedIn = true
-                        runtime = QmceApplication.ensureRuntime() ?: r
-                        Log.d("QMCE", "ui: cold restore enter uin=$uin coreReady=$ready")
+                        val prefsStillValid = LoginPrefs.loadAccount(context) != null
+                        val entered = prefsStillValid && QmceApplication.markLoginEstablished()
+                        if (entered) {
+                            loggedUin = uin
+                            isLoggedIn = true
+                            preferLoginQr = false
+                            runtime = QmceApplication.ensureRuntime() ?: r
+                            Log.d("QMCE", "ui: cold restore enter uin=$uin coreReady=$ready")
+                        } else {
+                            loggedUin = ""
+                            isLoggedIn = false
+                            preferLoginQr = true
+                            loginSessionKey += 1
+                            loginPageId = OfficialReportBridge.PageIds.LOGIN
+                            QmceApplication.endLoginTransition()
+                            Log.w(
+                                "QMCE",
+                                "ui: cold restore aborted " +
+                                    "(prefs=$prefsStillValid forced=${QmceApplication.isForcedOfflineLatched()})",
+                            )
+                        }
                     }
                 } else {
                     Log.e("QMCE", "bindLoggedInAccount failed: $result")
@@ -1240,47 +1261,70 @@ private fun WearApp() {
                 }
             } else {
                 OfficialReportPage(loginPageId) {
-                    LoginScreen(
-                        onPageIdChanged = { loginPageId = it },
-                        onLoginSuccess = { uin, account ->
-                            // Align with cold-start: save → await/retry core → mark → enter.
-                            loginEnterScope.launch {
-                                withContext(Dispatchers.IO) {
-                                    LoginPrefs.saveAccount(context, account)
-                                    val rt = QmceApplication.ensureRuntime()
-                                    var coreReady = KernelBridge.areCoreServicesReady()
-                                    if (!coreReady) {
-                                        coreReady = KernelBridge.awaitCoreServices(
-                                            timeoutMillis = 30_000,
-                                            runtimeOverride = rt,
-                                        )
-                                    }
-                                    if (!coreReady) {
-                                        coreReady = KernelBridge.retryCoreServices(
-                                            timeoutMillis = 15_000,
-                                            runtimeOverride = rt,
-                                        )
-                                    }
-                                    if (!coreReady) {
-                                        Log.w(
-                                            "QMCE",
-                                            "ui: login enter with kernel not ready uin=$uin",
-                                        )
-                                    }
-                                    QmceApplication.markLoginEstablished()
-                                    withContext(Dispatchers.Main) {
-                                        runtime = QmceApplication.ensureRuntime() ?: rt
-                                        loggedUin = uin
-                                        isLoggedIn = true
-                                        Log.d(
-                                            "QMCE",
-                                            "ui: login in-process enter uin=$uin coreReady=$coreReady",
-                                        )
+                    key(loginSessionKey) {
+                        LoginScreen(
+                            startAtQr = preferLoginQr,
+                            onPageIdChanged = { loginPageId = it },
+                            onLoginSuccess = { uin, account ->
+                                // Align with cold-start: save → await/retry core → mark → enter.
+                                loginEnterScope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        LoginPrefs.saveAccount(context, account)
+                                        val rt = QmceApplication.ensureRuntime()
+                                        var coreReady = KernelBridge.areCoreServicesReady()
+                                        if (!coreReady) {
+                                            coreReady = KernelBridge.awaitCoreServices(
+                                                timeoutMillis = 30_000,
+                                                runtimeOverride = rt,
+                                            )
+                                        }
+                                        if (!coreReady) {
+                                            coreReady = KernelBridge.retryCoreServices(
+                                                timeoutMillis = 15_000,
+                                                runtimeOverride = rt,
+                                            )
+                                        }
+                                        if (!coreReady) {
+                                            Log.w(
+                                                "QMCE",
+                                                "ui: login enter with kernel not ready uin=$uin",
+                                            )
+                                        }
+                                        withContext(Dispatchers.Main) {
+                                            val prefsStillValid =
+                                                LoginPrefs.loadAccount(context) != null
+                                            val entered =
+                                                prefsStillValid &&
+                                                    QmceApplication.markLoginEstablished()
+                                            if (entered) {
+                                                runtime = QmceApplication.ensureRuntime() ?: rt
+                                                loggedUin = uin
+                                                isLoggedIn = true
+                                                preferLoginQr = false
+                                                Log.d(
+                                                    "QMCE",
+                                                    "ui: login in-process enter uin=$uin coreReady=$coreReady",
+                                                )
+                                            } else {
+                                                loggedUin = ""
+                                                isLoggedIn = false
+                                                preferLoginQr = true
+                                                loginSessionKey += 1
+                                                loginPageId = OfficialReportBridge.PageIds.LOGIN
+                                                QmceApplication.endLoginTransition()
+                                                Log.w(
+                                                    "QMCE",
+                                                    "ui: login enter aborted " +
+                                                        "(prefs=$prefsStillValid " +
+                                                        "forced=${QmceApplication.isForcedOfflineLatched()})",
+                                                )
+                                            }
+                                        }
                                     }
                                 }
-                            }
-                        },
-                    )
+                            },
+                        )
+                    }
                 }
             }
             rj.qmce.lite.ui.ota.OtaUpdateDialogHost()

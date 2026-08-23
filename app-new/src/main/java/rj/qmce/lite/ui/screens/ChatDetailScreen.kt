@@ -101,6 +101,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnState
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -197,6 +198,28 @@ private data class TimelineScrollState(
     val atTop: Boolean,
     val atBottom: Boolean,
 )
+
+/**
+ * TLC [TransformingLazyColumnState.scrollToItem] centers the target item. For chat we need the
+ * true end (last item pinned past EdgeButton padding), so bring the last item into view then
+ * drain remaining forward scroll.
+ */
+private suspend fun TransformingLazyColumnState.scrollToAbsoluteEnd() {
+    val last = layoutInfo.totalItemsCount - 1
+    if (last < 0) return
+    scrollToItem(last)
+    withFrameNanos { }
+    var guard = 0
+    while (canScrollForward && guard++ < 32) {
+        val step = layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f)
+        var consumed = 0f
+        scroll {
+            consumed = scrollBy(step)
+        }
+        if (consumed == 0f) break
+        withFrameNanos { }
+    }
+}
 
 private data class FileDetailTarget(
     val message: ChatDetailViewModel.UiMsg,
@@ -476,13 +499,11 @@ fun ChatDetailScreen(
             snapshotFlow { listState.layoutInfo.totalItemsCount }
                 .first { itemCount -> itemCount > lastIndex }
             withFrameNanos { }
-            listState.scrollToItem(lastIndex)
-            withFrameNanos { }
-            listState.scrollToItem(timelineItems.lastIndex)
+            listState.scrollToAbsoluteEnd()
             initialPositioned = true
         } else if (lastMessageKey != previousLastMessageKey && followNewMessages) {
             withFrameNanos { }
-            listState.scrollToItem(lastIndex)
+            listState.scrollToAbsoluteEnd()
         }
         previousLastMessageKey = lastMessageKey
     }
@@ -518,26 +539,26 @@ fun ChatDetailScreen(
                                         state.firstVisibleItemOffset < previous.firstVisibleItemOffset
                                 )
             } == true
-            val movedTowardBottom = previousState?.let { previous ->
-                state.firstVisibleItemIndex > previous.firstVisibleItemIndex ||
-                        (
-                                state.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
-                                        state.firstVisibleItemOffset > previous.firstVisibleItemOffset
-                                )
-            } == true
             atBottom = state.atBottom
-            if (state.atBottom) {
-                showJumpBottom = false
-            } else if (state.isScrolling) {
-                when {
-                    movedTowardBottom -> showJumpBottom = true
-                    movedTowardTop -> showJumpBottom = false
-                }
-            } else {
-                showJumpBottom = false
-            }
+            // Idle + not at bottom: show jump FAB. Hide while scrolling so it does not "follow".
+            showJumpBottom = !state.atBottom && !state.isScrolling
             if (state.isScrolling) {
                 followNewMessages = state.atBottom && !movedTowardTop
+            }
+            val settledNearEnd =
+                previousState?.isScrolling == true &&
+                    !state.isScrolling &&
+                    !state.atBottom
+            if (settledNearEnd) {
+                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                val lastVisible =
+                    lastIndex >= 0 &&
+                        listState.layoutInfo.visibleItems.any { it.index == lastIndex }
+                if (lastVisible) {
+                    listScrollScope.launch {
+                        listState.scrollToAbsoluteEnd()
+                    }
+                }
             }
             if (!state.atTop) {
                 reachedTopFromUpwardScroll = false
@@ -837,10 +858,9 @@ fun ChatDetailScreen(
                                     onClick = {
                                         if (showScrollToBottom) {
                                             followNewMessages = true
-                                            val lastIndex = timelineItems.lastIndex
-                                            if (lastIndex >= 0) {
+                                            if (timelineItems.isNotEmpty()) {
                                                 listScrollScope.launch {
-                                                    listState.animateScrollToItem(lastIndex)
+                                                    listState.scrollToAbsoluteEnd()
                                                 }
                                             }
                                         } else {

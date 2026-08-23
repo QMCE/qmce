@@ -103,6 +103,7 @@ private enum class ScreenType(val title: String, val detail: String, val selecta
 fun LoginScreen(
     onLoginSuccess: (String, SimpleAccount) -> Unit,
     onPageIdChanged: (String?) -> Unit = {},
+    startAtQr: Boolean = false,
     vm: AuthViewModel = viewModel(),
 ) {
     val qrBitmap by vm.qrBitmap.collectAsState()
@@ -112,7 +113,9 @@ fun LoginScreen(
     val isBusy by vm.isBusy.collectAsState()
     val logText by vm.logText.collectAsState()
     val scannedAccount by vm.scannedAccount.collectAsState()
-    var step by remember { mutableStateOf(LoginGuideStep.Welcome) }
+    var step by remember {
+        mutableStateOf(if (startAtQr) LoginGuideStep.Qr else LoginGuideStep.Welcome)
+    }
     var screenType by remember { mutableStateOf(ScreenType.Auto) }
     var showErrorDetail by remember { mutableStateOf(false) }
     var userAgreement by remember { mutableStateOf(false) }
@@ -127,6 +130,9 @@ fun LoginScreen(
         onPageIdChanged(pageId)
     }
     LaunchedEffect(Unit) { vm.initWtService() }
+    LaunchedEffect(Unit) {
+        if (startAtQr) vm.fetchQrCode()
+    }
     LaunchedEffect(Unit) {
         vm.loginResult.collect { (uin, account) -> onLoginSuccess(uin, account) }
     }
