@@ -112,7 +112,7 @@ object QmceCallController {
             val phase = _state.value.phase
             if (
                 (phase == CallPhase.Incoming || phase == CallPhase.Idle) &&
-                runCatching { binder.q() }.getOrDefault(true)
+                runCatching { binder.A() }.getOrDefault(true)
             ) {
                 end(if (phase == CallPhase.Incoming) "通话邀请已失效" else "通话已结束")
                 return
@@ -175,9 +175,18 @@ object QmceCallController {
 
         return runCatching {
             ensureEngine()
-            val existing = QavBussinessCtrl.t().h.b
-            if (existing != null && !existing.b() && !existing.c()) {
-                return CallStartResult.Rejected("已有通话进行中")
+            val currentPhase = _state.value.phase
+            if (currentPhase == CallPhase.Idle || currentPhase == CallPhase.Ended) {
+                clearStaleQavSession(_state.value.peer?.uin)
+            }
+            val existing = QavBussinessCtrl.t().i.b
+            if (existing != null) {
+                if (!existing.b() && !existing.c()) {
+                    return CallStartResult.Rejected("已有通话进行中")
+                }
+                clearStaleQavSession(
+                    _state.value.peer?.uin ?: existing.e.takeIf { it > 0L }?.toString(),
+                )
             }
             if (_state.value.phase == CallPhase.Idle || _state.value.phase == CallPhase.Ended) {
                 releaseServiceBinding(stopService = false)
@@ -281,7 +290,7 @@ object QmceCallController {
         val peer = _state.value.peer ?: return
         QmceIncomingCallAlert.stop()
         runCatching {
-            qavBinder?.E(peer.uin, REJECT_REASON_DECLINED)
+            qavBinder?.q(peer.uin, REJECT_REASON_DECLINED)
                 ?: QavBussinessCtrl.t().v(peer.uin, REJECT_REASON_DECLINED)
         }.onFailure { Log.w(TAG, "reject incoming call failed", it) }
         end("已拒绝")
@@ -295,7 +304,7 @@ object QmceCallController {
         val generation = activeGeneration
         _state.value = current.copy(phase = CallPhase.Ending)
         runCatching {
-            qavBinder?.A(peer.uin, CLOSE_REASON_HANG_UP)
+            qavBinder?.K(peer.uin, CLOSE_REASON_HANG_UP)
                 ?: QavBussinessCtrl.t().q(peer.uin, CLOSE_REASON_HANG_UP)
         }.onFailure { error ->
             Log.w(TAG, "hang up call failed", error)
@@ -303,6 +312,7 @@ object QmceCallController {
         }
         mainHandler.postDelayed({
             if (generation == activeGeneration && _state.value.phase == CallPhase.Ending) {
+                clearStaleQavSession(peer.uin)
                 end("通话已结束")
             }
         }, HANGUP_FALLBACK_DELAY_MS)
@@ -312,7 +322,7 @@ object QmceCallController {
         val current = _state.value
         if (current.phase !in activePhases) return
         runCatching {
-            val localAudioEnabled = qavBinder?.p()
+            val localAudioEnabled = qavBinder?.z()
                 ?: error("QAV binder unavailable")
             _state.value = _state.value.copy(isMuted = !localAudioEnabled)
         }.onFailure { Log.w(TAG, "toggle microphone failed", it) }
@@ -334,15 +344,15 @@ object QmceCallController {
         if (current.mode != CallMode.Video || current.phase !in activePhases) return
         runCatching {
             val binder = qavBinder ?: error("QAV binder unavailable")
-            binder.D()
-            binder.w()
+            binder.M()
+            binder.o()
             updateFromEngine()
         }.onFailure { Log.w(TAG, "toggle local video failed", it) }
     }
 
     fun switchCamera() {
         if (_state.value.mode != CallMode.Video) return
-        runCatching { QavBussinessCtrl.t().i.a() }
+        runCatching { QavBussinessCtrl.t().k.a() }
             .onFailure { Log.w(TAG, "switch camera failed", it) }
     }
 
@@ -358,6 +368,7 @@ object QmceCallController {
 
     fun resetEndedState() {
         if (_state.value.phase == CallPhase.Ended) {
+            clearStaleQavSession(_state.value.peer?.uin)
             _state.value = CallUiState()
         }
     }
@@ -401,11 +412,11 @@ object QmceCallController {
 
     private fun installBusinessCallback(binder: IQavInterface) {
         businessCallback?.let { oldCallback ->
-            runCatching { binder.u(oldCallback) }
+            runCatching { binder.E(oldCallback) }
         }
         val generation = activeGeneration
         val callback = object : IQavBusinessCallback.Stub() {
-            override fun H(fromUin: String?) {
+            override fun m(fromUin: String?) {
                 runOnMain {
                     if (isCurrentCallback(generation, fromUin)) {
                         onChannelReady(fromUin)
@@ -413,7 +424,7 @@ object QmceCallController {
                 }
             }
 
-            override fun M(localHasAudio: Boolean) {
+            override fun Q(localHasAudio: Boolean) {
                 runOnMain {
                     if (generation == activeGeneration) {
                         _state.value = _state.value.copy(isMuted = !localHasAudio)
@@ -421,7 +432,7 @@ object QmceCallController {
                 }
             }
 
-            override fun S(localHasVideo: Boolean, remoteHasVideo: Boolean) {
+            override fun x(localHasVideo: Boolean, remoteHasVideo: Boolean) {
                 runOnMain {
                     if (generation == activeGeneration) {
                         _state.value = _state.value.copy(
@@ -434,7 +445,7 @@ object QmceCallController {
 
             override fun d(time: String?) = Unit
 
-            override fun f(fromUin: String?, reason: Int) {
+            override fun e(fromUin: String?, reason: Int) {
                 runOnMain {
                     if (isCurrentCallback(generation, fromUin)) {
                         finishFromEngine(fromUin.orEmpty(), reason)
@@ -444,8 +455,8 @@ object QmceCallController {
         }
         businessCallback = callback
         runCatching {
-            binder.y(callback)
-            binder.w()
+            binder.H(callback)
+            binder.o()
         }.onFailure { Log.e(TAG, "register QAV business callback failed", it) }
     }
 
@@ -454,8 +465,8 @@ object QmceCallController {
         if (outgoing != null && outgoing.generation == activeGeneration) {
             pendingOutgoing = null
             runCatching {
-                binder.s(outgoing.peer.uin, outgoing.mode.isOnlyAudio)
-                binder.w()
+                binder.f(outgoing.peer.uin, outgoing.mode.isOnlyAudio)
+                binder.o()
                 updateFromEngine(forcePhase = CallPhase.Outgoing)
                 Log.d(TAG, "official outgoing call started: ${outgoing.peer.uin}")
             }.onFailure {
@@ -482,8 +493,8 @@ object QmceCallController {
     ) {
         if (generation != activeGeneration) return
         runCatching {
-            binder.v(peer.uin, mode.isOnlyAudio)
-            binder.w()
+            binder.F(peer.uin, mode.isOnlyAudio)
+            binder.o()
             _state.value = _state.value.copy(
                 phase = CallPhase.Connecting,
                 channelReady = false,
@@ -497,8 +508,8 @@ object QmceCallController {
     private fun hydrateFromBinder(binder: IQavInterface) {
         val outgoing = pendingOutgoing
         if (outgoing != null && outgoing.generation == activeGeneration) return
-        val info = runCatching { binder.B() }.getOrNull() ?: return
-        val peerUin = info.b.orEmpty()
+        val info = runCatching { binder.p() }.getOrNull() ?: return
+        val peerUin = info.peerUin.orEmpty()
         if (peerUin.isBlank()) return
 
         val current = _state.value
@@ -508,20 +519,20 @@ object QmceCallController {
         val currentPeer = current.peer
         val peer = CallPeer(
             uin = peerUin,
-            uid = info.c.orEmpty().ifBlank { currentPeer?.uid.orEmpty() },
-            name = info.d.orEmpty().ifBlank { currentPeer?.name ?: peerUin },
+            uid = info.peerUid.orEmpty().ifBlank { currentPeer?.uid.orEmpty() },
+            name = info.peerNickname.orEmpty().ifBlank { currentPeer?.name ?: peerUin },
         )
         _state.value = current.copy(
             peer = peer,
-            mode = if (info.e) CallMode.Voice else CallMode.Video,
+            mode = if (info.isOnlyAudio) CallMode.Voice else CallMode.Video,
             endMessage = null,
         )
     }
 
     private fun syncFromBinder(binder: IQavInterface) {
         runCatching {
-            binder.w()
-            val connected = binder.r()
+            binder.o()
+            val connected = binder.B()
             updateFromEngine(
                 forcePhase = if (connected) CallPhase.Active else null,
                 channelReady = if (connected) true else null,
@@ -535,7 +546,7 @@ object QmceCallController {
         remoteVideo: Boolean? = null,
         channelReady: Boolean? = null,
     ) {
-        val session = runCatching { QavBussinessCtrl.t().h.b }.getOrNull() ?: return
+        val session = runCatching { QavBussinessCtrl.t().i.b }.getOrNull() ?: return
         val current = _state.value
         if (current.phase == CallPhase.Ended) return
         val sessionUin = session.e.takeIf { it > 0L }?.toString()
@@ -548,13 +559,13 @@ object QmceCallController {
             uid = "",
             name = sessionUin,
         )
-        val phase = forcePhase ?: when (session.c.ordinal) {
-            QavC2CSession.SessionStatus.c.ordinal -> CallPhase.Outgoing
-            QavC2CSession.SessionStatus.d.ordinal -> CallPhase.Incoming
-            QavC2CSession.SessionStatus.e.ordinal -> CallPhase.Connecting
-            QavC2CSession.SessionStatus.f.ordinal -> CallPhase.Active
-            QavC2CSession.SessionStatus.g.ordinal -> CallPhase.Ending
-            QavC2CSession.SessionStatus.h.ordinal -> CallPhase.Ended
+        val phase = forcePhase ?: when (session.c) {
+            QavC2CSession.SessionStatus.c -> CallPhase.Outgoing
+            QavC2CSession.SessionStatus.d -> CallPhase.Incoming
+            QavC2CSession.SessionStatus.e -> CallPhase.Connecting
+            QavC2CSession.SessionStatus.f -> CallPhase.Active
+            QavC2CSession.SessionStatus.h -> CallPhase.Ending
+            QavC2CSession.SessionStatus.i -> CallPhase.Ended
             else -> current.phase
         }
         _state.value = current.copy(
@@ -582,6 +593,7 @@ object QmceCallController {
 
     private fun end(message: String) {
         QmceIncomingCallAlert.stop()
+        val peerUin = _state.value.peer?.uin
         activeGeneration += 1
         val generation = activeGeneration
         pendingOutgoing = null
@@ -593,6 +605,7 @@ object QmceCallController {
         )
         mainHandler.post {
             if (generation == activeGeneration) {
+                clearStaleQavSession(peerUin)
                 releaseServiceBinding(stopService = false)
             }
         }
@@ -636,7 +649,7 @@ object QmceCallController {
 
         val profileUin = runCatching {
             KernelBridge.getKernelService()
-                ?.profileService
+                ?.getProfileService()
                 ?.getUinByUid(TAG, arrayListOf(peerUid))
                 ?.get(peerUid)
         }.getOrNull()
@@ -704,7 +717,8 @@ object QmceCallController {
         qavBinder = null
         businessCallback = null
         if (binder != null && callback != null) {
-            runCatching { binder.u(callback) }
+            runCatching { binder.E(callback) }
+                .onFailure { Log.w(TAG, "unregister QAV business callback failed", it) }
         }
         if (serviceBindingActive) {
             serviceBindingActive = false
@@ -716,6 +730,36 @@ object QmceCallController {
         if (stopService) {
             stopCallService()
         }
+    }
+
+    private fun clearStaleQavSession(peerUin: String?) {
+        runCatching {
+            val ctrl = QavBussinessCtrl.t()
+            val sessionManager = ctrl.i
+            val existing = sessionManager.b
+                ?: peerUin?.takeIf { it.isNotBlank() }?.let { sessionManager.b(it) }
+            if (existing == null) return@runCatching
+
+            val resolvedPeerUin = peerUin?.takeIf { it.isNotBlank() }
+                ?: existing.e.takeIf { it > 0L }?.toString()
+            if (resolvedPeerUin.isNullOrBlank()) return@runCatching
+
+            val phase = _state.value.phase
+            val sessionEnded = existing.b() || existing.c()
+            if (
+                !sessionEnded &&
+                phase !in activePhases &&
+                phase != CallPhase.Incoming &&
+                phase != CallPhase.Ending
+            ) {
+                runCatching {
+                    qavBinder?.K(resolvedPeerUin, CLOSE_REASON_HANG_UP)
+                        ?: ctrl.q(resolvedPeerUin, CLOSE_REASON_HANG_UP)
+                }.onFailure { Log.w(TAG, "force hang up stale QAV session failed", it) }
+            }
+            runCatching { ctrl.r(resolvedPeerUin) }
+                .onFailure { Log.w(TAG, "close stale QAV session failed", it) }
+        }.onFailure { Log.w(TAG, "clear stale QAV session failed", it) }
     }
 
     private fun stopCallService() {

@@ -7,7 +7,7 @@ import com.tencent.qqnt.kernel.nativeinterface.IKickMemberOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.IKernelGroupService
 import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.KickMemberResult
-import com.tencent.qqnt.kernel.nativeinterface.MemberRole
+import com.tencent.qqnt.kernelpublic.nativeinterface.MemberRole
 import rj.qmce.lite.kernel.KernelBridge
 
 object GroupManagementRepository {

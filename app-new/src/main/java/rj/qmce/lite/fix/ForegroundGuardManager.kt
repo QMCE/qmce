@@ -28,7 +28,7 @@ object ForegroundGuardInstaller {
             return true
         }
 
-        val application = current?.m ?: MobileQQ.sMobileQQ
+        val application = current?.n ?: MobileQQ.sMobileQQ
         if (application == null) {
             Log.w(TAG, "guard: $stage skipped; application is null")
             return false

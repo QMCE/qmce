@@ -27,13 +27,14 @@ import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.QZoneViewModel
 
 @Composable
@@ -58,7 +59,7 @@ fun QZoneCommentScreen(
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         edgeButton = {
             OfficialReportTargetBox(
@@ -75,11 +76,11 @@ fun QZoneCommentScreen(
                         onSend()
                     },
                     enabled = draft.isNotBlank() && sendState !is QZoneViewModel.CommentSendState.Sending,
-                    buttonSize = EdgeButtonSize.Small,
+                    buttonSize = EdgeButtonSize.Medium,
                 ) { Text("发送") }
             }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,

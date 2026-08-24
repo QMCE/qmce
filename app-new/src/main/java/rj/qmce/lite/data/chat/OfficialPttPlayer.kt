@@ -80,12 +80,25 @@ object OfficialPttPlayer {
         ownedMessageIds.add(messageId)
     }
 
-    private fun createListener(expectedMessageId: Long) = object : AIOPttAudioPlayerStateListener {
-        override fun a(msgId: Long, speed: Float) = Unit
+    private fun createListener(expectedMessageId: Long) = object : OfficialPttPlayerListenerBridge() {
+        override fun onStart(msgId: Long, path: String) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) { it.copy(phase = PttPlaybackPhase.Playing, error = null) }
+        }
 
-        override fun b(msgId: Long, isNearToEar: Boolean) = Unit
+        override fun onComplete(msgId: Long, speed: Float) {
+            if (msgId != expectedMessageId) return
+            publish(msgId) {
+                it.copy(phase = PttPlaybackPhase.Idle, positionMillis = 0, error = null)
+            }
+        }
 
-        override fun c(msgId: Long, path: String, currentPosition: Int, duration: Int) {
+        override fun onProgressChanged(
+            msgId: Long,
+            path: String,
+            currentPosition: Int,
+            duration: Int,
+        ) {
             if (msgId != expectedMessageId) return
             publish(msgId) {
                 it.copy(
@@ -97,12 +110,7 @@ object OfficialPttPlayer {
             }
         }
 
-        override fun d(msgId: Long, path: String) {
-            if (msgId != expectedMessageId) return
-            publish(msgId) { it.copy(phase = PttPlaybackPhase.Playing, error = null) }
-        }
-
-        override fun e(msgId: Long, path: String, currentPosition: Int) {
+        override fun onPause(msgId: Long, path: String, currentPosition: Int) {
             if (msgId != expectedMessageId) return
             publish(msgId) {
                 it.copy(
@@ -112,10 +120,10 @@ object OfficialPttPlayer {
             }
         }
 
-        override fun f(msgId: Long, path: String) {
+        override fun onStop(msgId: Long, path: String) {
             if (msgId != expectedMessageId) return
             publish(msgId) {
-                it.copy(phase = PttPlaybackPhase.Failed, error = "无法播放此语音")
+                it.copy(phase = PttPlaybackPhase.Idle, error = null)
             }
         }
     }

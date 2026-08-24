@@ -392,20 +392,21 @@ internal class ResponsiveTransformationSpecImpl(
 
     override fun GraphicsLayerScope.applyContentTransformation(
         scrollProgress: TransformingLazyColumnItemScrollProgress
-    ) =
+    ) {
         trace("wear-compose:tlc:applyContentTransformation") {
-            if (scrollProgress.isUnspecified) return
+            if (scrollProgress.isUnspecified) return@trace
             with(TransitionAreaProgress(scrollProgress)) {
                 compositingStrategy = CompositingStrategy.Offscreen
                 alpha = compute(contentAlpha, easing)
             }
         }
+    }
 
     override fun GraphicsLayerScope.applyContainerTransformation(
         scrollProgress: TransformingLazyColumnItemScrollProgress
-    ) =
+    ) {
         trace("wear-compose:tlc:applyContainerTransformation") {
-            if (scrollProgress.isUnspecified) return
+            if (scrollProgress.isUnspecified) return@trace
             with(TransformationState(TransitionAreaProgress(scrollProgress))) {
                 compositingStrategy = CompositingStrategy.Offscreen
                 translationY = -1f * size.height * (1f - scale) / 2f
@@ -414,6 +415,7 @@ internal class ResponsiveTransformationSpecImpl(
                 scaleY = scale
             }
         }
+    }
 
     override fun TransformedContainerPainterScope.createTransformedContainerPainter(
         painter: Painter,

@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -16,14 +18,12 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
-import androidx.compose.material3.TextField as MaterialTextField
-import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 
 @Composable
 fun ChatMessageSearchScreen(
@@ -42,18 +42,19 @@ fun ChatMessageSearchScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
             item(key = "message-search-input") {
-                MaterialTextField(
+                BasicTextField(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                    cursorBrush = SolidColor(scheme.primary),
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
@@ -63,23 +64,19 @@ fun ChatMessageSearchScreen(
                                 applyContentTransformation()
                             }
                         }
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                    placeholder = {
-                        Text(
-                            "搜索当前已加载消息",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .background(scheme.surfaceContainerHigh, CircleShape)
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    decorationBox = { inner ->
+                        if (query.isBlank()) {
+                            Text(
+                                "搜索当前已加载消息",
+                                color = scheme.outline,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        inner()
                     },
-                    shape = CircleShape,
-                    colors = MaterialTextFieldDefaults.colors(
-                        focusedContainerColor = scheme.surfaceContainerHigh,
-                        unfocusedContainerColor = scheme.surfaceContainerHigh,
-                        focusedTextColor = scheme.onSurface,
-                        unfocusedTextColor = scheme.onSurface,
-                        cursorColor = scheme.primary,
-                        focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                    ),
                 )
             }
             if (query.isBlank()) {
@@ -138,6 +135,7 @@ fun ChatMessageSearchScreen(
                             .fillMaxWidth()
                             .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 8.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
                         transformation = SurfaceTransformation(transformationSpec),
                     ) {
                         Text(if (isLoadingOlder) "正在加载…" else "加载更早消息")
@@ -153,9 +151,10 @@ private fun androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScop
     text: String,
     transformationSpec: androidx.wear.compose.material3.lazy.TransformationSpec,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Text(
         text = text,
-        color = MaterialTheme.colorScheme.outline,
+        color = scheme.outline,
         style = MaterialTheme.typography.bodySmall,
         modifier = Modifier
             .fillMaxWidth()

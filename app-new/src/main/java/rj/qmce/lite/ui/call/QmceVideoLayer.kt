@@ -20,6 +20,7 @@ internal class QmceVideoLayer(
     private var localAttached = false
     private var remoteAttached = false
     private var channelReady = false
+    private var hadRemoteVideo = false
     private val cameraObserver = object : CameraObserver() {
         override fun c(succeeded: Boolean) {
             if (succeeded && localAttached) {
@@ -48,7 +49,9 @@ internal class QmceVideoLayer(
         channelReady: Boolean,
     ) {
         val previousChannelReady = this.channelReady
+        val previousRemoteHasVideo = hadRemoteVideo
         this.channelReady = channelReady
+        hadRemoteVideo = remoteHasVideo
 
         localPreview.t(localHasVideo)
         if (localHasVideo) {
@@ -69,7 +72,13 @@ internal class QmceVideoLayer(
 
         remotePreview.t(remoteHasVideo)
         if (remoteHasVideo) {
-            if (!remoteAttached) {
+            val needsReattach = !remoteAttached ||
+                previousChannelReady != channelReady ||
+                !previousRemoteHasVideo
+            if (needsReattach) {
+                if (remoteAttached) {
+                    remotePreview.close()
+                }
                 remotePreview.open(false)
                 remoteAttached = true
             }

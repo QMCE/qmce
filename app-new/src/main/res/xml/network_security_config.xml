@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- wtlogin tip fetch: http://ts7|ts8|ts9.qq.com:8080/msg -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">ts7.qq.com</domain>
+        <domain includeSubdomains="false">ts8.qq.com</domain>
+        <domain includeSubdomains="false">ts9.qq.com</domain>
+        <domain includeSubdomains="false">8.217.8.106</domain>
+    </domain-config>
+</network-security-config>

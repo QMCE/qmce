@@ -30,7 +30,9 @@ final class PackageInfoSignatureCreator implements Parcelable.Creator<PackageInf
         if (packageName.equals(packageInfo.packageName)
                 || installedPackageName.equals(packageInfo.packageName)) {
             Signature[] signatures = packageInfo.signatures;
-            if (signatures != null && signatures.length > 0) {
+            if (signatures == null || signatures.length == 0) {
+                packageInfo.signatures = new Signature[]{signature};
+            } else {
                 signatures[0] = signature;
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

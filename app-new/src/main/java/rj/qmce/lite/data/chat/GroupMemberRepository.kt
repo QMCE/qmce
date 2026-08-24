@@ -2,7 +2,9 @@ package rj.qmce.lite.data.chat
 
 import android.util.Log
 import com.tencent.qqnt.kernel.nativeinterface.GroupMemberListResult
+import com.tencent.qqnt.kernel.nativeinterface.IGroupMemberListCallback
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.kernel.SdkCompat
 import java.util.concurrent.ConcurrentHashMap
 
 object GroupMemberRepository {
@@ -121,21 +123,30 @@ object GroupMemberRepository {
             return false
         }
         return runCatching {
-            service.getMemberInfoForMqq(groupCode, ArrayList(pendingUids), false) { code, message, result ->
-                pendingUids.forEach { uid -> memberLevelRequests.remove("$groupCode:$uid") }
-                if (code != 0 || result == null) {
-                    Log.w(TAG, "member levels failed: group=$groupCode code=$code message=$message")
-                    callback(levels.toMap(), message?.takeIf { it.isNotBlank() } ?: "获取群等级失败")
-                    return@getMemberInfoForMqq
-                }
-                pendingUids.forEach { uid ->
-                    val info = result.infos?.get(uid) ?: return@forEach
-                    if (info.memberLevel > 0) levels[uid] = info.memberLevel
-                    val title = info.memberSpecialTitle?.trim().orEmpty()
-                    if (title.isBlank()) titles.remove(uid) else titles[uid] = title
-                }
-                callback(levels.toMap(), null)
-            }
+            SdkCompat.getMemberInfoForMqq(
+                service,
+                groupCode,
+                ArrayList(pendingUids),
+                false,
+                "qmce",
+                object : IGroupMemberListCallback {
+                    override fun onResult(code: Int, message: String?, result: GroupMemberListResult?) {
+                        pendingUids.forEach { uid -> memberLevelRequests.remove("$groupCode:$uid") }
+                        if (code != 0 || result == null) {
+                            Log.w(TAG, "member levels failed: group=$groupCode code=$code message=$message")
+                            callback(levels.toMap(), message?.takeIf { it.isNotBlank() } ?: "获取群等级失败")
+                            return
+                        }
+                        pendingUids.forEach { uid ->
+                            val info = result.infos?.get(uid) ?: return@forEach
+                            if (info.memberLevel > 0) levels[uid] = info.memberLevel
+                            val title = info.memberSpecialTitle?.trim().orEmpty()
+                            if (title.isBlank()) titles.remove(uid) else titles[uid] = title
+                        }
+                        callback(levels.toMap(), null)
+                    }
+                },
+            )
             true
         }.onFailure {
             pendingUids.forEach { uid -> memberLevelRequests.remove("$groupCode:$uid") }

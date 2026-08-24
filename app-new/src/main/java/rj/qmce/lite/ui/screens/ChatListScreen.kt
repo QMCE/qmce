@@ -5,42 +5,39 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.PullToRefreshState
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.Icon
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
+import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -48,8 +45,9 @@ import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.ui.components.ChatItem
+import rj.qmce.lite.ui.wear.QmceEmptyOrErrorState
+import rj.qmce.lite.ui.wear.QmceLoadingState
 import rj.qmce.lite.viewmodel.ChatListViewModel
-import kotlin.time.Duration.Companion.seconds
 
 private const val KERNEL_INIT_ACTION = "com.tencent.mobileqq.action.ON_KERNEL_INIT_COMPLETE"
 
@@ -61,25 +59,23 @@ fun ChatListScreen(
     isPageVisible: Boolean,
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
+    onRetryKernel: () -> Unit,
+    onOpenNotificationCenter: () -> Unit = {},
     vm: ChatListViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val contactsSnapshot by vm.contacts.collectAsState()
     val contacts = contactsSnapshot.contacts
     val isRefreshing by vm.isRefreshing.collectAsState()
+    val statusText by vm.statusText.collectAsState()
     val listState = rememberTransformingLazyColumnState()
+    val scope = rememberCoroutineScope()
     val transformationSpec = rememberTransformationSpec()
-    val pullRefreshState = rememberPullToRefreshState()
     val latestContacts by rememberUpdatedState(contacts)
     val reportUid = runCatching { runtime?.currentUid.orEmpty() }.getOrDefault("")
-
-    Log.d(
-        "QMCE",
-        "ChatListScreen: recompose, revision=${contactsSnapshot.revision}, contacts.size=${contacts.size}, top1=${
-            contacts.firstOrNull()
-                ?.let { "${it.id}:${it.msgTime}:${it.abstractContent?.firstOrNull()?.content}" }
-        }"
-    )
+    val firstVisibleItemIndex =
+        listState.layoutInfo.visibleItems.firstOrNull()?.index ?: 0
+    val showScrollToTop = firstVisibleItemIndex > 0
 
     DisposableEffect(runtime) {
         val receiver = object : BroadcastReceiver() {
@@ -88,22 +84,13 @@ fun ChatListScreen(
                 vm.loadContacts(runtime)
             }
         }
-        val filter = IntentFilter(KERNEL_INIT_ACTION)
         ContextCompat.registerReceiver(
             context,
             receiver,
-            filter,
+            IntentFilter(KERNEL_INIT_ACTION),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        Log.d("QMCE", "ChatList: registered ON_KERNEL_INIT_COMPLETE receiver")
-        vm.loadContacts(runtime)
-        val fallback = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            kotlinx.coroutines.delay(3.seconds)
-            vm.loadContacts(runtime)
-        }
         onDispose {
-            Log.d("QMCE", "ChatListScreen: DisposableEffect disposed")
-            fallback.cancel()
             runCatching { context.unregisterReceiver(receiver) }
         }
     }
@@ -122,7 +109,10 @@ fun ChatListScreen(
             snapshotFlow {
                 val currentContacts = latestContacts
                 listState.layoutInfo.visibleItems.mapNotNull { visibleItem ->
-                    currentContacts.getOrNull(visibleItem.index)?.let(::chatListExposureKey)
+                    // Index 0 is the notification Button; contacts start at 1.
+                    val contactIndex = visibleItem.index - 1
+                    if (contactIndex < 0) return@mapNotNull null
+                    currentContacts.getOrNull(contactIndex)?.let(::chatListExposureKey)
                 }
             }
                 .map { keys -> keys.distinct() }
@@ -177,58 +167,109 @@ fun ChatListScreen(
         }
     }
 
-    if (contacts.isNotEmpty()) {
-        ScreenScaffold(
-            scrollState = listState,
-            overscrollEffect = null,
-        ) { contentPadding ->
-            PullToRefreshBox(
-                isRefreshing = isRefreshing,
-                onRefresh = vm::refreshContacts,
-                modifier = Modifier.fillMaxSize(),
-                state = pullRefreshState,
-                indicator = {
-                    WearPullRefreshIndicator(
-                        state = pullRefreshState,
-                        isRefreshing = isRefreshing,
-                    )
-                }, // fixme: sometimes wrong state (or caused by scrcpy?)
-            ) {
-                TransformingLazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = contentPadding,
-                    overscrollEffect = null,
-                ) {
-                    items(
-                        items = contacts,
-                        key = { contact ->
-                            "chat:${chatListExposureKey(contact) ?: contact.hashCode()}"
-                        },
-                    ) { contact ->
-                        ChatItem(
-                            contact = contact,
-                            reportParams = OfficialReportBridge.chatListItemElementParams(
+    when {
+        contacts.isNotEmpty() -> {
+            val listBody: @Composable BoxScope.(androidx.compose.foundation.layout.PaddingValues) -> Unit =
+                { contentPadding ->
+                    TransformingLazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = contentPadding,
+                    ) {
+                        if (showScrollToTop) {
+                            item(key = "scroll-to-top") {
+                                CompactButton(
+                                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                                    transformation = SurfaceTransformation(transformationSpec),
+                                    icon = {
+                                        Icon(
+                                            Icons.Default.ExpandLess,
+                                            contentDescription = "滚动到顶部",
+                                        )
+                                    },
+                                    label = { Text("回顶") },
+                                )
+                            }
+                        }
+                        item(key = "notification-bell") {
+                            Button(
+                                onClick = onOpenNotificationCenter,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .transformedHeight(this, transformationSpec)
+                                    .minimumVerticalContentPadding(
+                                        ButtonDefaults.minimumVerticalListContentPadding,
+                                    ),
+                                transformation = SurfaceTransformation(transformationSpec),
+                                icon = {
+                                    Icon(
+                                        Icons.Outlined.Notifications,
+                                        contentDescription = "通知中心",
+                                    )
+                                },
+                            ) {
+                                Text("通知中心")
+                            }
+                        }
+                        items(
+                            items = contacts,
+                            key = { contact ->
+                                "chat:${chatListExposureKey(contact) ?: contact.hashCode()}"
+                            },
+                        ) { contact ->
+                            ChatItem(
                                 contact = contact,
-                                homeUin = uin,
-                                uid = reportUid,
-                            ),
-                            reuseIdentifier = chatListExposureKey(contact),
-                            onClick = { target ->
-                                OfficialReportBridge.reportChatListItemClick(
-                                    target = target,
+                                reportParams = OfficialReportBridge.chatListItemElementParams(
                                     contact = contact,
                                     homeUin = uin,
                                     uid = reportUid,
-                                )
-                                onOpenChat(contact)
-                            },
-                            modifier = Modifier.transformedHeight(this, transformationSpec),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        )
+                                ),
+                                reuseIdentifier = chatListExposureKey(contact),
+                                onClick = { target ->
+                                    OfficialReportBridge.reportChatListItemClick(
+                                        target = target,
+                                        contact = contact,
+                                        homeUin = uin,
+                                        uid = reportUid,
+                                    )
+                                    onOpenChat(contact)
+                                },
+                                modifier = Modifier
+                                    .transformedHeight(this, transformationSpec)
+                                    .minimumVerticalContentPadding(
+                                        ButtonDefaults.minimumVerticalListContentPadding,
+                                    ),
+                                transformation = SurfaceTransformation(transformationSpec),
+                            )
+                        }
                     }
                 }
-            }
+            QmceScreenScaffold(
+                scrollState = listState,
+                content = listBody,
+            )
+        }
+
+        statusText.contains("失败") || statusText.contains("不可用") -> {
+            QmceEmptyOrErrorState(
+                message = statusText.ifBlank { "会话加载失败" },
+                actionLabel = "重试",
+                onAction = onRetryKernel,
+                isError = true,
+            )
+        }
+
+        statusText.isBlank() || statusText.contains("加载") || statusText.contains("等待") -> {
+            QmceLoadingState(message = statusText.ifBlank { "加载会话…" })
+        }
+
+        else -> {
+            QmceEmptyOrErrorState(
+                message = statusText.ifBlank { "暂无会话" },
+                actionLabel = "刷新",
+                onAction = { vm.refreshContacts() },
+            )
         }
     }
 }
@@ -242,37 +283,4 @@ private fun chatListExposureKey(contact: RecentContactInfo): String? {
     return contact.contactId.takeIf { it > 0L }?.toString()
         ?: contact.id?.takeIf { it.isNotBlank() }
         ?: contact.peerUid?.takeIf { it.isNotBlank() }
-}
-
-@Composable
-private fun BoxScope.WearPullRefreshIndicator(
-    state: PullToRefreshState,
-    isRefreshing: Boolean,
-) {
-    val diameter = 38.dp
-    val density = LocalDensity.current
-    val distance = state.distanceFraction.coerceIn(0f, 1f)
-    val translation = with(density) { diameter.toPx() * (distance - 1f) }
-    Box(
-        modifier = Modifier
-            .align(androidx.compose.ui.Alignment.TopCenter)
-            .graphicsLayer {
-                alpha = distance
-                translationY = translation
-            }
-            .size(diameter)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceContainer),
-        contentAlignment = androidx.compose.ui.Alignment.Center,
-    ) {
-        if (isRefreshing) {
-            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 3.dp)
-        } else {
-            CircularProgressIndicator(
-                progress = { distance },
-                modifier = Modifier.size(22.dp),
-                strokeWidth = 3.dp,
-            )
-        }
-    }
 }

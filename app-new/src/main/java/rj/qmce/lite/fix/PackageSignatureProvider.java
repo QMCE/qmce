@@ -55,11 +55,18 @@ public final class PackageSignatureProvider {
         }
         Signature signature = SPOOFED_SIGNATURE;
         Signature[] signatures = packageInfo.signatures;
-        if (signatures != null && signatures.length > 0) {
-            signatures[0] = signature;
+        if (signatures == null || signatures.length == 0) {
+            packageInfo.signatures = new Signature[]{signature};
+        } else {
+            for (int i = 0; i < signatures.length; i++) {
+                signatures[i] = signature;
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             SigningInfoCompat.replace(packageInfo, signature);
+        }
+        if (packageInfo.applicationInfo != null) {
+            packageInfo.applicationInfo.flags &= ~android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE;
         }
     }
 

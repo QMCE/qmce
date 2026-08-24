@@ -14,7 +14,6 @@ import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,10 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -39,20 +34,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 
 private data class LocalGalleryVideo(
     val id: Long,
@@ -96,64 +95,75 @@ fun LocalVideoPickerScreen(
     }
     var selected by remember { mutableStateOf<Uri?>(null) }
     val scheme = MaterialTheme.colorScheme
-    val scaffoldState = rememberLazyListState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
 
     BackHandler(onBack = onDismiss)
-    ScreenScaffold(
-        scrollState = scaffoldState,
+    QmceScreenScaffold(
+        scrollState = listState,
         scrollIndicator = null,
         edgeButton = {
             EdgeButton(
                 onClick = { selected?.let(onConfirm) },
                 enabled = selected != null,
-                buttonSize = EdgeButtonSize.Small,
             ) { Text("发送") }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         when (val state = galleryState) {
             VideoGalleryLoadState.Loading -> Box(
-                Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
             }
 
             is VideoGalleryLoadState.Error -> Box(
-                Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
+                contentAlignment = Alignment.Center,
             ) {
                 Text(
                     state.message,
                     color = scheme.error,
-                    style = MaterialTheme.typography.bodySmall
+                    style = MaterialTheme.typography.bodySmall,
                 )
             }
 
             is VideoGalleryLoadState.Ready -> {
                 if (state.videos.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(contentPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
                             "没有可用视频",
                             color = scheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
                         )
                     }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                    TransformingLazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = contentPadding,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(state.videos, key = { video -> video.id }) { video ->
+                        items(
+                            items = state.videos,
+                            key = { video -> video.id },
+                        ) { video ->
                             val isSelected = video.uri == selected
                             Card(
                                 onClick = { selected = video.uri },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(116.dp),
+                                    .height(116.dp)
+                                    .transformedHeight(this, transformationSpec),
                                 colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainer),
                                 contentPadding = PaddingValues(0.dp),
                             ) {
@@ -163,7 +173,7 @@ fun LocalVideoPickerScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .background(Color(0x66000000)),
+                                                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.4f)),
                                         )
                                         Box(
                                             modifier = Modifier
@@ -253,6 +263,7 @@ private fun loadVideoThumbnail(context: Context, video: LocalGalleryVideo): Bitm
         return runCatching { resolver.loadThumbnail(video.uri, Size(320, 320), null) }.getOrNull()
     }
     return runCatching {
+        @Suppress("DEPRECATION")
         MediaStore.Video.Thumbnails.getThumbnail(
             resolver,
             video.id,

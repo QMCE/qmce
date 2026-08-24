@@ -9,6 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -16,14 +20,18 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
 import androidx.wear.compose.material3.HorizontalPageIndicator
+import androidx.wear.compose.material3.HorizontalPagerScaffold
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import rj.qmce.lite.QmceApplication
+import rj.qmce.lite.kernel.KernelBridge
 import rj.qmce.lite.ui.settingsVm
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import rj.qmce.lite.viewmodel.ChatListViewModel
 import rj.qmce.lite.viewmodel.ContactsViewModel
 import rj.qmce.lite.viewmodel.MyViewModel
 import rj.qmce.lite.viewmodel.QZoneViewModel
-
 @OptIn(
     androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class,
 )
@@ -46,59 +54,121 @@ fun MainScreen(
     onOpenQZoneDetail: (rj.qmce.lite.viewmodel.QZoneViewModel.FeedItem) -> Unit,
     onLogout: () -> Unit,
     onOpenChat: (RecentContactInfo) -> Unit,
-    onOpenChatFromContacts: (String, String, String) -> Unit, // uid, uin, name
+    onOpenChatFromContacts: (String, String, String, Int) -> Unit, // uid, uin, name, chatType
+    onOpenGroupFromContacts: (ContactsViewModel.UiGroup) -> Unit,
     onOpenContactProfile: (ContactsViewModel.UiBuddy) -> Unit,
+    onOpenNotificationCenter: () -> Unit = {},
 ) {
     val pagerState = rememberPagerState(pageCount = { 4 })
+    var kernelRetryNonce by remember(uin) { mutableIntStateOf(0) }
+    var contactsLoaded by remember(uin) { mutableStateOf(false) }
+    var qzoneLoaded by remember(uin) { mutableStateOf(false) }
+    var kernelReady by remember(uin) { mutableStateOf(false) }
 
     LaunchedEffect(pagerState.currentPage) {
         onPageChanged(pagerState.currentPage)
     }
 
     LaunchedEffect(uin, runtime) {
-        if (runtime == null) return@LaunchedEffect
-        qZoneVm.init(runtime)
-        chatListVm.loadContacts(runtime)
-        contactsVm.loadBuddies(runtime, forceRefresh = true)
-        qZoneVm.loadFeeds(forceRefresh = true)
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
+        qZoneVm.init(activeRuntime)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        if (showPageIndicator) TopPageIndicator(pagerState, pointsUp = !showTimeText)
+    LaunchedEffect(uin, runtime, kernelRetryNonce) {
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
+        val timeouts = listOf(30_000L, 10_000L, 6_000L)
+        timeouts.forEachIndexed { index, timeoutMillis ->
+            val ready = withContext(Dispatchers.IO) {
+                if (kernelRetryNonce == 0 && index == 0) {
+                    KernelBridge.awaitCoreServices(timeoutMillis, activeRuntime)
+                } else {
+                    KernelBridge.retryCoreServices(timeoutMillis, activeRuntime)
+                }
+            }
+            android.util.Log.d("QMCE", "MainScreen: core services ready=$ready attempt=${index + 1}")
+            if (ready) {
+                kernelReady = true
+                chatListVm.loadContacts(activeRuntime)
+                // Contacts / QZone load lazily when their tab is first opened.
+                return@LaunchedEffect
+            }
+            if (index < timeouts.lastIndex) {
+                chatListVm.markWaitingForKernel()
+                contactsVm.markWaitingForKernel()
+                kotlinx.coroutines.delay(2_000L)
+            }
+        }
+        chatListVm.markKernelInitFailed()
+        contactsVm.markKernelInitFailed()
+        // Kernel 失败时仍允许首次进入空间页时加载
+        kernelReady = true
+    }
 
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.weight(1f),
-        ) { page ->
-            when (page) {
-                0 -> ChatListScreen(
-                    uin = uin,
-                    runtime = runtime,
-                    isPageVisible = page == pagerState.currentPage,
-                    onLogout = onLogout,
-                    onOpenChat = onOpenChat,
-                    vm = chatListVm,
-                )
+    LaunchedEffect(pagerState.currentPage, kernelReady, uin, runtime) {
+        if (!kernelReady) return@LaunchedEffect
+        val activeRuntime = QmceApplication.ensureRuntime() ?: runtime ?: return@LaunchedEffect
+        when (pagerState.currentPage) {
+            1 -> if (!contactsLoaded) {
+                contactsLoaded = true
+                contactsVm.loadBuddies(activeRuntime, forceRefresh = true)
+            }
+            2 -> if (!qzoneLoaded) {
+                qzoneLoaded = true
+                qZoneVm.loadFeeds(forceRefresh = true)
+            }
+        }
+    }
 
-                1 -> ContactsScreen(
-                    vm = contactsVm,
-                    onOpenChat = onOpenChatFromContacts,
-                    onOpenProfile = onOpenContactProfile,
-                )
+    HorizontalPagerScaffold(
+        pagerState = pagerState,
+        // The app renders its own top-aligned indicator below (see TopPageIndicator), so the
+        // scaffold's default bottom indicator is disabled here. HorizontalPagerScaffold is still
+        // used to coordinate TimeText visibility with page-swipe gestures.
+        pageIndicator = null,
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (showPageIndicator) TopPageIndicator(pagerState, pointsUp = !showTimeText)
 
-                2 -> QZoneScreen(
-                    vm = qZoneVm,
-                    onOpenComposer = onOpenQZoneComposer,
-                    onOpenDetail = onOpenQZoneDetail,
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f),
+            ) { page ->
+                when (page) {
+                    0 -> ChatListScreen(
+                        uin = uin,
+                        runtime = runtime,
+                        isPageVisible = page == pagerState.currentPage,
+                        onLogout = onLogout,
+                        onOpenChat = onOpenChat,
+                        onRetryKernel = { kernelRetryNonce++ },
+                        onOpenNotificationCenter = onOpenNotificationCenter,
+                        vm = chatListVm,
+                    )
 
-                3 -> MyScreen(
-                    uin = uin,
-                    onOpenSettings = onOpenSettings,
-                    onOpenLogoutConfirmation = onOpenLogoutConfirmation,
-                    onForceExit = onForceExit,
-                    vm = myVm,
-                )
+                    1 -> ContactsScreen(
+                        vm = contactsVm,
+                        onOpenChat = { uid, uin, name ->
+                            onOpenChatFromContacts(uid, uin, name, 1)
+                        },
+                        onOpenGroup = onOpenGroupFromContacts,
+                        onOpenProfile = onOpenContactProfile,
+                        onRetryKernel = { kernelRetryNonce++ },
+                    )
+
+                    2 -> QZoneScreen(
+                        vm = qZoneVm,
+                        onOpenComposer = onOpenQZoneComposer,
+                        onOpenDetail = onOpenQZoneDetail,
+                    )
+
+                    3 -> MyScreen(
+                        uin = uin,
+                        onOpenSettings = onOpenSettings,
+                        onOpenLogoutConfirmation = onOpenLogoutConfirmation,
+                        onForceExit = onForceExit,
+                        vm = myVm,
+                    )
+                }
             }
         }
     }

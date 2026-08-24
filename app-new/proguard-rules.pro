@@ -1,6 +1,8 @@
 # ── qq-sdk: 全量保留（内核反射、MSF、QRoute 动态加载） ──
 -keep class com.tencent.** { *; }
 -keep class com.tencent.qqnt.kernel.nativeinterface.** { *; }
+-keep class com.tencent.qqnt.kernel.invorker.** { *; }
+-keep class rj.qmce.lite.notify.** { *; }
 -keep class d.c.k.o.a.a.r8 { *; }
 -keep class mqq.** { *; }
 -keep class oicq.** { *; }
@@ -50,6 +52,15 @@
 # ── Flag, called by QLog ──
 -keep class rj.qmce.lite.Flag { *; }
 
+# Keep short-name SDK listener bridges used by 9.0.7 qq-sdk
+-keep class rj.qmce.lite.data.chat.OfficialPttPlayerListenerBridge { *; }
+-keep class * extends rj.qmce.lite.data.chat.OfficialPttPlayerListenerBridge { *; }
+-keep class rj.qmce.lite.data.chat.TranslateTextCallbackBridge { *; }
+-keep class * extends rj.qmce.lite.data.chat.TranslateTextCallbackBridge { *; }
+-keepclassmembers class * implements com.tencent.watch.aio_impl.ui.cell.ptt.AIOPttAudioPlayerStateListener { *; }
+-keepclassmembers class * extends com.tencent.qqnt.watch.ptt.api.ITranslateTextService$AbsTranslateTextCallback { *; }
+-keep class rj.qmce.lite.data.chat.MediaSdkAccess { *; }
+
 # R8 may emit duplicate field_ids for NavOptions after field renaming even when
 # horizontal class merging is disabled. ART rejects the entire containing dex.
 -keep class androidx.navigation.NavOptions { *; }
@@ -72,3 +83,30 @@
 # ── 通用 ──
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# ── R8 9.3.16 + 已混淆 qq-sdk：Kotlin companion 链路 NPE；双 jar strip 仍触发 ──
+# 保留 shrink/obfuscate，关掉 optimize 以避开 metadata rewrite 崩溃路径
+-dontoptimize
+
+# ── R8 missing classes (qq-sdk 引用但 jar/依赖未提供；Wear 路径不依赖) ──
+# 来源: app-new/build/outputs/mapping/release/missing_rules.txt
+-dontwarn NS_COMM.COMM$BytesEntry
+-dontwarn NS_COMM.COMM$Entry
+-dontwarn NS_COMM.COMM$StCommonExt
+-dontwarn com.airbnb.lottie.ImageAssetDelegate
+-dontwarn com.airbnb.lottie.LottieAnimationView
+-dontwarn com.airbnb.lottie.LottieComposition
+-dontwarn com.airbnb.lottie.LottieDrawable
+-dontwarn com.airbnb.lottie.OnCompositionLoadedListener
+-dontwarn com.google.android.material.appbar.AppBarLayout$OnOffsetChangedListener
+-dontwarn com.google.android.material.appbar.AppBarLayout
+-dontwarn com.google.android.material.button.MaterialButton
+-dontwarn com.google.android.material.progressindicator.BaseProgressIndicator
+-dontwarn com.google.zxing.Binarizer
+-dontwarn com.google.zxing.BinaryBitmap
+-dontwarn com.google.zxing.DecodeHintType
+-dontwarn com.google.zxing.LuminanceSource
+-dontwarn com.google.zxing.MultiFormatReader
+-dontwarn com.google.zxing.RGBLuminanceSource
+-dontwarn com.google.zxing.Result
+-dontwarn com.google.zxing.common.HybridBinarizer

@@ -11,9 +11,12 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.aio.api.IAIOFileTransfer
-import com.tencent.qqnt.kernel.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.CalendarElement
+import com.tencent.qqnt.kernelpublic.nativeinterface.TextGiftElement
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
 import com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardClickInfo
+import com.tencent.qqnt.kernel.nativeinterface.MsgConstant
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.MarketFaceElement
@@ -31,6 +34,7 @@ import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.ai.MessageSummaryClient
 import rj.qmce.lite.data.chat.ChatRepository
+import rj.qmce.lite.data.chat.ChatSendPipeline
 import rj.qmce.lite.data.chat.GroupMemberRepository
 import rj.qmce.lite.data.chat.LinkPreviewRepository
 import rj.qmce.lite.data.chat.LinkPreviewState
@@ -60,7 +64,7 @@ class ChatDetailViewModel : ViewModel() {
     companion object {
         private const val TAG = "QMCE"
         private const val LOAD_COUNT = 30
-        private const val HISTORY_PAGE_COUNT = 10
+        private const val HISTORY_PAGE_COUNT = 20
         private const val REPLY_SOURCE_TIMEOUT_MS = 15_000L
         private const val PTT_TRANSLATION_TIMEOUT_MS = 20_000L
         private const val PTT_TRANSLATION_REFRESH_DELAY_MS = 800L
@@ -92,6 +96,11 @@ class ChatDetailViewModel : ViewModel() {
             val surpriseId: String? = null,
         ) : MessageContent
 
+        data class FaceBubble(
+            val summary: String,
+            val content: String? = null,
+        ) : MessageContent
+
         data class MarketFace(
             val name: String,
             val staticPath: String?,
@@ -116,6 +125,7 @@ class ChatDetailViewModel : ViewModel() {
         ) : MessageContent
 
         data class Video(
+            val elementId: Long,
             val filePath: String?,
             val thumbnailPaths: List<String>,
             val width: Int,
@@ -123,6 +133,8 @@ class ChatDetailViewModel : ViewModel() {
             val durationSeconds: Int,
             val progress: Int?,
             val transferStatus: Int?,
+            val isLoading: Boolean = false,
+            val loadError: String? = null,
         ) : MessageContent
 
         data class File(
@@ -365,6 +377,8 @@ class ChatDetailViewModel : ViewModel() {
     private val _messageNavigationState =
         MutableStateFlow<MessageNavigationState>(MessageNavigationState.Idle)
     val messageNavigationState: StateFlow<MessageNavigationState> = _messageNavigationState
+    private val _unreadBadgeText = MutableStateFlow<String?>(null)
+    val unreadBadgeText: StateFlow<String?> = _unreadBadgeText
 
     private val _messageSummaryState = MutableStateFlow<MessageSummaryState>(MessageSummaryState.Idle)
     val messageSummaryState: StateFlow<MessageSummaryState> = _messageSummaryState
@@ -498,6 +512,7 @@ class ChatDetailViewModel : ViewModel() {
         _peerName.value = name
         _forwardDetailState.value = ForwardDetailState.Idle
         _replySourceState.value = ReplySourceState.Idle
+        _unreadBadgeText.value = null
         resetMessageNavigation(messageNavigation)
         _pendingReplyTarget.value = null
         _pendingVoiceText.value = null
@@ -564,18 +579,18 @@ class ChatDetailViewModel : ViewModel() {
                     TAG,
                     "getAioFirstViewLatestMsgs: code=$errorCode, count=${list?.size}, needContinue=$needContinue"
                 )
-                if (errorCode == 0) {
+                if (errorCode == 0 || list.isNullOrEmpty()) {
                     synchronized(messageLock) { msgList.clear() }
                     mergeMessages(list.orEmpty(), c)
                     emitMessages()
-                    _hasOlderMessages.value = needContinue
+                    _hasOlderMessages.value = if (errorCode == 0) needContinue else false
                     _statusText.value = ""
                 } else {
                     _statusText.value = "消息记录加载失败: ${errMsg ?: errorCode}"
                 }
             }
         if (!requested) {
-            _statusText.value = "消息记录加载请求失败"
+            _statusText.value = ""
         }
     }
 
@@ -629,9 +644,118 @@ class ChatDetailViewModel : ViewModel() {
                 notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
             ) {
                 if (!isCurrentSession(session)) return
-                if (RichMediaRepository.consumeDownloadCompletion(notify)) emitMessages()
+                val consumed = RichMediaRepository.consumeDownloadCompletion(notify)
+                val updated = applyRichMediaNotify(notify)
+                if (consumed || updated) emitMessages()
+            }
+
+            override fun onRichMediaProgressUpdate(
+                notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
+            ) {
+                if (!isCurrentSession(session)) return
+                if (applyRichMediaNotify(notify)) emitMessages()
             }
         })
+
+    private fun applyRichMediaNotify(
+        notify: com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo,
+    ): Boolean {
+        val chatContact = contact
+        notify.msgRecord?.let { record ->
+            if (chatContact != null) {
+                return mergeMessages(listOf(record), chatContact) > 0
+            }
+        }
+        if (notify.msgId <= 0L || notify.msgElementId <= 0L) return false
+        return synchronized(messageLock) {
+            val index = msgList.indexOfFirst { it.msgId == notify.msgId }
+            if (index < 0) return@synchronized false
+            val element = msgList[index].elements
+                ?.firstOrNull { it.elementId == notify.msgElementId }
+                ?: return@synchronized false
+            val progress = when {
+                notify.totalSize > 0L ->
+                    ((notify.fileProgress * 100L) / notify.totalSize).toInt().coerceIn(0, 100)
+                notify.fileProgress in 0L..100L -> notify.fileProgress.toInt()
+                else -> null
+            }
+            val path = notify.filePath?.takeIf { it.isNotBlank() }
+            var changed = false
+            element.pttElement?.let { voice ->
+                progress?.let {
+                    if (voice.progress != it) {
+                        voice.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (voice.filePath != it) {
+                        voice.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && voice.transferStatus != notify.trasferStatus) {
+                    voice.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.picElement?.let { picture ->
+                progress?.let {
+                    if (picture.progress != it) {
+                        picture.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (picture.sourcePath != it) {
+                        picture.sourcePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && picture.transferStatus != notify.trasferStatus) {
+                    picture.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.fileElement?.let { file ->
+                progress?.let {
+                    if (file.progress != it) {
+                        file.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (file.filePath != it) {
+                        file.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && file.transferStatus != notify.trasferStatus) {
+                    file.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            element.videoElement?.let { video ->
+                progress?.let {
+                    if (video.progress != it) {
+                        video.progress = it
+                        changed = true
+                    }
+                }
+                path?.let {
+                    if (video.filePath != it) {
+                        video.filePath = it
+                        changed = true
+                    }
+                }
+                if (notify.trasferStatus != 0 && video.transferStatus != notify.trasferStatus) {
+                    video.transferStatus = notify.trasferStatus
+                    changed = true
+                }
+            }
+            changed
+        }
+    }
 
     private fun runWhenMessageServiceReady(action: () -> Unit) {
         if (chatRepository.isConnected()) {
@@ -690,102 +814,50 @@ class ChatDetailViewModel : ViewModel() {
             runWhenMessageServiceReady { sendImage(context, uri) }
             return
         }
-
-        // Copy image to a temp file so we can compute md5
-        val tmpFile = File(context.cacheDir, "send_img_${System.currentTimeMillis()}.jpg")
-        try {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
-            } ?: run {
-                _statusText.value = "读取图片失败"
-                return
-            }
-        } catch (e: Exception) {
-            _statusText.value = "读取图片失败: ${e.message}"
-            return
-        }
-
-        val md5 = md5File(tmpFile)
-        val fileName = tmpFile.name
-        val fileSize = tmpFile.length()
-
-        // Resolve kernel-managed file paths (original + thumbnail)
-        val origPath = chatRepository.getMobileQQSendPath(
-            RichMediaFilePathInfo(2, 0, md5, fileName, 1, 0, null, "", true),
-        ) ?: tmpFile.absolutePath
-
-        val thumbPath = chatRepository.getMobileQQSendPath(
-            RichMediaFilePathInfo(2, 0, md5, fileName, 2, 720, null, "", true),
-        )
-
-        // Copy to kernel paths if different from tmp
-        if (origPath != tmpFile.absolutePath) {
-            runCatching { tmpFile.copyTo(File(origPath), overwrite = true) }
-        }
-        if (thumbPath != null && thumbPath != tmpFile.absolutePath) {
-            runCatching { tmpFile.copyTo(File(thumbPath), overwrite = true) }
-        }
-
-        // Decode dimensions
-        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(origPath, opts)
-        val width = opts.outWidth.takeIf { it > 0 } ?: 800
-        val height = opts.outHeight.takeIf { it > 0 } ?: 600
-
-        // picType: 0x3E8=jpg, 0x3E9=png, 0x3EA=webp, 0x7D0=gif
-        val ext = fileName.substringAfterLast('.', "").lowercase()
-        val picType = when (ext) {
-            "jpg", "jpeg" -> 1000
-            "png" -> 1001
-            "webp" -> 1002
-            "gif" -> 2000
-            "bmp" -> 1005
-            else -> 1001 // default png
-        }
-
-        val picElement = PicElement().apply {
-            sourcePath = origPath
-            this.fileName = fileName
-            this.fileSize = fileSize
-            md5HexStr = md5
-            picWidth = width
-            picHeight = height
-            this.picType = picType
-            picSubType = 0
-            original = true
-            storeID = 0
-        }
-
-        val element = MsgElement().apply {
-            elementType = 2 // PIC
-            elementId = 0
-            this.picElement = picElement
-        }
-        val elements = arrayListOf(element)
-        val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
-            Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
-            if (code == 0) {
-                val now = System.currentTimeMillis() / 1000
-                val rec = MsgRecord().apply {
-                    peerUid = c.peerUid
-                    chatType = c.chatType
-                    msgTime = now
-                    senderUin = selfUin
-                    sendNickName = ""
-                    sendStatus = 2
+        val appContext = context.applicationContext
+        _statusText.value = "正在准备图片…"
+        Thread {
+            runCatching {
+                val element = ChatSendPipeline.buildPicElementFromUri(
+                    appContext,
+                    uri,
+                    pathResolver = { info -> chatRepository.getMobileQQSendPath(info) },
+                    md5File = ::md5File,
+                )
+                val elements = arrayListOf(element)
+                val sent = chatRepository.sendMessage(c, elements) { code, errMsg ->
+                    Log.d(TAG, "sendImage: code=$code, errMsg=$errMsg")
+                    if (code == 0) {
+                        val now = System.currentTimeMillis() / 1000
+                        val rec = MsgRecord().apply {
+                            peerUid = c.peerUid
+                            chatType = c.chatType
+                            msgTime = now
+                            senderUin = selfUin
+                            sendNickName = ""
+                            sendStatus = 2
+                        }
+                        runCatching {
+                            val f = MsgRecord::class.java.getDeclaredField("elements")
+                            f.isAccessible = true
+                            f.set(rec, arrayListOf(element))
+                        }
+                        RecentMessageStore.put(peerId, rec)
+                        Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
+                        _statusText.value = ""
+                    } else {
+                        _statusText.value = "发送图片失败: $errMsg"
+                    }
                 }
-                runCatching {
-                    val f = MsgRecord::class.java.getDeclaredField("elements")
-                    f.isAccessible = true
-                    f.set(rec, arrayListOf(element))
-                }
-                RecentMessageStore.put(peerId, rec)
-                Log.d(TAG, "sendImage: put to RecentMessageStore id=$peerId")
-            } else {
-                _statusText.value = "发送图片失败: $errMsg"
+                if (!sent) _statusText.value = "消息服务不可用"
+            }.onFailure {
+                Log.w(TAG, "sendImage failed", it)
+                _statusText.value = "读取图片失败: ${it.message}"
             }
+        }.apply {
+            isDaemon = true
+            start()
         }
-        if (!sent) _statusText.value = "消息服务不可用"
     }
 
     fun sendVideo(context: Context, uri: Uri) {
@@ -1574,12 +1646,36 @@ class ChatDetailViewModel : ViewModel() {
         val records = synchronized(messageLock) { msgList.toList() }
         records.forEach { record ->
             val senderUid = record.senderUid.trim()
-            val senderNick = record.sendNickName?.trim().orEmpty()
+            val senderNick = resolveSenderDisplayName(record)
             if (senderUid.isNotEmpty() && senderNick.isNotEmpty()) {
                 replyNicknameCache.putIfAbsent(senderUid, senderNick)
             }
         }
         _messages.value = records.map(::toUiMsg)
+    }
+
+    private fun resolveSenderDisplayName(rec: MsgRecord): String {
+        if (rec.chatType == 2) {
+            sequenceOf(rec.sendMemberName, rec.sendRemarkName, rec.sendNickName)
+                .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+                .firstOrNull()
+                ?.let { return it }
+            val senderUid = rec.senderUid.trim()
+            if (senderUid.isNotEmpty()) {
+                _groupMembers.value.firstOrNull { it.uid == senderUid }
+                    ?.displayName
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { return it }
+                return senderUid
+            }
+            return rec.senderUin.takeIf { it > 0L }?.toString().orEmpty()
+        }
+        return sequenceOf(rec.sendRemarkName, rec.sendNickName)
+            .mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            .firstOrNull()
+            ?: rec.senderUid.trim().takeIf { it.isNotEmpty() }
+            ?: rec.senderUin.takeIf { it > 0L }?.toString()
+            ?: ""
     }
 
     private fun toUiMsg(rec: MsgRecord, forwardRootMessageId: Long? = null): UiMsg {
@@ -1589,7 +1685,7 @@ class ChatDetailViewModel : ViewModel() {
             msgId = rec.msgId,
             msgSeq = rec.msgSeq,
             senderUid = rec.senderUid,
-            senderNick = rec.sendNickName ?: "",
+            senderNick = resolveSenderDisplayName(rec),
             time = rec.msgTime,
             peerUid = rec.peerUid,
             chatType = rec.chatType,
@@ -1731,40 +1827,50 @@ class ChatDetailViewModel : ViewModel() {
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.actionBarElement != null -> element.actionBarElement?.let { actionBar ->
-                        MessageContent.InlineKeyboard(
-                            actionBar.botAppid,
-                            extractKeyboardRows(actionBar.rows)
-                        )
+                        val rows = extractKeyboardRows(actionBar.rows)
+                        if (rows.isEmpty()) MessageContent.Unsupported(element.elementType)
+                        else MessageContent.InlineKeyboard(actionBar.botAppid, rows)
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.recommendedMsgElement != null -> element.recommendedMsgElement?.let { recommended ->
-                        MessageContent.InlineKeyboard(
-                            recommended.botAppid,
-                            extractKeyboardRows(recommended.rows)
-                        )
+                        val rows = extractKeyboardRows(recommended.rows)
+                        if (rows.isEmpty()) MessageContent.Unsupported(element.elementType)
+                        else MessageContent.InlineKeyboard(recommended.botAppid, rows)
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.yoloGameResultElement != null -> element.yoloGameResultElement?.let { result ->
-                        MessageContent.Card(
-                            title = "游戏结果",
-                            description = result.userInfo.orEmpty().joinToString("\n") { user ->
-                                "${user.uid.orEmpty()} · 排名 ${user.rank} · 结果 ${user.result}"
-                            },
-                            tag = "互动消息",
-                            previewUrl = null,
-                        )
+                        val users = result.userInfo.orEmpty()
+                        if (users.isEmpty()) {
+                            MessageContent.Unsupported(element.elementType)
+                        } else {
+                            MessageContent.Card(
+                                title = "游戏结果",
+                                description = users.joinToString("\n") { user ->
+                                    "${user.uid.orEmpty()} · 排名 ${user.rank} · 结果 ${user.result}"
+                                },
+                                tag = "互动消息",
+                                previewUrl = null,
+                            )
+                        }
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.tofuRecordElement != null -> element.tofuRecordElement?.let { tofu ->
-                        MessageContent.Card(
-                            title = tofu.descriptionContent?.title?.takeIf { it.isNotBlank() }
-                                ?: "互动消息",
-                            description = tofu.contentlist.orEmpty()
-                                .mapNotNull { it.title?.takeIf(String::isNotBlank) }
-                                .joinToString("\n"),
-                            tag = "互动消息",
-                            previewUrl = tofu.icon?.takeIf { it.isNotBlank() },
-                        )
+                        val title = tofu.descriptionContent?.title?.takeIf { it.isNotBlank() }
+                        val description = tofu.contentlist.orEmpty()
+                            .mapNotNull { it.title?.takeIf(String::isNotBlank) }
+                            .joinToString("\n")
+                        val preview = tofu.icon?.takeIf { it.isNotBlank() }
+                        if (title.isNullOrBlank() && description.isBlank() && preview.isNullOrBlank()) {
+                            MessageContent.Unsupported(element.elementType)
+                        } else {
+                            MessageContent.Card(
+                                title = title ?: "互动消息",
+                                description = description,
+                                tag = "互动消息",
+                                previewUrl = preview,
+                            ).takeUnless(::isPlaceholderOnlyCard)
+                                ?: MessageContent.Unsupported(element.elementType)
+                        }
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.replyElement != null -> element.replyElement?.let { reply ->
@@ -1891,7 +1997,11 @@ class ChatDetailViewModel : ViewModel() {
                     } ?: MessageContent.Unsupported(element.elementType)
 
                     element.videoElement != null -> element.videoElement?.let { video ->
+                        val requestState = RichMediaRepository.requestState(
+                            RichMediaKey(rec.msgId, element.elementId),
+                        )
                         MessageContent.Video(
+                            elementId = element.elementId,
                             filePath = video.filePath?.takeIf { it.isNotBlank() },
                             thumbnailPaths = video.thumbPath?.values?.filter { it.isNotBlank() }
                                 .orEmpty(),
@@ -1900,6 +2010,8 @@ class ChatDetailViewModel : ViewModel() {
                             durationSeconds = video.fileTime,
                             progress = video.progress,
                             transferStatus = video.transferStatus,
+                            isLoading = requestState is RichMediaRequestState.Loading,
+                            loadError = (requestState as? RichMediaRequestState.Failed)?.message,
                         )
                     } ?: MessageContent.Unsupported(element.elementType)
 
@@ -1916,8 +2028,9 @@ class ChatDetailViewModel : ViewModel() {
                     element.liveGiftElement != null -> element.liveGiftElement?.let(::extractLiveGiftCard)
                         ?: MessageContent.Unsupported(element.elementType)
 
-                    element.arkElement != null -> element.arkElement?.let(::extractArkCard)
-                        ?: MessageContent.Unsupported(element.elementType)
+                    element.arkElement != null -> element.arkElement?.let { ark ->
+                        extractArkCard(ark, rec.subMsgType)
+                    } ?: MessageContent.Unsupported(element.elementType)
 
                     element.structLongMsgElement != null -> element.structLongMsgElement?.let { struct ->
                         extractStructCard(struct.xmlContent.orEmpty())
@@ -1950,15 +2063,8 @@ class ChatDetailViewModel : ViewModel() {
                     element.inlineKeyboardElement != null -> element.inlineKeyboardElement?.let(::extractInlineKeyboard)
                         ?: MessageContent.Unsupported(element.elementType)
 
-                    element.faceBubbleElement != null -> element.faceBubbleElement?.let { faceBubble ->
-                        MessageContent.Text(
-                            firstNonBlank(
-                                faceBubble.faceSummary,
-                                faceBubble.content,
-                                faceBubble.oldVersionStr,
-                            ) ?: "[表情]",
-                        )
-                    } ?: MessageContent.Unsupported(element.elementType)
+                    element.faceBubbleElement != null -> element.faceBubbleElement?.let(::extractFaceBubble)
+                        ?: MessageContent.Unsupported(element.elementType)
 
                     element.textElement != null -> MessageContent.Text(element.textElement?.content.orEmpty())
                     else -> MessageContent.Unsupported(
@@ -2033,7 +2139,7 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun resolveReplyNicknameFromProfile(identifiers: List<String>): String? {
-        val profileService = KernelBridge.getKernelService()?.profileService ?: return null
+        val profileService = KernelBridge.getKernelService()?.getProfileService() ?: return null
         val directInfo = runCatching {
             profileService.getCoreAndBaseInfo("QMCE-Reply", ArrayList(identifiers))
         }.getOrNull().orEmpty()
@@ -2061,6 +2167,7 @@ class ChatDetailViewModel : ViewModel() {
             is MessageContent.Text -> content.value
             is MessageContent.Image -> "[图片]"
             is MessageContent.Face -> content.text
+            is MessageContent.FaceBubble -> content.summary
             is MessageContent.MarketFace -> content.name
             is MessageContent.Giphy -> "[GIF]"
             is MessageContent.Voice -> "[语音]"
@@ -2078,24 +2185,108 @@ class ChatDetailViewModel : ViewModel() {
             is MessageContent.Markdown -> content.value
             is MessageContent.LinkPreview -> ""
             is MessageContent.CallRecord -> content.text
-            is MessageContent.Unsupported -> content.detail?.let { "[$it]" } ?: "[暂不支持的消息]"
+            is MessageContent.Unsupported -> "暂不支持该消息展示"
         }
     }.ifEmpty { "..." }
 
-    private fun extractArkCard(ark: com.tencent.qqnt.kernel.nativeinterface.ArkElement): MessageContent.Card {
+    private fun extractArkCard(
+        ark: com.tencent.qqnt.kernel.nativeinterface.ArkElement,
+        subMsgType: Int,
+    ): MessageContent {
+        if (isGroupAnnounceArk(ark, subMsgType)) {
+            val confirmRequired = ark.subElementType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCECONFIRMREQUIRED ||
+                    subMsgType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCECONFIRMREQUIRED
+            val metadata = RichMessageMetadataParser.parseGroupAnnounceArk(
+                ark.bytesData,
+                confirmRequired,
+            )
+            return MessageContent.Card(
+                title = metadata.title.ifBlank { "群公告" },
+                description = metadata.description,
+                tag = metadata.tag,
+                previewUrl = metadata.previewUrl,
+                actionUrl = metadata.actionUrl,
+            )
+        }
         val metadata = RichMessageMetadataParser.parseArkCard(ark.bytesData)
-        return MessageContent.Card(
+        val card = MessageContent.Card(
             title = metadata.title,
             description = metadata.description,
             tag = metadata.tag,
             previewUrl = metadata.previewUrl,
             actionUrl = metadata.actionUrl,
         )
+        return if (isInsufficientCard(card)) {
+            android.util.Log.d(TAG, "chatDetail: ark card insufficient, type fallback")
+            MessageContent.Unsupported(0)
+        } else {
+            card
+        }
     }
 
-    private fun extractStructCard(xmlContent: String): MessageContent.StructCard {
+    private fun isGroupAnnounceArk(
+        ark: com.tencent.qqnt.kernel.nativeinterface.ArkElement,
+        subMsgType: Int,
+    ): Boolean {
+        val arkSubType = ark.subElementType ?: -1
+        if (arkSubType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCE ||
+            arkSubType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCECONFIRMREQUIRED
+        ) {
+            return true
+        }
+        if (subMsgType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCE ||
+            subMsgType == MsgConstant.KMSGSUBTYPEARKGROUPANNOUNCECONFIRMREQUIRED
+        ) {
+            return true
+        }
+        val raw = ark.bytesData.orEmpty()
+        return raw.contains("mannounce", ignoreCase = true) || raw.contains("群公告")
+    }
+
+    private fun extractFaceBubble(
+        faceBubble: com.tencent.qqnt.kernel.nativeinterface.FaceBubbleElement,
+    ): MessageContent.FaceBubble {
+        val summary = firstNonBlank(
+            faceBubble.faceSummary,
+            faceBubble.yellowFaceInfo?.compatibleText,
+            faceBubble.yellowFaceInfo?.text,
+            faceBubble.content,
+            faceBubble.oldVersionStr,
+        ) ?: "[表情]"
+        val content = faceBubble.content?.trim()?.takeIf { it.isNotBlank() && it != summary }
+        return MessageContent.FaceBubble(summary = summary, content = content)
+    }
+
+    private fun extractStructCard(xmlContent: String): MessageContent {
         val metadata = RichMessageMetadataParser.parseStructCard(xmlContent)
-        return MessageContent.StructCard(metadata.title, metadata.description, metadata.groupCode)
+        val card = MessageContent.StructCard(metadata.title, metadata.description, metadata.groupCode)
+        val titleBlank = card.title.isBlank()
+        val descBlank = card.description.isBlank() && card.groupCode.isNullOrBlank()
+        val placeholderOnly = card.title in setOf("群邀请", "分享卡片") &&
+                card.description.isBlank() &&
+                card.groupCode.isNullOrBlank()
+        return if ((titleBlank && descBlank) || placeholderOnly) {
+            MessageContent.Unsupported(0)
+        } else {
+            card
+        }
+    }
+
+    private fun isPlaceholderOnlyCard(card: MessageContent.Card): Boolean =
+        isInsufficientCard(card)
+
+    private fun isInsufficientCard(card: MessageContent.Card): Boolean {
+        val title = card.title.trim()
+        val description = card.description.trim()
+        val hasUrl = !card.actionUrl.isNullOrBlank() || !card.previewUrl.isNullOrBlank()
+        if (title.isNotEmpty() && !card.tag.isNullOrBlank()) return false
+        val placeholderTitle = title.isEmpty() || title in setOf(
+            "分享卡片",
+            "群邀请",
+        )
+        if (title.isEmpty() && description.isEmpty() && !hasUrl) return true
+        if (placeholderTitle && description.isEmpty() && !hasUrl) return true
+        return false
     }
 
     private fun extractWalletCard(
@@ -2122,7 +2313,7 @@ class ChatDetailViewModel : ViewModel() {
     }
 
     private fun extractCalendarCard(
-        calendar: com.tencent.qqnt.kernel.nativeinterface.CalendarElement,
+        calendar: CalendarElement,
     ): MessageContent.Calendar = MessageContent.Calendar(
         title = firstNonBlank(calendar.summary, calendar.msg) ?: "日程提醒",
         description = calendar.msg?.takeIf { it.isNotBlank() }
@@ -2132,7 +2323,7 @@ class ChatDetailViewModel : ViewModel() {
     )
 
     private fun extractTextGiftCard(
-        gift: com.tencent.qqnt.kernel.nativeinterface.TextGiftElement,
+        gift: TextGiftElement,
     ): MessageContent.Card {
         val sender = gift.senderNick?.takeIf { it.isNotBlank() }
         val receiver = gift.receiverNick?.takeIf { it.isNotBlank() }
@@ -2163,10 +2354,17 @@ class ChatDetailViewModel : ViewModel() {
 
     private fun extractInlineKeyboard(
         keyboard: com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardElement,
-    ): MessageContent.InlineKeyboard = MessageContent.InlineKeyboard(
-        botAppid = keyboard.botAppid,
-        rows = extractKeyboardRows(keyboard.rows),
-    )
+    ): MessageContent {
+        val rows = extractKeyboardRows(keyboard.rows)
+        return if (rows.isEmpty()) {
+            MessageContent.Unsupported(0)
+        } else {
+            MessageContent.InlineKeyboard(
+                botAppid = keyboard.botAppid,
+                rows = rows,
+            )
+        }
+    }
 
     private fun extractKeyboardRows(
         rows: List<com.tencent.qqnt.kernel.nativeinterface.InlineKeyboardRow>?,
@@ -2280,6 +2478,18 @@ class ChatDetailViewModel : ViewModel() {
 
     private fun extractSystemTip(element: MsgElement): String {
         val gray = element.grayTipElement ?: return "系统消息"
+        when (gray.subElementType) {
+            MsgConstant.GRAYTIPELEMENTSUBTYPEPROCLAMATION -> {
+                return gray.jsonGrayTipElement?.recentAbstract?.trim()?.takeIf(String::isNotBlank)
+                    ?: "群公告已更新"
+            }
+
+            MsgConstant.GRAYTIPELEMENTSUBTYPEEMOJIREPLY -> {
+                return gray.jsonGrayTipElement?.recentAbstract?.trim()?.takeIf(String::isNotBlank)
+                    ?: gray.jsonGrayTipElement?.jsonStr?.trim()?.takeIf(String::isNotBlank)
+                    ?: "表情回复"
+            }
+        }
         val direct = gray.jsonGrayTipElement?.recentAbstract
             ?: gray.jsonGrayTipElement?.jsonStr
             ?: gray.xmlElement?.content
@@ -2374,6 +2584,7 @@ class ChatDetailViewModel : ViewModel() {
         _messageNavigationState.value = next?.let {
             MessageNavigationState.Ready(it.label)
         } ?: MessageNavigationState.Idle
+        refreshUnreadBadgeText()
     }
 
     fun onFirstVisibleMessageSequence(sequence: Long) {
@@ -2395,6 +2606,7 @@ class ChatDetailViewModel : ViewModel() {
         _messageNavigationState.value = next?.let {
             MessageNavigationState.Ready(it.label)
         } ?: MessageNavigationState.Idle
+        refreshUnreadBadgeText()
     }
 
     private fun resetMessageNavigation(snapshot: MessageNavigationSnapshot) {
@@ -2422,7 +2634,7 @@ class ChatDetailViewModel : ViewModel() {
                         kind = MessageNavigationTargetKind.FirstUnread,
                         sequence = snapshot.firstUnreadSequence,
                         unreadCount = snapshot.unreadCount,
-                        label = "${snapshot.unreadCount} 条新消息",
+                        label = "${if (snapshot.unreadCount > 99) "99+" else snapshot.unreadCount} 条新消息",
                     ),
                 )
             }
@@ -2431,6 +2643,17 @@ class ChatDetailViewModel : ViewModel() {
         _messageNavigationState.value = next?.let {
             MessageNavigationState.Ready(it.label)
         } ?: MessageNavigationState.Idle
+        refreshUnreadBadgeText()
+    }
+
+    private fun refreshUnreadBadgeText() {
+        _unreadBadgeText.value = synchronized(messageNavigationLock) {
+            messageNavigationTargets
+                .firstOrNull { it.kind == MessageNavigationTargetKind.FirstUnread }
+                ?.unreadCount
+                ?.takeIf { it > 0 }
+                ?.let { if (it > 99) "99+" else it.toString() }
+        }
     }
 
     private fun locateOrLoadMessageNavigationTarget(target: MessageNavigationTarget) {
@@ -2512,6 +2735,18 @@ class ChatDetailViewModel : ViewModel() {
             peerUid = message.peerUid,
             chatType = message.chatType,
             elementId = image.elementId,
+        )
+        emitMessages()
+    }
+
+    fun ensureVideoCached(message: UiMsg, video: MessageContent.Video) {
+        val hasLocalFile = LocalMediaResolver.resolveFile(video.filePath) != null
+        if (hasLocalFile || video.elementId <= 0L) return
+        RichMediaRepository.requestVideo(
+            messageId = message.msgId,
+            peerUid = message.peerUid,
+            chatType = message.chatType,
+            elementId = video.elementId,
         )
         emitMessages()
     }

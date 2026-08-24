@@ -1,8 +1,10 @@
 package rj.qmce.lite.data.ai
 
 import android.util.Log
+import com.tencent.qphone.base.util.BaseApplication
 import org.json.JSONArray
 import org.json.JSONObject
+import rj.qmce.lite.viewmodel.SettingsViewModel
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -23,10 +25,14 @@ class MessageSummaryClient {
         fun onError(message: String, retryable: Boolean)
     }
 
+    private data class Endpoint(
+        val url: String,
+        val model: String,
+        val apiKey: String?,
+    )
+
     private companion object {
         const val TAG = "QMCE-AI"
-        const val ENDPOINT = "https://opencode.ai/zen/v1/chat/completions"
-        const val MODEL = "big-pickle"
         const val CONNECT_TIMEOUT_MILLIS = 15_000
         const val READ_TIMEOUT_MILLIS = 120_000
         const val MAX_MESSAGE_COUNT = 120
@@ -46,6 +52,25 @@ class MessageSummaryClient {
         return request
     }
 
+    private fun resolveEndpoint(): Endpoint {
+        val context = runCatching { BaseApplication.getContext() }.getOrNull()
+        val resolved = if (context != null) {
+            SettingsViewModel.resolveAiEndpoint(context)
+        } else {
+            SettingsViewModel.AiEndpoint(
+                baseUrl = SettingsViewModel.BUILTIN_AI_BASE_URL,
+                apiKey = SettingsViewModel.BUILTIN_AI_API_KEY,
+                model = SettingsViewModel.BUILTIN_AI_MODEL,
+                custom = false,
+            )
+        }
+        return Endpoint(
+            url = resolved.baseUrl,
+            model = resolved.model,
+            apiKey = resolved.apiKey,
+        )
+    }
+
     private fun execute(
         request: Request,
         messages: List<SummaryMessage>,
@@ -55,10 +80,11 @@ class MessageSummaryClient {
             listener.onError("没有可总结的消息", false)
             return
         }
+        val endpoint = resolveEndpoint()
         var connection: HttpURLConnection? = null
         try {
-            val body = buildRequestBody(messages)
-            connection = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+            val body = buildRequestBody(messages, endpoint.model)
+            connection = (URL(endpoint.url).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = CONNECT_TIMEOUT_MILLIS
                 readTimeout = READ_TIMEOUT_MILLIS
@@ -66,6 +92,9 @@ class MessageSummaryClient {
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Accept", "text/event-stream, application/json")
                 setRequestProperty("User-Agent", "QMCE/1.0")
+                endpoint.apiKey?.takeIf { it.isNotBlank() }?.let { key ->
+                    setRequestProperty("Authorization", "Bearer $key")
+                }
             }
             request.connection.set(connection)
             if (request.isCancelled()) return
@@ -124,7 +153,7 @@ class MessageSummaryClient {
         return true
     }
 
-    private fun buildRequestBody(messages: List<SummaryMessage>): String {
+    private fun buildRequestBody(messages: List<SummaryMessage>, model: String): String {
         val normalized = messages
             .takeLast(MAX_MESSAGE_COUNT)
             .map { message ->
@@ -152,7 +181,7 @@ class MessageSummaryClient {
             $transcript
         """.trimIndent()
         return JSONObject().apply {
-            put("model", MODEL)
+            put("model", model)
             put("stream", true)
             put("messages", JSONArray().apply {
                 put(JSONObject().apply {

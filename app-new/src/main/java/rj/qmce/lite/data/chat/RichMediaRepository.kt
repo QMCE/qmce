@@ -7,7 +7,6 @@ import com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo
 import com.tencent.qqnt.kernel.nativeinterface.MsgElement
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaElementGetReq
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
-import com.tencent.watch.aio_impl.ext.AIOPicDownloader
 import rj.qmce.lite.kernel.KernelBridge
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -40,6 +39,14 @@ object RichMediaRepository {
 
     fun setInvalidationListener(listener: (() -> Unit)?) {
         invalidationListener = listener
+    }
+
+    fun invalidateAllRequests() {
+        pendingRequests.clear()
+        pendingTimeouts.values.forEach { it.cancel(false) }
+        pendingTimeouts.clear()
+        requestStates.clear()
+        invalidationListener?.invoke()
     }
 
     fun requestState(key: RichMediaKey): RichMediaRequestState =
@@ -120,6 +127,45 @@ object RichMediaRepository {
         }.getOrElse {
             finishRequest(key, RichMediaRequestState.Failed("语音请求失败"))
             Log.w(TAG, "richMedia: request ptt audio failed", it)
+            false
+        }
+    }
+
+    /** Full video file: downloadType=2, thumbSize=0 (official WatchVideo path). */
+    fun requestVideo(
+        messageId: Long,
+        peerUid: String,
+        chatType: Int,
+        elementId: Long,
+    ): Boolean {
+        if (messageId <= 0L || elementId <= 0L || peerUid.isBlank()) return false
+        val key = RichMediaKey(messageId, elementId)
+        if (!beginRequest(key)) return true
+
+        val service = activeMessageService ?: KernelBridge.getMsgService()
+        if (service == null) {
+            finishRequest(key, RichMediaRequestState.Failed("消息服务不可用"))
+            return false
+        }
+
+        return runCatching {
+            service.getRichMediaElement(
+                RichMediaElementGetReq().apply {
+                    msgId = messageId
+                    this.peerUid = peerUid
+                    this.chatType = chatType
+                    this.elementId = elementId
+                    downloadType = 2
+                    thumbSize = 0
+                    downSourceType = 1
+                    triggerType = 1
+                },
+            )
+            Log.d(TAG, "richMedia: request video msg=$messageId, element=$elementId")
+            true
+        }.getOrElse {
+            finishRequest(key, RichMediaRequestState.Failed("视频请求失败"))
+            Log.w(TAG, "richMedia: request video failed", it)
             false
         }
     }
@@ -213,9 +259,7 @@ object RichMediaRepository {
     fun resolveLocalPicturePaths(element: MsgElement): List<String> =
         PicSize.values().mapNotNull { size ->
             runCatching {
-                val downloader =
-                    AIOPicDownloader::class.java.getField("a").get(null) as AIOPicDownloader
-                downloader.d(element, size)
+                MediaSdkAccess.getPicImagePath(element, size)
             }.getOrNull()
                 ?.let(LocalMediaResolver::resolveFile)
                 ?.absolutePath

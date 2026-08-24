@@ -18,19 +18,32 @@ android {
     namespace = "rj.qmce.lite"
     compileSdk = 37
     ndkVersion = "28.2.13676358"
-
     defaultConfig {
         applicationId = "rj.qmce.litex"
         minSdk = 23
         targetSdk = 37
-        versionCode = 21
-        versionName = "0.4.6"
+        versionCode = 30
+        versionName = "0.6.4"
         multiDexEnabled = true
         ndk {
             //noinspection ChromeOsAbiSupport
             abiFilters += "armeabi-v7a"
         }
         multiDexKeepProguard = file("multidex-proguard.pro")
+
+        val localProps = Properties().apply {
+            val f = rootProject.file("local.properties")
+            if (f.isFile) f.inputStream().use(::load)
+        }
+        val aiBaseUrl = localProps.getProperty(
+            "qmce.ai.baseUrl",
+            "https://api.ant-ling.com/v1/chat/completions",
+        )
+        val aiModel = localProps.getProperty("qmce.ai.model", "Ling-3.0-flash")
+        val aiApiKey = localProps.getProperty("qmce.ai.apiKey", "")
+        buildConfigField("String", "BUILTIN_AI_BASE_URL", "\"${aiBaseUrl.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BUILTIN_AI_MODEL", "\"${aiModel.replace("\"", "\\\"")}\"")
+        buildConfigField("String", "BUILTIN_AI_API_KEY", "\"${aiApiKey.replace("\"", "\\\"")}\"")
     }
 
     buildFeatures {
@@ -40,7 +53,7 @@ android {
 
     signingConfigs {
         create("dev") {
-            // Using testkey
+            // testkey
             storeFile = file("./testkey.jks")
             storePassword = releaseKeyStorePassword
             keyAlias = releaseKeyAlias
@@ -63,11 +76,9 @@ android {
             if (enableCodeShrinks)
             {
                 isMinifyEnabled = true
-                //noinspection NotShrinkingResources
-                isShrinkResources = false
+                isShrinkResources = true
             } else {
                 isMinifyEnabled = false
-                //noinspection NotShrinkingResources
                 isShrinkResources = false
             }
             signingConfig = signingConfigs.getByName("dev")
@@ -80,8 +91,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // 补药开 开了包大小爆炸
-    //packaging { jniLibs { useLegacyPackaging = false } }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+        resources {
+            excludes += setOf("lib/x86/**", "lib/x86_64/**")
+        }
+    }
 }
 
 kotlin {
@@ -241,12 +258,21 @@ dependencies {
     implementation(libs.appcenter.analytics)
     implementation(libs.appcenter.crashes)
 
-    // QQ API
+    // QQ API：单 jar（含 Metadata）；R8 靠 -dontoptimize 规避大 Metadata NPE
     implementation(files("libs/qq-sdk.jar"))
+    implementation(libs.commons.lang3)
     // 新版jar不需要这个了
     //implementation(files("libs/qav-runtime.jar"))
     // Wear OS platform SDK
     implementation(libs.androidx.wear)
+    implementation(libs.androidx.wear.ongoing)
+    implementation(libs.androidx.wear.remote.interactions)
+    implementation(libs.androidx.wear.tiles)
+    implementation(libs.androidx.wear.protolayout)
+    implementation(libs.androidx.wear.protolayout.material3)
+    implementation(libs.androidx.complications.datasource)
+    implementation(libs.androidx.complications.datasource.ktx)
+    implementation(libs.guava)
 
     // AndroidX Library
     implementation(libs.androidx.core)
@@ -254,6 +280,7 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.jessyan.autosize)
     implementation(libs.androidx.multidex)

@@ -25,7 +25,7 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
@@ -52,7 +52,7 @@ fun ContactPickerScreen(
     BackHandler(onBack = onBack)
 
     val allBuddies = categories.flatMap { it.buddies }
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
@@ -72,12 +72,13 @@ fun ContactPickerScreen(
                 }
             }
             items(allBuddies, key = { "${it.categoryId}:${it.uid}" }) { buddy ->
-                val name = buddy.remark.takeIf { it.isNotBlank() } ?: buddy.nick
+                val name = buddy.displayName()
                 Button(
                     onClick = { onSelect(buddy.uid, buddy.uin, name) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
                         .padding(vertical = 2.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(),
                     contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,

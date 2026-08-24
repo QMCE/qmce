@@ -12,7 +12,7 @@ import kotlin.text.Regex
  * those calls can fail with IllegalAccessError, so patched call sites can route
  * through these public static bridge methods instead.
  */
-@Suppress("unused")
+@Suppress("unused", "DEPRECATION") // kotlin.jvm.functions.Function1 kept for QQWatch SDK ABI
 object KtFix {
     @JvmStatic
     fun checkRadix(radix: Int): Int {
@@ -335,7 +335,7 @@ object KtFix {
 
     @JvmStatic
     fun first(iterable: Iterable<Any?>): Any? {
-        if (iterable is List<*>) return first(iterable as List<Any?>)
+        if (iterable is List<*>) return first(iterable)
         val it = iterable.iterator()
         if (!it.hasNext()) throw NoSuchElementException("Collection is empty.")
         return it.next()
@@ -389,6 +389,30 @@ object KtFix {
 
     @JvmStatic
     fun lastOrNull(list: List<Any?>): Any? = if (list.isEmpty()) null else list[list.size - 1]
+
+    @JvmStatic
+    fun last(iterable: Iterable<Any?>): Any? {
+        if (iterable is List<*>) return last(iterable)
+        val it = iterable.iterator()
+        if (!it.hasNext()) throw NoSuchElementException("Collection is empty.")
+        var last: Any? = null
+        while (it.hasNext()) {
+            last = it.next()
+        }
+        return last
+    }
+
+    @JvmStatic
+    fun lastOrNull(iterable: Iterable<Any?>): Any? {
+        if (iterable is List<*>) return lastOrNull(iterable)
+        val it = iterable.iterator()
+        if (!it.hasNext()) return null
+        var last: Any? = null
+        while (it.hasNext()) {
+            last = it.next()
+        }
+        return last
+    }
 
     @JvmStatic
     fun minus(iterable: Iterable<Any?>, other: Iterable<Any?>): List<Any?> {
@@ -484,7 +508,7 @@ object KtFix {
         is Collection<*> -> when (iterable.size) {
             0 -> emptyList()
             1 -> java.util.Collections.singletonList(iterable.iterator().next())
-            else -> ArrayList(iterable as Collection<Any?>)
+            else -> ArrayList(iterable)
         }
         else -> toMutableListFromIterable(iterable).let { if (it.isEmpty()) emptyList() else it }
     }
@@ -497,7 +521,7 @@ object KtFix {
         is Collection<*> -> when (iterable.size) {
             0 -> emptySet()
             1 -> java.util.Collections.singleton(iterable.iterator().next())
-            else -> java.util.LinkedHashSet(iterable as Collection<Any?>)
+            else -> java.util.LinkedHashSet(iterable)
         }
         else -> toMutableSetFromIterable(iterable)
     }
@@ -643,8 +667,7 @@ object KtFix {
     @JvmStatic
     fun intercepted(continuation: kotlin.coroutines.Continuation<Any?>): kotlin.coroutines.Continuation<Any?> {
         val interceptor = continuation.context[kotlin.coroutines.ContinuationInterceptor]
-        @Suppress("UNCHECKED_CAST")
-        return interceptor?.interceptContinuation(continuation) as? kotlin.coroutines.Continuation<Any?> ?: continuation
+        return interceptor?.interceptContinuation(continuation) ?: continuation
     }
 
     @JvmStatic

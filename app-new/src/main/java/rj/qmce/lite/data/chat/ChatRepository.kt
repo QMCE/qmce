@@ -6,7 +6,7 @@ import android.util.Log
 import com.tencent.qqnt.kernel.api.IKernelService
 import com.tencent.qqnt.kernel.api.IMsgService
 import com.tencent.qqnt.kernel.api.impl.MsgService
-import com.tencent.qqnt.kernel.nativeinterface.Contact
+import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
 import com.tencent.qqnt.kernel.nativeinterface.FileTransNotifyInfo
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsAndStatusRecord
 import com.tencent.qqnt.kernel.nativeinterface.GetMsgsStatusEnum
@@ -26,6 +26,7 @@ import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import mqq.app.AppRuntime
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.kernel.SdkCompat
 import java.util.concurrent.atomic.AtomicBoolean
 
 class ChatRepository {
@@ -46,6 +47,7 @@ class ChatRepository {
         fun onReceived(messages: ArrayList<MsgRecord>)
         fun onAddedSendMessage(message: MsgRecord)
         fun onRichMediaDownloadComplete(notify: FileTransNotifyInfo)
+        fun onRichMediaProgressUpdate(notify: FileTransNotifyInfo) = Unit
     }
 
     private var service: IMsgService? = null
@@ -61,7 +63,7 @@ class ChatRepository {
         if (kernelService == null) return Connection.KernelUnavailable
 
         val messageService = KernelBridge.getMsgService() ?: runCatching {
-            kernelService.msgService
+            kernelService.getMsgService()
         }.getOrNull()
         if (messageService == null) return Connection.MsgServiceUnavailable(timedOut = !ready)
 
@@ -197,6 +199,12 @@ class ChatRepository {
                     null
                 }
 
+                // SDK spelling: Progerss
+                "onRichMediaProgerssUpdate" -> {
+                    (args?.getOrNull(0) as? FileTransNotifyInfo)?.let(listener::onRichMediaProgressUpdate)
+                    null
+                }
+
                 "hashCode" -> System.identityHashCode(proxyInstance)
                 "equals" -> proxyInstance === args?.getOrNull(0)
                 "toString" -> "QMCE-ChatRepositoryListener"
@@ -205,7 +213,7 @@ class ChatRepository {
         } as IKernelMsgListener
 
         return runCatching {
-            currentService.s(proxy)
+            SdkCompat.addMsgListener(currentService, proxy)
             kernelListener = proxy
             listenerService = currentService
             true
@@ -261,7 +269,7 @@ class ChatRepository {
             }
         }
         return runCatching {
-            currentService.t(contact, messageId, elementId, playedCallback)
+            currentService.setPttPlayedState(contact, messageId, elementId, playedCallback)
             true
         }.onFailure {
             Log.w(
@@ -619,7 +627,7 @@ class ChatRepository {
 
     fun stopListening() {
         val listener = kernelListener ?: return
-        runCatching { listenerService?.g(listener) }
+        runCatching { listenerService?.let { SdkCompat.removeMsgListener(it, listener) } }
             .onFailure { Log.w(TAG, "chatRepository: remove listener failed", it) }
         kernelListener = null
         listenerService = null

@@ -1,21 +1,19 @@
-@file:OptIn(androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class)
+@file:OptIn(
+    androidx.wear.compose.foundation.ExperimentalWearFoundationApi::class,
+    androidx.compose.foundation.layout.ExperimentalLayoutApi::class,
+)
 
 package rj.qmce.lite.ui.screens
 
 import android.content.pm.PackageManager
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.text.format.Formatter
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +22,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,30 +35,27 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Forward
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.EmojiEmotions
+import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,12 +74,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -94,29 +93,41 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumnState
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.FilledTonalIconButton
 import androidx.wear.compose.material3.Icon
-import androidx.wear.compose.material3.IconButton
+import androidx.wear.compose.material3.IconButtonDefaults
 import androidx.wear.compose.material3.LocalContentColor
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import androidx.wear.compose.material3.touchTargetAwareSize
 import coil3.compose.AsyncImage
-import android.graphics.drawable.Drawable
+import coil3.request.ImageRequest
+import coil3.size.Size
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.call.CallMode
 import rj.qmce.lite.data.call.CallStartResult
@@ -130,17 +141,19 @@ import rj.qmce.lite.data.chat.PttPlaybackState
 import rj.qmce.lite.data.chat.PttTranslationPhase
 import rj.qmce.lite.data.chat.PttTranslationState
 import rj.qmce.lite.data.emotion.EmotionRepository
+import rj.qmce.lite.data.media.MediaStoreSaver
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
-
-private val MessageBubbleCornerRadius = 8.dp
-private val MessageBubbleLeadingCornerRadius = 4.dp
+private val MessageBubbleCornerRadius = 16.dp
+private val MessageBubbleLeadingCornerRadius = 6.dp
+private val MessageBubbleMaxWidth = 186.dp
 private const val ConsecutiveMessageWindowMillis = 5 * 60 * 1000L
 
 private fun messageBubbleShape(isSelf: Boolean) = RoundedCornerShape(
@@ -154,6 +167,11 @@ private sealed interface ChatTimelineItem {
     val key: String
 
     data class DateDivider(
+        val label: String,
+        override val key: String,
+    ) : ChatTimelineItem
+
+    data class TimeDivider(
         val label: String,
         override val key: String,
     ) : ChatTimelineItem
@@ -181,14 +199,38 @@ private data class TimelineScrollState(
     val atBottom: Boolean,
 )
 
+/**
+ * TLC [TransformingLazyColumnState.scrollToItem] centers the target item. For chat we need the
+ * true end (last item pinned past EdgeButton padding), so bring the last item into view then
+ * drain remaining forward scroll.
+ */
+private suspend fun TransformingLazyColumnState.scrollToAbsoluteEnd() {
+    val last = layoutInfo.totalItemsCount - 1
+    if (last < 0) return
+    scrollToItem(last)
+    withFrameNanos { }
+    var guard = 0
+    while (canScrollForward && guard++ < 32) {
+        val step = layoutInfo.viewportSize.height.toFloat().coerceAtLeast(1f)
+        var consumed = 0f
+        scroll {
+            consumed = scrollBy(step)
+        }
+        if (consumed == 0f) break
+        withFrameNanos { }
+    }
+}
+
 private data class FileDetailTarget(
     val message: ChatDetailViewModel.UiMsg,
     val content: ChatDetailViewModel.MessageContent.File,
 )
 
 internal data class VideoPlayback(
-    val file: File,
+    val file: File?,
     val title: String,
+    val messageKey: String? = null,
+    val elementId: Long = 0L,
 )
 
 @Composable
@@ -201,6 +243,7 @@ fun ChatDetailScreen(
     myUin: String = "",
     onBack: () -> Unit,
     onOpenInput: () -> Unit = {},
+    onOpenComposerMenu: () -> Unit = {},
     onOpenSingleEmotion: () -> Unit = {},
     onOpenVoiceRecorder: () -> Unit = {},
     onOpenContactPicker: () -> Unit = {},
@@ -246,11 +289,18 @@ fun ChatDetailScreen(
             )
         }
     }
-    val listState = rememberLazyListState()
-    var composerActionsVisible by remember(peerUid, chatType) { mutableStateOf(true) }
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    var showMultiSelectActions by remember(peerUid, chatType) { mutableStateOf(false) }
+    LaunchedEffect(multiSelectMode) {
+        if (!multiSelectMode) showMultiSelectActions = false
+    }
     var initialPositioned by remember(peerUid, chatType) { mutableStateOf(false) }
     var previousLastMessageKey by remember(peerUid, chatType) { mutableStateOf<String?>(null) }
     var followNewMessages by remember(peerUid, chatType) { mutableStateOf(true) }
+    var atBottom by remember(peerUid, chatType) { mutableStateOf(true) }
+    var showJumpBottom by remember(peerUid, chatType) { mutableStateOf(false) }
+    val listScrollScope = rememberCoroutineScope()
     var isHistoryRequestPending by remember(peerUid, chatType) { mutableStateOf(false) }
     var pendingHistoryAnchor by remember(peerUid, chatType) { mutableStateOf<HistoryAnchor?>(null) }
     var viewerMedia by remember(peerUid, chatType) { mutableStateOf<ViewerMedia?>(null) }
@@ -307,6 +357,9 @@ fun ChatDetailScreen(
         return
     }
     val context = LocalContext.current
+    val mediaSaveScope = rememberCoroutineScope()
+    val mediaStoreSaver = remember { MediaStoreSaver() }
+    var mediaSaveLabel by remember(peerUid, chatType) { mutableStateOf("保存") }
     var pendingCallMode by remember(peerUid, chatType) { mutableStateOf<CallMode?>(null) }
     val startCall: (CallMode) -> Unit = { mode ->
         when (
@@ -369,8 +422,7 @@ fun ChatDetailScreen(
     }
     val lastMessageKey = messages.lastOrNull()?.stableKey
     val requestOlderAtTop: () -> Unit = {
-        val atTop = listState.firstVisibleItemIndex == 0 &&
-                listState.firstVisibleItemScrollOffset == 0
+        val atTop = !listState.canScrollBackward
         if (
             initialPositioned &&
             atTop &&
@@ -378,7 +430,7 @@ fun ChatDetailScreen(
             !isLoadingOlder &&
             !isHistoryRequestPending
         ) {
-            val visibleItems = listState.layoutInfo.visibleItemsInfo
+            val visibleItems = listState.layoutInfo.visibleItems
             val anchorItem = visibleItems.firstOrNull { item ->
                 timelineItems.getOrNull(item.index) is ChatTimelineItem.Message
             } ?: visibleItems.firstOrNull()
@@ -447,13 +499,11 @@ fun ChatDetailScreen(
             snapshotFlow { listState.layoutInfo.totalItemsCount }
                 .first { itemCount -> itemCount > lastIndex }
             withFrameNanos { }
-            listState.scrollToItem(lastIndex)
-            withFrameNanos { }
-            listState.scrollToItem(timelineItems.lastIndex)
+            listState.scrollToAbsoluteEnd()
             initialPositioned = true
         } else if (lastMessageKey != previousLastMessageKey && followNewMessages) {
             withFrameNanos { }
-            listState.scrollToItem(lastIndex)
+            listState.scrollToAbsoluteEnd()
         }
         previousLastMessageKey = lastMessageKey
     }
@@ -462,12 +512,15 @@ fun ChatDetailScreen(
         var previousState: TimelineScrollState? = null
         var reachedTopFromUpwardScroll = false
         snapshotFlow {
+            val visible = listState.layoutInfo.visibleItems
+            val firstVisible = visible.minByOrNull { it.index }
             TimelineScrollState(
                 isScrolling = listState.isScrollInProgress,
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemOffset = listState.firstVisibleItemScrollOffset,
-                firstVisibleMessageSequence = listState.layoutInfo.visibleItemsInfo
+                firstVisibleItemIndex = firstVisible?.index ?: 0,
+                firstVisibleItemOffset = firstVisible?.offset ?: 0,
+                firstVisibleMessageSequence = visible
                     .asSequence()
+                    .sortedBy { it.index }
                     .mapNotNull { visibleItem ->
                         (currentTimelineItems.value.getOrNull(visibleItem.index) as? ChatTimelineItem.Message)
                             ?.message
@@ -475,8 +528,7 @@ fun ChatDetailScreen(
                             ?.takeIf { it > 0L }
                     }
                     .firstOrNull(),
-                atTop = listState.firstVisibleItemIndex == 0 &&
-                        listState.firstVisibleItemScrollOffset == 0,
+                atTop = !listState.canScrollBackward,
                 atBottom = !listState.canScrollForward,
             )
         }.collect { state ->
@@ -487,8 +539,26 @@ fun ChatDetailScreen(
                                         state.firstVisibleItemOffset < previous.firstVisibleItemOffset
                                 )
             } == true
+            atBottom = state.atBottom
+            // Idle + not at bottom: show jump FAB. Hide while scrolling so it does not "follow".
+            showJumpBottom = !state.atBottom && !state.isScrolling
             if (state.isScrolling) {
                 followNewMessages = state.atBottom && !movedTowardTop
+            }
+            val settledNearEnd =
+                previousState?.isScrolling == true &&
+                    !state.isScrolling &&
+                    !state.atBottom
+            if (settledNearEnd) {
+                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                val lastVisible =
+                    lastIndex >= 0 &&
+                        listState.layoutInfo.visibleItems.any { it.index == lastIndex }
+                if (lastVisible) {
+                    listScrollScope.launch {
+                        listState.scrollToAbsoluteEnd()
+                    }
+                }
             }
             if (!state.atTop) {
                 reachedTopFromUpwardScroll = false
@@ -507,15 +577,6 @@ fun ChatDetailScreen(
                 state.firstVisibleMessageSequence?.let(vm::onFirstVisibleMessageSequence)
             }
             previousState = state
-        }
-    }
-
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
-            composerActionsVisible = false
-        } else {
-            delay(2_000)
-            if (!listState.isScrollInProgress) composerActionsVisible = true
         }
     }
 
@@ -616,37 +677,95 @@ fun ChatDetailScreen(
                                 maxLines = 1,
                             )
                         }
-                        ScreenScaffold(
-                            scrollState = listState,
+                        Box(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
                                 .nestedScroll(topHistoryNestedScrollConnection),
-                            contentPadding = PaddingValues(
-                                start = 10.dp,
-                                end = 10.dp,
-                                top = 6.dp,
-                                bottom = 52.dp,
-                            ),
-                        ) { contentPadding ->
-                            LazyColumn(
+                        ) {
+                            QmceScreenScaffold(
+                                scrollState = listState,
+                                modifier = Modifier.fillMaxSize(),
+                                edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+                                edgeButton = {
+                                    if (multiSelectMode) {
+                                        EdgeButton(
+                                            onClick = { showMultiSelectActions = true },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            enabled = selectedMsgIds.isNotEmpty(),
+                                        ) {
+                                            Text("操作 (${selectedMsgIds.size})")
+                                        }
+                                    } else {
+                                        EdgeButton(
+                                            onClick = onOpenComposerMenu,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Keyboard,
+                                                contentDescription = "输入",
+                                            )
+                                        }
+                                    }
+                                },
+                            ) { contentPadding ->
+                            TransformingLazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = listState,
                                 contentPadding = contentPadding,
                             ) {
-                                items(timelineItems, key = { item -> item.key }) { item ->
+                                items(
+                                    items = timelineItems,
+                                    key = { item -> item.key },
+                                ) { item ->
                                     when (item) {
-                                        is ChatTimelineItem.DateDivider -> ChatDateDivider(item.label)
+                                        is ChatTimelineItem.DateDivider -> {
+                                            ChatDateDivider(
+                                                item.label,
+                                                modifier = Modifier
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            )
+                                        }
+                                        is ChatTimelineItem.TimeDivider -> {
+                                            ChatDateDivider(
+                                                item.label,
+                                                modifier = Modifier
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            )
+                                        }
                                         is ChatTimelineItem.Message -> {
                                             val isSelected =
                                                 multiSelectMode && item.message.msgId in selectedMsgIds
-                                            Box(modifier = Modifier.fillMaxWidth()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .transformedHeight(this, transformationSpec)
+                                                    .graphicsLayer {
+                                                        with(SurfaceTransformation(transformationSpec)) {
+                                                            applyContainerTransformation()
+                                                            applyContentTransformation()
+                                                        }
+                                                    },
+                                            ) {
                                                 MessageBubble(
                                                     message = item.message,
                                                     isContinuation = item.isContinuation,
                                                     memberLevel = groupMemberLevels[item.message.senderUid],
                                                     memberTitle = groupMemberTitles[item.message.senderUid],
                                                     ensureImageCached = vm::ensureImageCached,
+                                                    ensureVideoCached = vm::ensureVideoCached,
                                                     onOpenMedia = { viewerMedia = it },
                                                     onOpenVideo = { videoPlayer = it },
                                                     onOpenForward = vm::loadForwardDetail,
@@ -720,6 +839,58 @@ fun ChatDetailScreen(
                                     }
                                 }
                             }
+                            }
+                            val showScrollToBottom =
+                                initialPositioned && !multiSelectMode && showJumpBottom
+                            val showMessageNav =
+                                initialPositioned &&
+                                    !multiSelectMode &&
+                                    atBottom &&
+                                    messageNavigationState !is ChatDetailViewModel.MessageNavigationState.Idle
+                            if (showScrollToBottom || showMessageNav) {
+                                val loading =
+                                    showMessageNav &&
+                                        (
+                                            messageNavigationState is ChatDetailViewModel.MessageNavigationState.Loading ||
+                                                messageNavigationState is ChatDetailViewModel.MessageNavigationState.Located
+                                            )
+                                FilledTonalIconButton(
+                                    onClick = {
+                                        if (showScrollToBottom) {
+                                            followNewMessages = true
+                                            if (timelineItems.isNotEmpty()) {
+                                                listScrollScope.launch {
+                                                    listState.scrollToAbsoluteEnd()
+                                                }
+                                            }
+                                        } else {
+                                            vm.requestMessageNavigation()
+                                        }
+                                    },
+                                    enabled = !loading,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .padding(bottom = LocalQmceAdaptive.current.composerClearance)
+                                        .touchTargetAwareSize(IconButtonDefaults.SmallButtonSize),
+                                ) {
+                                    if (loading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                    } else if (showScrollToBottom) {
+                                        Icon(
+                                            Icons.Default.ArrowDownward,
+                                            contentDescription = "回到底部",
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Default.ArrowUpward,
+                                            contentDescription = "跳转新消息",
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -761,81 +932,44 @@ fun ChatDetailScreen(
                 )
             }
         }
-        AnimatedVisibility(
-            visible = initialPositioned &&
-                    pagerState.currentPage == 0 &&
-                    !multiSelectMode &&
-                    messageNavigationState !is ChatDetailViewModel.MessageNavigationState.Idle,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 8.dp, end = 8.dp),
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            val loading = messageNavigationState is ChatDetailViewModel.MessageNavigationState.Loading ||
-                    messageNavigationState is ChatDetailViewModel.MessageNavigationState.Located
-            CompactButton(
-                onClick = vm::requestMessageNavigation,
-                enabled = !loading,
-                icon = {
-                    if (loading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                        )
+        if (showMultiSelectActions && multiSelectMode) {
+            MultiSelectActionsScreen(
+                selectedCount = selectedMsgIds.size,
+                onDismiss = { showMultiSelectActions = false },
+                onExit = {
+                    showMultiSelectActions = false
+                    vm.exitMultiSelect()
+                },
+                onSummary = {
+                    showMultiSelectActions = false
+                    vm.summarizeSelected()
+                },
+                onCopy = {
+                    showMultiSelectActions = false
+                    val text = vm.batchCopySelected()
+                    if (text.isNotBlank()) copyMessageText(context, text)
+                    else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
+                },
+                onForward = {
+                    showMultiSelectActions = false
+                    if (vm.prepareBatchForward()) onOpenContactPicker()
+                },
+                onShare = {
+                    showMultiSelectActions = false
+                    val selectedMessages = messages.filter { it.msgId in selectedMsgIds }
+                    val text = vm.batchCopySelected()
+                    val mediaFiles = selectedMessages.flatMap { it.localMediaFiles() }
+                    if (text.isNotBlank() || mediaFiles.isNotEmpty()) {
+                        shareMessageBatch(context, text, mediaFiles)
                     } else {
-                        Icon(Icons.Default.ArrowUpward, contentDescription = "跳转新消息")
+                        Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
                     }
                 },
+                onDelete = {
+                    showMultiSelectActions = false
+                    if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
+                },
             )
-        }
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.BottomCenter,
-        ) {
-            if (multiSelectMode) {
-                MultiSelectBottomBar(
-                    selectedCount = selectedMsgIds.size,
-                    onExit = { vm.exitMultiSelect() },
-                    onSummary = { vm.summarizeSelected() },
-                    onCopy = {
-                        val text = vm.batchCopySelected()
-                        if (text.isNotBlank()) copyMessageText(context, text)
-                        else Toast.makeText(context, "没有可复制的文字", Toast.LENGTH_SHORT).show()
-                    },
-                    onForward = {
-                        if (vm.prepareBatchForward()) onOpenContactPicker()
-                    },
-                    onShare = {
-                        val selectedMessages = messages.filter { it.msgId in selectedMsgIds }
-                        val text = vm.batchCopySelected()
-                        val mediaFiles = selectedMessages.flatMap { it.localMediaFiles() }
-                        if (text.isNotBlank() || mediaFiles.isNotEmpty()) {
-                            shareMessageBatch(context, text, mediaFiles)
-                        } else {
-                            Toast.makeText(context, "没有可分享的内容", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onDelete = {
-                        if (selectedMsgIds.isNotEmpty()) vm.batchDeleteSelected()
-                    },
-                )
-            } else if (pagerState.currentPage == 0) {
-                AnimatedVisibility(
-                    visible = composerActionsVisible,
-                    modifier = Modifier.padding(bottom = 2.dp),
-                    enter = fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                            slideInVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-                    exit = fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) +
-                            slideOutVertically(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) { it },
-                ) {
-                    ChatComposerActions(
-                        onOpenSingleEmotion = onOpenSingleEmotion,
-                        onOpenInput = onOpenInput,
-                        onOpenVoiceRecorder = onOpenVoiceRecorder,
-                    )
-                }
-            }
         }
         if (messageSummaryState !is ChatDetailViewModel.MessageSummaryState.Idle) {
             MessageSummaryScreen(
@@ -848,6 +982,7 @@ fun ChatDetailScreen(
             ForwardDetailScreen(
                 state = forwardDetailState,
                 ensureImageCached = vm::ensureImageCached,
+                ensureVideoCached = vm::ensureVideoCached,
                 onOpenMedia = { viewerMedia = it },
                 onOpenVideo = { videoPlayer = it },
                 onOpenForward = vm::loadForwardDetail,
@@ -857,11 +992,73 @@ fun ChatDetailScreen(
             )
         }
         viewerMedia?.let { media ->
-            FullscreenMediaViewer(media = media, onDismiss = { viewerMedia = null })
+            val resolvedModel = remember(messages, media.key, media.model) {
+                resolveViewerModel(messages, media.key) ?: media.model
+            }
+            FullscreenMediaViewer(
+                media = media.copy(model = resolvedModel),
+                onDismiss = {
+                    viewerMedia = null
+                    mediaSaveLabel = "保存"
+                },
+                onSave = resolvedModel?.let { model ->
+                    {
+                        if (mediaSaveLabel == "正在保存…") return@let
+                        mediaSaveScope.launch {
+                            mediaSaveLabel = "正在保存…"
+                            val source = when (model) {
+                                is File -> model.absolutePath
+                                is String -> model
+                                else -> model.toString()
+                            }
+                            val result = withContext(Dispatchers.IO) {
+                                mediaStoreSaver.saveImage(context, source)
+                            }
+                            mediaSaveLabel = result.fold(
+                                onSuccess = { "已保存" },
+                                onFailure = { "保存失败" },
+                            )
+                        }
+                    }
+                },
+                onShare = resolvedModel?.let { model ->
+                    {
+                        val file = when (model) {
+                            is File -> model.takeIf(File::isFile)
+                            is String -> LocalMediaResolver.resolveFile(model)
+                            else -> null
+                        }
+                        if (file == null) {
+                            Toast.makeText(
+                                context,
+                                "图片尚未缓存",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        } else {
+                            shareLocalMedia(context, file)
+                        }
+                    }
+                },
+                saveLabel = mediaSaveLabel,
+            )
         }
         videoPlayer?.let { playback ->
+            val resolvedFile = remember(messages, playback.messageKey, playback.elementId, playback.file) {
+                resolveVideoFile(messages, playback) ?: playback.file
+            }
+            LaunchedEffect(playback.messageKey, playback.elementId, resolvedFile) {
+                if (resolvedFile != null) return@LaunchedEffect
+                val message = playback.messageKey?.let { key ->
+                    messages.firstOrNull { it.stableKey == key }
+                } ?: return@LaunchedEffect
+                val video = message.contents
+                    .filterIsInstance<ChatDetailViewModel.MessageContent.Video>()
+                    .firstOrNull { playback.elementId <= 0L || it.elementId == playback.elementId }
+                    ?: return@LaunchedEffect
+                vm.ensureVideoCached(message, video)
+            }
             LocalVideoPlayerScreen(
-                file = playback.file,
+                file = resolvedFile,
                 title = playback.title,
                 onDismiss = { videoPlayer = null },
             )
@@ -957,6 +1154,26 @@ fun ChatDetailScreen(
                             shareLocalMedia(context, file)
                         }
 
+                        "save_media" -> message.firstLocalMediaFile()?.let { file ->
+                            mediaSaveScope.launch {
+                                val isVideo = message.contents.any {
+                                    it is ChatDetailViewModel.MessageContent.Video
+                                }
+                                val result = withContext(Dispatchers.IO) {
+                                    if (isVideo) mediaStoreSaver.saveVideo(context, file.absolutePath)
+                                    else mediaStoreSaver.saveImage(context, file.absolutePath)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    result.fold(
+                                        onSuccess = { "已保存" },
+                                        onFailure = { "保存失败" },
+                                    ),
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        } ?: Toast.makeText(context, "媒体尚未缓存", Toast.LENGTH_SHORT).show()
+
                         "forward_detail" -> message.contents
                             .filterIsInstance<ChatDetailViewModel.MessageContent.Forward>()
                             .firstOrNull()
@@ -974,7 +1191,7 @@ fun ChatDetailScreen(
                             onOpenContactPicker()
                         }
 
-                        "reply" -> {
+                        "quote", "reply" -> {
                             if (vm.prepareReply(message)) onOpenInput()
                         }
 
@@ -995,6 +1212,8 @@ fun ChatDetailScreen(
 
 private val transientChatStatuses = setOf("正在等待消息服务...", "加载中...")
 
+private val TimeDividerWindowMillis = 5 * 60 * 1000L // 5 分钟
+
 private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimelineItem> = buildList {
     var previousDayKey: String? = null
     var previousMessage: ChatDetailViewModel.UiMsg? = null
@@ -1004,6 +1223,13 @@ private fun List<ChatDetailViewModel.UiMsg>.toTimelineItems(): List<ChatTimeline
             add(ChatTimelineItem.DateDivider(formatChatDate(message.time), "date:$dayKey"))
             previousDayKey = dayKey
             previousMessage = null
+        } else {
+            val prev = previousMessage
+            if (prev != null && (message.time - prev.time) >= TimeDividerWindowMillis) {
+                val timeLabel = SimpleDateFormat("HH:mm", Locale.getDefault())
+                    .format(java.util.Date(message.time * 1000))
+                add(ChatTimelineItem.TimeDivider(timeLabel, "time:${message.time}"))
+            }
         }
         val isContinuation = previousMessage?.let { previous ->
             val sameSender = if (message.isSelf && previous.isSelf) {
@@ -1026,106 +1252,240 @@ private fun CallPage(
     onRequestCall: (CallMode) -> Unit,
     onOpenPacketTool: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "发起通话",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(6.dp))
-        // Text(peerName, color = Color(0xFFD1CBD7), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(12.dp))
-        Button(
-            onClick = { onRequestCall(CallMode.Voice) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            ),
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    QmceScreenScaffold(
+        scrollState = listState,
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
         ) {
-            Text("语音通话")
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { onRequestCall(CallMode.Video) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-        ) {
-            Text("视频通话")
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onOpenPacketTool,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-        ) {
-            Text("发包工具")
+            item(key = "call-title") {
+                Text(
+                    "发起通话",
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                )
+            }
+            item(key = "call-peer") {
+                Text(
+                    peerName,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 4.dp),
+                )
+            }
+            item(key = "call-voice") {
+                Button(
+                    onClick = { onRequestCall(CallMode.Voice) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Call, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("语音通话")
+                }
+            }
+            item(key = "call-video") {
+                Button(
+                    onClick = { onRequestCall(CallMode.Video) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Videocam, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("视频通话")
+                }
+            }
+            // 发包工具入口已隐藏；PacketToolScreen 代码保留
         }
     }
 }
 
 @Composable
-private fun ChatComposerActions(
-    onOpenSingleEmotion: () -> Unit,
-    onOpenInput: () -> Unit,
-    onOpenVoiceRecorder: () -> Unit,
+private fun MultiSelectActionsScreen(
+    selectedCount: Int,
+    onDismiss: () -> Unit,
+    onExit: () -> Unit,
+    onSummary: () -> Unit,
+    onCopy: () -> Unit,
+    onForward: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
 ) {
-    Row (modifier = Modifier.padding(bottom = 30.dp),) {
-        OfficialReportTargetBox(
-            key = "aio-composer:expression",
-            modifier = Modifier.padding(horizontal = 5.dp),
-            elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
-            reportImpression = true,
-        ) { reportTarget ->
-            CompactButton(
-                onClick = {
-                    OfficialReportBridge.reportElementClick(
-                        target = reportTarget,
-                        elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
-                    )
-                    onOpenSingleEmotion()
-                },
-                icon = { Icon(Icons.Default.EmojiEmotions, contentDescription = "表情") },
-            )
-        }
-        CompactButton(
-            onClick = onOpenInput,
-            modifier = Modifier.padding(horizontal = 5.dp),
-            icon = { Icon(Icons.Default.TextFields, contentDescription = "文本") },
-        )
-        OfficialReportTargetBox(
-            key = "aio-composer:voice",
-            modifier = Modifier.padding(horizontal = 5.dp),
-            elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
-            reportImpression = true,
-        ) { reportTarget ->
-            CompactButton(
-                onClick = {
-                    OfficialReportBridge.reportElementClick(
-                        target = reportTarget,
-                        elementId = OfficialReportBridge.ElementIds.HOLD_SPEAK,
-                    )
-                    onOpenVoiceRecorder()
-                },
-                icon = { Icon(Icons.Default.Mic, contentDescription = "语音") },
-            )
+    BackHandler(onBack = onDismiss)
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val scheme = MaterialTheme.colorScheme
+    QmceScreenScaffold(
+        scrollState = listState,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
+        edgeButton = {
+            EdgeButton(
+                onClick = onForward,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = selectedCount > 0,
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Forward,
+                    contentDescription = null,
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("转发 ($selectedCount)")
+            }
+        },
+    ) { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "ms-title") {
+                Text(
+                    "已选 $selectedCount 条",
+                    style = MaterialTheme.typography.titleSmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                )
+            }
+            item(key = "ms-summary") {
+                Button(
+                    onClick = onSummary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("AI 总结")
+                }
+            }
+            item(key = "ms-copy") {
+                Button(
+                    onClick = onCopy,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("复制")
+                }
+            }
+            item(key = "ms-share") {
+                Button(
+                    onClick = onShare,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("系统分享")
+                }
+            }
+            item(key = "ms-delete") {
+                Button(
+                    onClick = onDelete,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.error,
+                        contentColor = scheme.onError,
+                    ),
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("删除")
+                }
+            }
+            item(key = "ms-exit") {
+                Button(
+                    onClick = onExit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = scheme.surfaceContainerHigh,
+                        contentColor = scheme.onSurface,
+                    ),
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("退出多选")
+                }
+            }
         }
     }
 }
@@ -1135,6 +1495,7 @@ internal fun MessageBubble(
     message: ChatDetailViewModel.UiMsg,
     isContinuation: Boolean = false,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit = { _, _ -> },
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
     onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
@@ -1157,10 +1518,12 @@ internal fun MessageBubble(
         SystemTipLine(systemTip.text)
         return
     }
-    val containerColor = if (message.isSelf) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainer
+    val isFaceOnlyMessage = message.contents.isNotEmpty() &&
+        message.contents.all { it is ChatDetailViewModel.MessageContent.Face }
+    val containerColor = when {
+        hasMediaBubbleBackground(message) || isFaceOnlyMessage -> Color.Transparent
+        message.isSelf -> MaterialTheme.colorScheme.primaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
     }
     val messageContentColor = if (message.isSelf) {
         MaterialTheme.colorScheme.onPrimaryContainer
@@ -1169,39 +1532,76 @@ internal fun MessageBubble(
     }
     val alignment = if (message.isSelf) Arrangement.End else Arrangement.Start
     val bubbleShape = messageBubbleShape(message.isSelf)
-    val isSingleMedia = message.contents.singleOrNull().let {
+    val isSingleMedia = isFaceOnlyMessage || message.contents.singleOrNull().let {
         it is ChatDetailViewModel.MessageContent.Image ||
-                it is ChatDetailViewModel.MessageContent.Giphy
+                it is ChatDetailViewModel.MessageContent.Giphy ||
+                it is ChatDetailViewModel.MessageContent.Video
     }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = if (isContinuation) 1.dp else 3.dp, bottom = 3.dp),
+            .padding(top = if (isContinuation) 3.dp else 8.dp, bottom = 4.dp),
         horizontalArrangement = alignment
     ) {
         Column(
-            modifier = Modifier.widthIn(max = 172.dp),
+            modifier = Modifier.widthIn(max = MessageBubbleMaxWidth),
             horizontalAlignment = if (message.isSelf) Alignment.End else Alignment.Start,
         ) {
             if (!message.isSelf && !isContinuation && message.senderNick.isNotBlank()) {
-                Text(
-                    text = listOfNotNull(
-                        memberLevel?.takeIf { it > 0 }?.let { "LV$it" },
-                        memberTitle?.takeIf { it.isNotBlank() },
-                        message.senderNick,
-                    ).joinToString(" "),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-                    maxLines = 1,
-                )
+                Column(
+                    modifier = Modifier.padding(start = 6.dp, bottom = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = message.senderNick,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        memberLevel?.takeIf { it > 0 }?.let { level ->
+                            Text(
+                                text = "LV$level",
+                                color = MaterialTheme.colorScheme.outline,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                            )
+                        }
+                        memberTitle?.takeIf { it.isNotBlank() }?.let { title ->
+                            Text(
+                                text = title,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .background(
+                                        MaterialTheme.colorScheme.surfaceContainerHigh,
+                                        RoundedCornerShape(MessageBubbleCornerRadius),
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
             }
             MessageCard(
                 modifier = Modifier
-                    .width(IntrinsicSize.Max)
-                    .height(IntrinsicSize.Max)
-                    .widthIn(max = 172.dp)
+                    .then(
+                        if (isFaceOnlyMessage) {
+                            Modifier.wrapContentWidth()
+                        } else {
+                            Modifier
+                                .width(IntrinsicSize.Max)
+                                .height(IntrinsicSize.Max)
+                        },
+                    )
+                    .widthIn(max = MessageBubbleMaxWidth)
                     .then(
                         if (isHighlighted) {
                             Modifier.border(2.dp, MaterialTheme.colorScheme.primary, bubbleShape)
@@ -1213,35 +1613,32 @@ internal fun MessageBubble(
                 contentColor = messageContentColor,
                 shape = bubbleShape,
                 contentPadding = if (isSingleMedia) PaddingValues(0.dp) else PaddingValues(
-                    horizontal = 11.dp,
-                    vertical = 7.dp
+                    horizontal = 12.dp,
+                    vertical = 8.dp,
                 ),
                 onClick = { onTap?.invoke() },
                 onLongClick = { onLongClick(message) },
             ) {
-                message.contents.forEachIndexed { index, content ->
-                    MessageContentItem(
-                        message = message,
-                        contentIndex = index,
-                        content = content,
-                        messageShape = bubbleShape,
-                        ensureImageCached = ensureImageCached,
-                        onOpenMedia = onOpenMedia,
-                        onOpenVideo = onOpenVideo,
-                        onOpenForward = onOpenForward,
-                        onLongClick = { onLongClick(message) },
-                        onOpenReply = onOpenReply,
-                        onOpenFile = onOpenFile,
-                        inlineKeyboardActions = inlineKeyboardActions,
-                        onClickInlineKeyboard = { keyboard, button ->
-                            onClickInlineKeyboard(message, keyboard, button)
-                        },
-                        voicePlaybackState = voicePlaybackState,
-                        voiceTranslationState = voiceTranslationState,
-                        onToggleVoice = onToggleVoice,
-                        onRequestCall = onRequestCall,
-                    )
-                }
+                MessageContentsLayout(
+                    message = message,
+                    messageShape = bubbleShape,
+                    ensureImageCached = ensureImageCached,
+                    ensureVideoCached = ensureVideoCached,
+                    onOpenMedia = onOpenMedia,
+                    onOpenVideo = onOpenVideo,
+                    onOpenForward = onOpenForward,
+                    onLongClick = { onLongClick(message) },
+                    onOpenReply = onOpenReply,
+                    onOpenFile = onOpenFile,
+                    inlineKeyboardActions = inlineKeyboardActions,
+                    onClickInlineKeyboard = { keyboard, button ->
+                        onClickInlineKeyboard(message, keyboard, button)
+                    },
+                    voicePlaybackState = voicePlaybackState,
+                    voiceTranslationState = voiceTranslationState,
+                    onToggleVoice = onToggleVoice,
+                    onRequestCall = onRequestCall,
+                )
             }
             // TODO: 换一个时间分割线 现在的很丑
             /*
@@ -1257,12 +1654,113 @@ internal fun MessageBubble(
 }
 
 @Composable
+private fun MessageContentsLayout(
+    message: ChatDetailViewModel.UiMsg,
+    messageShape: RoundedCornerShape,
+    ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit,
+    onOpenMedia: (ViewerMedia) -> Unit,
+    onOpenVideo: (VideoPlayback) -> Unit,
+    onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
+    onLongClick: () -> Unit,
+    onOpenReply: (ChatDetailViewModel.MessageContent.Reply) -> Unit,
+    onOpenFile: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.File) -> Unit,
+    inlineKeyboardActions: Map<String, ChatDetailViewModel.InlineKeyboardActionState>,
+    onClickInlineKeyboard: (ChatDetailViewModel.MessageContent.InlineKeyboard, ChatDetailViewModel.MessageContent.InlineKeyboardButton) -> Unit,
+    voicePlaybackState: (ChatDetailViewModel.MessageContent.Voice) -> PttPlaybackState?,
+    voiceTranslationState: (ChatDetailViewModel.MessageContent.Voice) -> PttTranslationState?,
+    onToggleVoice: (ChatDetailViewModel.MessageContent.Voice) -> Unit,
+    onRequestCall: ((CallMode) -> Unit)?,
+) {
+    val runs = remember(message.contents) { groupMessageContentRuns(message.contents) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        runs.forEach { run ->
+            when (run) {
+                is MessageContentRun.Faces -> {
+                    val multi = run.items.size >= 2
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        run.items.forEach { (_, face) ->
+                            val forcedSize = when {
+                                multi -> 36.dp
+                                face.faceType == 3 || (face.stickerType ?: 0) > 0 -> 56.dp
+                                else -> 32.dp
+                            }
+                            FaceMessageContent(face, forcedSize = forcedSize)
+                        }
+                    }
+                }
+
+                is MessageContentRun.Single -> {
+                    MessageContentItem(
+                        message = message,
+                        contentIndex = run.index,
+                        content = run.content,
+                        messageShape = messageShape,
+                        ensureImageCached = ensureImageCached,
+                        ensureVideoCached = ensureVideoCached,
+                        onOpenMedia = onOpenMedia,
+                        onOpenVideo = onOpenVideo,
+                        onOpenForward = onOpenForward,
+                        onLongClick = onLongClick,
+                        onOpenReply = onOpenReply,
+                        onOpenFile = onOpenFile,
+                        inlineKeyboardActions = inlineKeyboardActions,
+                        onClickInlineKeyboard = onClickInlineKeyboard,
+                        voicePlaybackState = voicePlaybackState,
+                        voiceTranslationState = voiceTranslationState,
+                        onToggleVoice = onToggleVoice,
+                        onRequestCall = onRequestCall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private sealed interface MessageContentRun {
+    data class Faces(
+        val items: List<Pair<Int, ChatDetailViewModel.MessageContent.Face>>,
+    ) : MessageContentRun
+
+    data class Single(
+        val index: Int,
+        val content: ChatDetailViewModel.MessageContent,
+    ) : MessageContentRun
+}
+
+private fun groupMessageContentRuns(
+    contents: List<ChatDetailViewModel.MessageContent>,
+): List<MessageContentRun> {
+    val runs = ArrayList<MessageContentRun>()
+    var faceBuffer = ArrayList<Pair<Int, ChatDetailViewModel.MessageContent.Face>>()
+    fun flushFaces() {
+        if (faceBuffer.isEmpty()) return
+        runs += MessageContentRun.Faces(faceBuffer)
+        faceBuffer = ArrayList()
+    }
+    contents.forEachIndexed { index, content ->
+        if (content is ChatDetailViewModel.MessageContent.Face) {
+            faceBuffer += index to content
+        } else {
+            flushFaces()
+            runs += MessageContentRun.Single(index, content)
+        }
+    }
+    flushFaces()
+    return runs
+}
+
+@Composable
 private fun MessageContentItem(
     message: ChatDetailViewModel.UiMsg,
     contentIndex: Int,
     content: ChatDetailViewModel.MessageContent,
     messageShape: RoundedCornerShape,
     ensureImageCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Image) -> Unit,
+    ensureVideoCached: (ChatDetailViewModel.UiMsg, ChatDetailViewModel.MessageContent.Video) -> Unit,
     onOpenMedia: (ViewerMedia) -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
     onOpenForward: (ChatDetailViewModel.MessageContent.Forward) -> Unit,
@@ -1285,12 +1783,28 @@ private fun MessageContentItem(
             content = content,
             ensureCached = { ensureImageCached(message, content) },
             onOpen = { file ->
-                onOpenMedia(ViewerMedia("${message.stableKey}:$contentIndex", file, "图片"))
+                onOpenMedia(
+                    ViewerMedia(
+                        key = "${message.stableKey}:$contentIndex",
+                        model = file,
+                        description = "图片",
+                    ),
+                )
             },
         )
 
         is ChatDetailViewModel.MessageContent.Face -> {
-            FaceMessageContent(content)
+            val forcedSize =
+                if (content.faceType == 3 || (content.stickerType ?: 0) > 0) 56.dp else 32.dp
+            FaceMessageContent(content, forcedSize = forcedSize)
+        }
+
+        is ChatDetailViewModel.MessageContent.FaceBubble -> {
+            Text(
+                content.summary,
+                color = LocalContentColor.current,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         is ChatDetailViewModel.MessageContent.MarketFace -> {
@@ -1308,7 +1822,12 @@ private fun MessageContentItem(
             onTogglePlayback = { onToggleVoice(content) },
         )
 
-        is ChatDetailViewModel.MessageContent.Video -> VideoMessageContent(content, onOpenVideo)
+        is ChatDetailViewModel.MessageContent.Video -> VideoMessageContent(
+            message = message,
+            content = content,
+            ensureCached = { ensureVideoCached(message, content) },
+            onOpenVideo = onOpenVideo,
+        )
         is ChatDetailViewModel.MessageContent.File -> FileMessageContent(content) {
             onOpenFile(
                 message,
@@ -1367,18 +1886,22 @@ private fun MessageContentItem(
             onRequestCall
         )
 
-        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback(
-            content.detail?.let { "[$it · 类型 ${content.elementType}]" }
-                ?: "[暂不支持的消息 · 类型 ${content.elementType}]",
-        )
+        is ChatDetailViewModel.MessageContent.Unsupported -> MessageFallback("不支持的消息类型")
     }
 }
+
+private fun hasMediaBubbleBackground(message: ChatDetailViewModel.UiMsg): Boolean =
+    message.contents.any { content ->
+        content is ChatDetailViewModel.MessageContent.Image ||
+                content is ChatDetailViewModel.MessageContent.Video ||
+                content is ChatDetailViewModel.MessageContent.Giphy
+    }
 
 @Composable
 private fun LocalMessageImage(
     content: ChatDetailViewModel.MessageContent.Image,
     ensureCached: () -> Unit,
-    onOpen: (File) -> Unit,
+    onOpen: (File?) -> Unit,
 ) {
     val localFile = remember(content.localPaths, content.thumbnailPaths, content.sourcePath) {
         LocalMediaResolver.firstAvailable(
@@ -1388,34 +1911,53 @@ private fun LocalMessageImage(
         )
     }
     val size = mediaSize(content.width, content.height)
-    if (localFile == null) {
-        LaunchedEffect(content.elementId, content.isLoading, content.loadError) {
-            if (!content.isLoading && content.loadError == null) ensureCached()
-        }
-        MediaPlaceholder(
-            size = size,
-            label = when {
-                content.isLoading -> "图片加载中"
-                content.loadError != null -> "图片加载失败，点击重试"
-                else -> "点击加载图片"
-            },
-            onClick = if (content.isLoading) null else ensureCached,
-        )
-    } else {
+    LaunchedEffect(content.elementId, content.isLoading, content.loadError, localFile) {
+        if (localFile == null && !content.isLoading) ensureCached()
+    }
+    Box(
+        modifier = Modifier
+            .size(size.width, size.height)
+            .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
+        contentAlignment = Alignment.Center,
+    ) {
         Card(
-            onClick = { onOpen(localFile) },
-            modifier = Modifier.size(size.width, size.height),
+            onClick = {
+                ensureCached()
+                onOpen(localFile)
+            },
+            modifier = Modifier.fillMaxSize(),
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(
-                containerColor = Color.Transparent,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             ),
             contentPadding = PaddingValues(0.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
         ) {
-            AsyncImage(
-                model = localFile,
-                contentDescription = "图片",
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (localFile != null) {
+                    AsyncImage(
+                        model = localFile,
+                        contentDescription = "图片",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    when {
+                        content.isLoading -> CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        content.loadError != null -> Text(
+                            "图片加载失败",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        else -> CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1425,27 +1967,55 @@ private fun LocalMarketFace(
     content: ChatDetailViewModel.MessageContent.MarketFace,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val cachedPaths = remember(content.element) {
         EmotionRepository.cachedMarketFacePaths(context, content.element)
     }
     val candidatePaths = remember(content.staticPath, content.dynamicPath, cachedPaths) {
-        (listOf(content.staticPath, content.dynamicPath) + cachedPaths)
+        (listOf(content.dynamicPath, content.staticPath) + cachedPaths)
             .filterNotNull()
             .map(String::trim)
             .filter(String::isNotBlank)
             .distinct()
     }
     val size = mediaSize(content.width, content.height)
+    val sizePx = with(density) {
+        Size(size.width.roundToPx(), size.height.roundToPx())
+    }
     val marketFaceKey = remember(content.element) {
         content.element?.let { "${it.emojiPackageId}:${it.emojiId}" } ?: content.name
     }
     var failedPaths by remember(marketFaceKey) { mutableStateOf(emptySet<String>()) }
-    var localPath by remember(marketFaceKey, candidatePaths) {
+    val animatedCandidate = remember(candidatePaths, failedPaths) {
+        candidatePaths.firstOrNull { path ->
+            path !in failedPaths &&
+                LocalMediaResolver.resolveFile(path) != null &&
+                isLikelyAnimatedMarketFace(path)
+        }
+    }
+    val staticCandidate = remember(candidatePaths, failedPaths, content.staticPath) {
+        sequenceOf(content.staticPath)
+            .plus(candidatePaths)
+            .filterNotNull()
+            .firstOrNull { path ->
+                path !in failedPaths &&
+                    LocalMediaResolver.resolveFile(path) != null &&
+                    !isLikelyAnimatedMarketFace(path)
+            }
+    }
+    val preferredPath = animatedCandidate ?: staticCandidate
+    var localPath by remember(marketFaceKey, preferredPath, candidatePaths, failedPaths) {
         mutableStateOf(
-            candidatePaths.firstOrNull { path ->
-                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
-            },
+            preferredPath
+                ?: candidatePaths.firstOrNull { path ->
+                    path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+                },
         )
+    }
+    LaunchedEffect(preferredPath, failedPaths) {
+        if (preferredPath != null && preferredPath !in failedPaths) {
+            localPath = preferredPath
+        }
     }
     val localFile = localPath?.let(LocalMediaResolver::resolveFile)
     var officialDrawable by remember(marketFaceKey) { mutableStateOf<Drawable?>(null) }
@@ -1455,9 +2025,10 @@ private fun LocalMarketFace(
         if (localPath != null && localPath !in failedPaths) return@LaunchedEffect
         val deadline = System.currentTimeMillis() + 8_000L
         while (System.currentTimeMillis() < deadline) {
-            val nextPath = candidatePaths.firstOrNull { path ->
-                path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
-            }
+            val nextPath = (listOfNotNull(animatedCandidate, staticCandidate) + candidatePaths)
+                .firstOrNull { path ->
+                    path !in failedPaths && LocalMediaResolver.resolveFile(path) != null
+                }
             if (nextPath != null) {
                 localPath = nextPath
                 return@LaunchedEffect
@@ -1465,25 +2036,61 @@ private fun LocalMarketFace(
             delay(150L)
         }
     }
-    LaunchedEffect(marketFaceKey, localPath, content.element, officialRetry) {
+    // Always try official animated drawable when element is present.
+    LaunchedEffect(marketFaceKey, content.element, officialRetry) {
         val element = content.element
-        if (localPath == null && element != null && officialDrawable == null && officialRetry <= 2) {
+        val needOfficial = element != null && officialRetry <= 2
+        if (needOfficial && officialDrawable == null) {
             if (officialRetry > 0) delay(400L)
-            EmotionRepository.loadMarketFaceDrawable(element) { drawable ->
-                officialDrawable = drawable
-                officialDrawableVersion++
-                if (drawable == null && officialRetry < 2) officialRetry++
+            EmotionRepository.loadMarketFaceDrawable(element!!) { drawable ->
+                if (drawable != null) {
+                    officialDrawable = drawable
+                    officialDrawableVersion++
+                } else if (officialRetry < 2) {
+                    officialRetry++
+                }
             }
         }
     }
-    if (localFile != null && localPath !in failedPaths) {
+    val showOfficial = officialDrawable != null
+    if (showOfficial) {
+        val currentDrawable = officialDrawable
+        val currentDrawableVersion = officialDrawableVersion
+        AndroidView(
+            factory = { viewContext ->
+                ImageView(viewContext).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                }
+            },
+            update = { imageView ->
+                imageView.tag = currentDrawableVersion
+                if (imageView.drawable !== currentDrawable) {
+                    imageView.setImageDrawable(currentDrawable)
+                }
+                currentDrawable?.setVisible(true, true)
+                (currentDrawable as? android.graphics.drawable.Animatable)?.start()
+                imageView.invalidate()
+            },
+            modifier = Modifier.size(size.width, size.height),
+        )
+        DisposableEffect(currentDrawable, marketFaceKey) {
+            onDispose {
+                (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
+                currentDrawable?.setVisible(false, false)
+            }
+        }
+    } else if (localFile != null && localPath !in failedPaths) {
         Box(
             modifier = Modifier
                 .size(size.width, size.height)
-                .clip(RoundedCornerShape(8.dp)),
+                .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
         ) {
             AsyncImage(
-                model = localFile,
+                model = ImageRequest.Builder(context)
+                    .data(localFile)
+                    .size(sizePx)
+                    .build(),
                 contentDescription = content.name,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
@@ -1493,27 +2100,44 @@ private fun LocalMarketFace(
                 },
             )
         }
-    } else if (officialDrawable != null) {
-        val currentDrawableVersion = officialDrawableVersion
-        AndroidView(
-            factory = { viewContext ->
-                ImageView(viewContext).apply {
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                }
-            },
-            update = { imageView ->
-                imageView.tag = currentDrawableVersion
-                imageView.setImageDrawable(officialDrawable)
-            },
-            modifier = Modifier.size(size.width, size.height),
-        )
     } else {
         MessageFallback(content.name)
     }
 }
 
+private fun isLikelyAnimatedMarketFace(path: String): Boolean {
+    val lower = path.lowercase(Locale.US)
+    if (lower.endsWith(".gif")) return true
+    if (lower.endsWith("_aio.png") || lower.endsWith("_thu.png")) return false
+    if (lower.contains("apng") || lower.endsWith("_apng")) return true
+    if (lower.contains("emoticonimagepath") || lower.contains("emoticon_image")) return true
+    if (lower.endsWith(".png")) return false
+    val file = LocalMediaResolver.resolveFile(path) ?: return true
+    if (isLikelyGifFile(file)) return true
+    // No extension — often official dynamic cache files.
+    if (!file.name.contains('.')) return true
+    return false
+}
+
+private fun isLikelyGifFile(file: File): Boolean {
+    if (file.name.lowercase(Locale.US).endsWith(".gif")) return true
+    return runCatching {
+        file.inputStream().use { input ->
+            val header = ByteArray(4)
+            if (input.read(header) < 4) return@runCatching false
+            header[0] == 'G'.code.toByte() &&
+                header[1] == 'I'.code.toByte() &&
+                header[2] == 'F'.code.toByte() &&
+                header[3] == '8'.code.toByte()
+        }
+    }.getOrDefault(false)
+}
+
 @Composable
-private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face) {
+private fun FaceMessageContent(
+    content: ChatDetailViewModel.MessageContent.Face,
+    forcedSize: Dp,
+) {
     val face = remember(
         content.faceType,
         content.faceIndex,
@@ -1537,47 +2161,51 @@ private fun FaceMessageContent(content: ChatDetailViewModel.MessageContent.Face)
             surpriseId = content.surpriseId,
         )
     }
-    val isAnimated = remember(face) {
-        face != null && (face.faceType == 3 || (face.stickerType ?: 0) > 0)
-    }
     var drawable by remember(face) { mutableStateOf<Drawable?>(null) }
     val loadGeneration = remember { AtomicLong(0L) }
     LaunchedEffect(face) {
         val generation = loadGeneration.incrementAndGet()
-        drawable = null
-        face?.let { value ->
-            EmotionRepository.loadSystemFaceDrawable(value) { loaded ->
-                if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
-                    drawable = loaded
-                }
+        // Keep the previous drawable visible until a replacement arrives (no blank flash).
+        EmotionRepository.loadSystemFaceDrawable(
+            face = face,
+            preferStatic = false,
+        ) { loaded ->
+            if (loadGeneration.get() == generation &&
+                loaded != null &&
+                loaded !is ColorDrawable
+            ) {
+                drawable = loaded
             }
         }
     }
     val fallbackText = remember(face, content.text) {
-        face?.let(EmotionRepository::systemFaceText) ?: content.text
+        EmotionRepository.systemFaceText(face).ifBlank { content.text }
     }
     if (drawable == null) {
         MessageFallback(fallbackText)
     } else {
         val currentDrawable = drawable
-        val size = if (isAnimated) 120.dp else 34.dp
         AndroidView(
             factory = { viewContext ->
                 ImageView(viewContext).apply {
                     scaleType = ImageView.ScaleType.FIT_CENTER
+                    adjustViewBounds = false
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 }
             },
             update = { imageView ->
                 if (imageView.drawable !== currentDrawable) {
                     imageView.setImageDrawable(currentDrawable)
-                    currentDrawable?.setVisible(true, true)
                 }
+                currentDrawable?.setVisible(true, true)
+                (currentDrawable as? android.graphics.drawable.Animatable)?.start()
                 imageView.invalidate()
             },
-            modifier = Modifier.size(size),
+            modifier = Modifier.size(forcedSize),
         )
         DisposableEffect(currentDrawable) {
             onDispose {
+                (currentDrawable as? android.graphics.drawable.Animatable)?.stop()
                 currentDrawable?.setVisible(false, false)
             }
         }
@@ -1589,9 +2217,14 @@ private fun GiphyMessageContent(
     content: ChatDetailViewModel.MessageContent.Giphy,
     onOpen: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
     val mediaUrl = content.mediaUrl
     var failed by remember(mediaUrl) { mutableStateOf(false) }
     val size = mediaSize(content.width, content.height)
+    val sizePx = with(density) {
+        Size(size.width.roundToPx(), size.height.roundToPx())
+    }
     if (mediaUrl == null || failed) {
         MediaPlaceholder(size, if (mediaUrl == null) "GIF不可用" else "GIF加载失败")
     } else {
@@ -1604,7 +2237,10 @@ private fun GiphyMessageContent(
             contentPadding = PaddingValues(0.dp),
         ) {
             AsyncImage(
-                model = mediaUrl,
+                model = ImageRequest.Builder(context)
+                    .data(mediaUrl)
+                    .size(sizePx)
+                    .build(),
                 contentDescription = "GIF 动图",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
@@ -1730,7 +2366,7 @@ private fun LinkPreviewMessageContent(content: ChatDetailViewModel.MessageConten
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurface,
                 ),
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(MessageBubbleCornerRadius),
                 contentPadding = PaddingValues(8.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1785,7 +2421,7 @@ private fun CallRecordMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(horizontal = 9.dp, vertical = 8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1922,7 +2558,7 @@ private fun ReplyMessageContent(
     ) {
         Text(
             text = content.senderName,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -1953,7 +2589,7 @@ private fun FileMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2039,7 +2675,7 @@ private fun VoiceMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(horizontal = 8.dp, vertical = 9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2106,7 +2742,9 @@ private fun VoiceMessageContent(
 
 @Composable
 private fun VideoMessageContent(
+    message: ChatDetailViewModel.UiMsg,
     content: ChatDetailViewModel.MessageContent.Video,
+    ensureCached: () -> Unit,
     onOpenVideo: (VideoPlayback) -> Unit,
 ) {
     val localFile = remember(content.filePath) {
@@ -2115,16 +2753,30 @@ private fun VideoMessageContent(
     val thumbnail = remember(content.thumbnailPaths) {
         LocalMediaResolver.firstAvailable(content.thumbnailPaths)
     }
+    val size = mediaSize(content.width, content.height)
+    LaunchedEffect(content.elementId, content.isLoading, content.loadError, localFile) {
+        if (localFile == null && !content.isLoading) ensureCached()
+    }
     Card(
-        onClick = { localFile?.let { onOpenVideo(VideoPlayback(it, "视频")) } },
-        enabled = localFile != null,
+        onClick = {
+            ensureCached()
+            onOpenVideo(
+                VideoPlayback(
+                    file = localFile,
+                    title = "视频",
+                    messageKey = message.stableKey,
+                    elementId = content.elementId,
+                ),
+            )
+        },
+        enabled = true,
         modifier = Modifier
-            .fillMaxWidth()
-            .height(132.dp),
+            .size(size.width, size.height)
+            .clip(RoundedCornerShape(MessageBubbleCornerRadius)),
         colors = androidx.wear.compose.material3.CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(0.dp),
     ) {
         Box(
@@ -2136,36 +2788,31 @@ private fun VideoMessageContent(
                     model = thumbnail,
                     contentDescription = "视频封面",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                 )
             }
             Icon(
                 Icons.Default.PlayArrow,
-                contentDescription = "视频",
-                tint = LocalContentColor.current,
-                modifier = Modifier.size(34.dp),
+                contentDescription = "播放视频",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                modifier = Modifier.size(26.dp),
             )
             Text(
                 text = buildList {
                     add(formatDuration(content.durationSeconds))
                     content.progress?.let { add("$it%") }
+                    when {
+                        localFile != null -> Unit
+                        content.loadError != null -> add("失败")
+                        else -> add("缓存中")
+                    }
                 }.joinToString(" · "),
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(7.dp),
-                color = LocalContentColor.current,
+                color = MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodySmall,
             )
-            if (localFile == null) {
-                Text(
-                    text = "视频未缓存",
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(7.dp),
-                    color = LocalContentColor.current,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
         }
     }
 }
@@ -2179,55 +2826,59 @@ private fun StructuredCardContent(
     actionUrl: String?,
 ) {
     val context = LocalContext.current
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                actionUrl?.let { url -> Modifier.clickable { openHttpLink(context, url) } }
-                    ?: Modifier,
-            )
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
-            .padding(9.dp),
+    Card(
+        onClick = { actionUrl?.let { openHttpLink(context, it) } },
+        enabled = !actionUrl.isNullOrBlank(),
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.wear.compose.material3.CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
+        contentPadding = PaddingValues(9.dp),
     ) {
-        tag?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                it,
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1
-            )
-            Spacer(Modifier.height(2.dp))
-        }
-        Text(
-            title,
-            color = LocalContentColor.current,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
-        )
-        description.takeIf { it.isNotBlank() }?.let {
-            Spacer(Modifier.height(3.dp))
-            Text(
-                it,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        previewUrl?.let { url ->
-            Spacer(Modifier.height(7.dp))
-            AsyncImage(
-                model = url,
-                contentDescription = "卡片预览",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(88.dp)
-                    .clip(RoundedCornerShape(7.dp)),
-                contentScale = ContentScale.Crop,
-            )
+        Column(modifier = Modifier.fillMaxWidth()) {
+            tag?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(2.dp))
+            }
+            if (title.isNotBlank()) {
+                Text(
+                    title,
+                    color = LocalContentColor.current,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            description.takeIf { it.isNotBlank() }?.let {
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    it,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            previewUrl?.let { url ->
+                Spacer(Modifier.height(7.dp))
+                AsyncImage(
+                    model = url,
+                    contentDescription = "卡片预览",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(88.dp)
+                        .clip(RoundedCornerShape(7.dp)),
+                    contentScale = ContentScale.Fit,
+                )
+            }
         }
     }
 }
@@ -2244,7 +2895,7 @@ private fun ForwardMessageContent(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(MessageBubbleCornerRadius),
         contentPadding = PaddingValues(9.dp),
     ) {
         Text(
@@ -2289,7 +2940,7 @@ private fun LocationMessageContent(content: ChatDetailViewModel.MessageContent.L
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2326,7 +2977,7 @@ private fun WalletMessageContent(content: ChatDetailViewModel.MessageContent.Wal
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2383,7 +3034,7 @@ private fun CalendarMessageContent(content: ChatDetailViewModel.MessageContent.C
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2440,7 +3091,7 @@ private fun InlineKeyboardMessageContent(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(MessageBubbleCornerRadius))
             .padding(7.dp),
         verticalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -2463,80 +3114,12 @@ private fun InlineKeyboardMessageContent(
                         enabled = !isPending,
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                             contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                     ) { Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun MultiSelectBottomBar(
-    selectedCount: Int,
-    onExit: () -> Unit,
-    onSummary: () -> Unit,
-    onCopy: () -> Unit,
-    onForward: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(
-            onClick = onExit,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.Close, contentDescription = "退出多选")
-        }
-        Text(
-            text = selectedCount.toString(),
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Medium,
-        )
-        IconButton(
-            onClick = onSummary,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.AutoAwesome, contentDescription = "AI总结")
-        }
-        IconButton(
-            onClick = onCopy,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.ContentCopy, contentDescription = "复制")
-        }
-        IconButton(
-            onClick = onForward,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.AutoMirrored.Filled.Forward, contentDescription = "转发")
-        }
-        IconButton(
-            onClick = onShare,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(Icons.Default.Share, contentDescription = "系统分享")
-        }
-        IconButton(
-            onClick = onDelete,
-            modifier = Modifier.touchTargetAwareSize(androidx.wear.compose.material3.IconButtonDefaults.ExtraSmallButtonSize)
-        ) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "删除",
-                tint = MaterialTheme.colorScheme.error
-            )
         }
     }
 }
@@ -2548,7 +3131,7 @@ private fun SystemTipLine(text: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp, vertical = 7.dp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.colorScheme.outline,
         style = MaterialTheme.typography.bodySmall,
         textAlign = TextAlign.Center,
     )
@@ -2588,7 +3171,7 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
         Card(
             modifier = modifier,
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
             contentPadding = PaddingValues(0.dp),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2604,7 +3187,7 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             onClick = onClick,
             modifier = modifier,
             colors = androidx.wear.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            shape = RoundedCornerShape(8.dp),
+            shape = RoundedCornerShape(MessageBubbleCornerRadius),
             contentPadding = PaddingValues(0.dp),
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -2616,6 +3199,39 @@ private fun MediaPlaceholder(size: DpSize, label: String, onClick: (() -> Unit)?
             }
         }
     }
+}
+
+private fun resolveViewerModel(
+    messages: List<ChatDetailViewModel.UiMsg>,
+    key: String,
+): Any? {
+    val sep = key.lastIndexOf(':')
+    if (sep <= 0) return null
+    val stableKey = key.substring(0, sep)
+    val contentIndex = key.substring(sep + 1).toIntOrNull() ?: return null
+    val message = messages.firstOrNull { it.stableKey == stableKey } ?: return null
+    val content = message.contents.getOrNull(contentIndex) ?: return null
+    return when (content) {
+        is ChatDetailViewModel.MessageContent.Image -> LocalMediaResolver.firstAvailable(
+            content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath),
+        )
+        is ChatDetailViewModel.MessageContent.Giphy -> content.mediaUrl
+        else -> null
+    }
+}
+
+private fun resolveVideoFile(
+    messages: List<ChatDetailViewModel.UiMsg>,
+    playback: VideoPlayback,
+): File? {
+    val message = playback.messageKey?.let { key ->
+        messages.firstOrNull { it.stableKey == key }
+    } ?: return playback.file
+    val video = message.contents
+        .filterIsInstance<ChatDetailViewModel.MessageContent.Video>()
+        .firstOrNull { playback.elementId <= 0L || it.elementId == playback.elementId }
+        ?: return playback.file
+    return LocalMediaResolver.resolveFile(video.filePath) ?: playback.file
 }
 
 private fun mediaSize(width: Int, height: Int): DpSize {
@@ -2636,9 +3252,12 @@ private fun formatDuration(seconds: Int): String {
 }
 
 @Composable
-private fun ChatDateDivider(date: String) {
+private fun ChatDateDivider(
+    date: String,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -2651,7 +3270,7 @@ private fun ChatDateDivider(date: String) {
         )
         Text(
             date,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.outline,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 8.dp)
         )

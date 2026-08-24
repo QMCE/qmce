@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -43,15 +44,21 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CompactButton
+import androidx.wear.compose.material3.CompactButtonDefaults
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextDefaults
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.QZoneViewModel
 
 @Composable
@@ -77,6 +84,7 @@ fun QZoneFeedDetailScreen(
     var videoUrl by remember(feed.feedId) { mutableStateOf<String?>(null) }
     var showDeleteConfirmation by remember(feed.feedId) { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
     val scheme = MaterialTheme.colorScheme
 
     if (showDeleteConfirmation) {
@@ -92,7 +100,7 @@ fun QZoneFeedDetailScreen(
         return
     }
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         edgeButton = {
             val params = mapOf("dynamic_id" to feed.feedId)
@@ -110,11 +118,11 @@ fun QZoneFeedDetailScreen(
                         )
                         onOpenComment(feed)
                     },
-                    buttonSize = EdgeButtonSize.Small,
+                    buttonSize = EdgeButtonSize.Medium,
                 ) { Text("评论") }
             }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
@@ -125,6 +133,14 @@ fun QZoneFeedDetailScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(TextDefaults.minimumTopListContentPadding)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
                         .padding(horizontal = 14.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -165,6 +181,13 @@ fun QZoneFeedDetailScreen(
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                 }
@@ -174,6 +197,16 @@ fun QZoneFeedDetailScreen(
                     ForwardFeedContent(
                         forward = forward,
                         hasMedia = feed.picUrls.isNotEmpty(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }
             }
@@ -181,9 +214,14 @@ fun QZoneFeedDetailScreen(
                 item(key = "feed-detail-copy:${feed.feedId}") {
                     Button(
                         onClick = { copyMessageText(context, shareText) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(),
                         contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
                     ) { Text("复制动态") }
                 }
@@ -203,9 +241,14 @@ fun QZoneFeedDetailScreen(
                                 )
                                 shareMessageText(context, shareText)
                             },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(),
                             contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            transformation = SurfaceTransformation(transformationSpec),
                             icon = { Icon(Icons.Default.Share, contentDescription = null) },
                         ) { Text("系统分享") }
                     }
@@ -229,9 +272,14 @@ fun QZoneFeedDetailScreen(
                                 vm.clearDeleteState()
                                 showDeleteConfirmation = true
                             },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .minimumVerticalContentPadding(ButtonDefaults.minimumVerticalListContentPadding)
+                                .padding(horizontal = 12.dp, vertical = 2.dp),
                             colors = ButtonDefaults.filledTonalButtonColors(),
                             contentPadding = ButtonDefaults.ButtonWithLargeIconContentPadding,
+                            transformation = SurfaceTransformation(transformationSpec),
                             icon = { Icon(Icons.Default.Delete, contentDescription = null) },
                         ) { Text("删除动态") }
                     }
@@ -241,7 +289,11 @@ fun QZoneFeedDetailScreen(
                 item(key = "feed-detail-save-image:${feed.feedId}") {
                     CompactButton(
                         onClick = { vm.saveImage(context, feed.picUrls.first()) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(CompactButtonDefaults.minimumVerticalListContentPadding)
+                            .padding(horizontal = 12.dp, vertical = 2.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = { Icon(Icons.Default.SaveAlt, contentDescription = "保存图片") },
                     )
                 }
@@ -249,6 +301,13 @@ fun QZoneFeedDetailScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(horizontal = 12.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.spacedBy(5.dp),
                     ) {
@@ -268,6 +327,7 @@ fun QZoneFeedDetailScreen(
                                         modifier = Modifier
                                             .weight(1f)
                                             .height(96.dp),
+                                        transformation = SurfaceTransformation(transformationSpec),
                                     ) {
                                         AsyncImage(
                                             model = url,
@@ -287,8 +347,12 @@ fun QZoneFeedDetailScreen(
                 item(key = "feed-detail-video:${feed.feedId}") {
                     CompactButton(
                         onClick = { videoUrl = url },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(CompactButtonDefaults.minimumVerticalListContentPadding)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
                         colors = ButtonDefaults.filledVariantButtonColors(),
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = { Icon(Icons.Default.PlayArrow, contentDescription = "播放视频") },
                     )
                 }
@@ -312,7 +376,11 @@ fun QZoneFeedDetailScreen(
                             )
                             vm.toggleLike(feed.feedId)
                         },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .minimumVerticalContentPadding(CompactButtonDefaults.minimumVerticalListContentPadding)
+                            .padding(horizontal = 12.dp, vertical = 4.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
                         icon = {
                             Icon(
                                 imageVector = if (feed.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -334,6 +402,13 @@ fun QZoneFeedDetailScreen(
                     color = scheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
@@ -345,6 +420,13 @@ fun QZoneFeedDetailScreen(
                         color = scheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                     )
                 }
@@ -354,6 +436,13 @@ fun QZoneFeedDetailScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .graphicsLayer {
+                                    with(SurfaceTransformation(transformationSpec)) {
+                                        applyContainerTransformation()
+                                        applyContentTransformation()
+                                    }
+                                }
                                 .padding(horizontal = 12.dp, vertical = 3.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(scheme.surfaceContainerHigh)

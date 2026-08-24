@@ -7,6 +7,8 @@ import android.os.Build
 import android.os.Process
 import android.util.Log
 import com.microsoft.appcenter.crashes.Crashes
+import rj.qmce.lite.util.QmceLog
+import rj.qmce.lite.viewmodel.SettingsViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,7 +44,7 @@ object CrashCatcher {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             handleUncaughtException(context, thread, throwable)
         }
-        Log.d(TAG, "installed process=${currentProcessName(context)}")
+        QmceLog.d(TAG, "installed process=${currentProcessName(context)}")
     }
 
     fun readLatestReport(context: Context, intent: Intent? = null): CrashReport {
@@ -63,7 +65,7 @@ object CrashCatcher {
 
     private fun handleUncaughtException(context: Context, thread: Thread, throwable: Throwable) {
         if (!handlingCrash.compareAndSet(false, true)) {
-            Log.e(TAG, "CrashActivity itself crashed; terminating process", throwable)
+            QmceLog.e(TAG, "CrashActivity itself crashed; terminating process", throwable)
             previousHandler?.uncaughtException(thread, throwable)
                 ?: terminateProcess()
             return
@@ -76,13 +78,13 @@ object CrashCatcher {
             error = "${throwable.javaClass.name}: ${throwable.message ?: "无错误消息"}",
             stacktrace = Log.getStackTraceString(throwable),
         )
-        Log.e(
+        QmceLog.e(
             TAG,
             "${report.process} ${report.thread} report=${report.id}: ${report.error}",
             throwable
         )
         persistReport(context, report)
-        reportToAppCenter(report, throwable)
+        reportToAppCenter(context, report, throwable)
 
         val intent = Intent(context, rj.qmce.lite.ui.CrashActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
@@ -93,7 +95,7 @@ object CrashCatcher {
             putExtra(KEY_STACKTRACE, report.stacktrace)
         }
         runCatching { context.startActivity(intent) }
-            .onFailure { Log.e(TAG, "Unable to open CrashActivity", it) }
+            .onFailure { QmceLog.e(TAG, "Unable to open CrashActivity", it) }
     }
 
     private fun persistReport(context: Context, report: CrashReport) {
@@ -108,7 +110,11 @@ object CrashCatcher {
             .commit()
     }
 
-    private fun reportToAppCenter(report: CrashReport, throwable: Throwable) {
+    private fun reportToAppCenter(context: Context, report: CrashReport, throwable: Throwable) {
+        if (!SettingsViewModel.isAppCenterReportingEnabled(context)) {
+            QmceLog.w(TAG, "App Center disabled; skip trackError report=${report.id}")
+            return
+        }
         runCatching {
             Crashes.trackError(
                 throwable,
@@ -121,7 +127,7 @@ object CrashCatcher {
                 emptyList(),
             )
         }.onFailure {
-            Log.w(TAG, "App Center Crashes unavailable; local report is still saved", it)
+            QmceLog.w(TAG, "App Center Crashes unavailable; local report is still saved", it)
         }
     }
 

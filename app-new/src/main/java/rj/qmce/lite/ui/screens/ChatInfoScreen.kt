@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
@@ -40,7 +41,7 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
@@ -50,7 +51,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rj.qmce.lite.data.media.MediaStoreSaver
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
+import rj.qmce.lite.viewmodel.GroupInfoViewModel
 import java.io.File
 
 @Composable
@@ -66,6 +69,7 @@ fun ChatInfoScreen(
     onOpenGroupInfo: () -> Unit,
     onOpenMessageSearch: () -> Unit,
     onOpenSettings: () -> Unit,
+    groupInfoVm: GroupInfoViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val saveScope = rememberCoroutineScope()
@@ -101,20 +105,21 @@ fun ChatInfoScreen(
     }
 
     val scheme = MaterialTheme.colorScheme
-    val members by vm.groupMembers.collectAsState()
     val isGroup = chatType == 2
     val displayName = peerName.ifBlank { if (isGroup) "未知群聊" else "未知联系人" }
+    val groupInfoState by groupInfoVm.state.collectAsState()
+    val memberNum = groupInfoState.detail?.memberNum?.takeIf { it > 0 }
 
-    LaunchedEffect(isGroup, peerUin, peerUid) {
+    LaunchedEffect(isGroup, peerUin) {
         if (isGroup && peerUin > 0L) {
-            vm.loadGroupMembers(peerUin, updateStatus = false)
+            groupInfoVm.load(peerUin, forceRefresh = false)
         }
     }
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -167,9 +172,9 @@ fun ChatInfoScreen(
                             color = scheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                         )
-                        if (isGroup && members.isNotEmpty()) {
+                        if (isGroup && memberNum != null) {
                             Text(
-                                text = "${members.size} 名成员",
+                                text = "$memberNum 名成员",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = scheme.outline,
                                 modifier = Modifier.padding(top = 2.dp),
@@ -177,6 +182,13 @@ fun ChatInfoScreen(
                         }
                     }
                 }
+            }
+            item(key = "chat-info-actions-header") {
+                QmceListHeader(
+                    text = if (isGroup) "群聊" else "联系人",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
             }
             if (isGroup) {
                 item(key = "chat-info-members") {
@@ -196,7 +208,9 @@ fun ChatInfoScreen(
                                 modifier = Modifier.size(ButtonDefaults.LargeIconSize),
                             )
                         },
-                        secondaryLabel = { Text("查看并搜索群成员") },
+                        secondaryLabel = {
+                            Text(if (memberNum != null) "$memberNum 名成员" else "查看并搜索群成员")
+                        },
                     ) { Text("群成员") }
                 }
                 item(key = "chat-info-group-info") {

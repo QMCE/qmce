@@ -32,7 +32,7 @@ class ChatSettingsViewModel : ViewModel() {
             peerUid = peerUid,
             peerUin = peerUin,
             displayName = displayName,
-            pinned = contact.topFlag.toInt() != 0,
+            pinned = contact.topFlag.toInt() == 1,
             muted = contact.isMsgDisturb || (contact.shieldFlag != 0L && contact.shieldFlag != 1L),
         )
     }

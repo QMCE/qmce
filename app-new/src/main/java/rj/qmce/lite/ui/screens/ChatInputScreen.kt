@@ -8,11 +8,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.Image as ComposeImage
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AlternateEmail
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.EmojiEmotions
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
@@ -40,8 +44,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -64,14 +69,21 @@ import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.SwipeToDismissBox
+import androidx.wear.compose.foundation.SwipeToDismissValue
+import androidx.wear.compose.material3.TitleCard
+import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
+import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.EdgeButton
 import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TextButton
+import androidx.wear.compose.material3.TextButtonDefaults
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.AtMention
@@ -82,6 +94,10 @@ import rj.qmce.lite.data.chat.MessageTokenCodec.BOUNDARY_START
 import rj.qmce.lite.data.emotion.EmotionRepository
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.agent.predict.MessagePredictionController
+import rj.qmce.lite.agent.predict.PredictionMessage
+import rj.qmce.lite.agent.predict.PredictionUiState
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -89,8 +105,6 @@ import android.graphics.drawable.Drawable
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
-import androidx.compose.material3.TextField as MaterialTextField
-import androidx.compose.material3.TextFieldDefaults as MaterialTextFieldDefaults
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -118,6 +132,7 @@ fun ChatInputScreen(
     chatType: Int = 1,
     editingText: String = "",
     replyTarget: ChatDetailViewModel.ReplyTarget? = null,
+    openToolsOnLaunch: Boolean = false,
     onConsumeReplyTarget: () -> Unit = {},
     onSend: (String, ChatDetailViewModel.ReplyTarget?) -> Unit,
     onSendEdited: (String) -> Unit,
@@ -158,7 +173,7 @@ fun ChatInputScreen(
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingVideoUri by remember { mutableStateOf<Uri?>(null) }
     var showVideoPicker by remember { mutableStateOf(false) }
-    var showToolPanel by remember { mutableStateOf(false) }
+    var showToolPanel by remember { mutableStateOf(openToolsOnLaunch) }
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showAtPicker by remember { mutableStateOf(false) }
     var atQuery by remember { mutableStateOf("") }
@@ -171,6 +186,11 @@ fun ChatInputScreen(
         marketFaceSlots.clear()
         atSlots.clear()
         vm.consumePendingVoiceText()
+    }
+
+    val predictionState by MessagePredictionController.state.collectAsState()
+    DisposableEffect(peerUid, chatType) {
+        onDispose { MessagePredictionController.reset() }
     }
 
     LaunchedEffect(showToolPanel, showEmojiPicker) {
@@ -493,7 +513,7 @@ fun ChatInputScreen(
         .isNotBlank() || imageSlots.isNotEmpty() || atSlots.isNotEmpty()
         || faceSlots.isNotEmpty() || marketFaceSlots.isNotEmpty()
 
-    ScreenScaffold(
+    QmceScreenScaffold(
         scrollState = listState,
         modifier = Modifier
             .fillMaxSize()
@@ -584,7 +604,7 @@ fun ChatInputScreen(
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
             }
         },
-        edgeButtonSpacing = 2.5.dp
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing
     ) {
         TransformingLazyColumn(
             state = listState,
@@ -677,7 +697,7 @@ fun ChatInputScreen(
                 }
             }
             item(key = "input") {
-                MaterialTextField(
+                BasicTextField(
                     value = textFieldValue,
                     onValueChange = { newValue ->
                         // 检测标记被删除 → 移除对应图片
@@ -736,8 +756,13 @@ fun ChatInputScreen(
                             }
                         }
                         .padding(horizontal = 10.dp)
-                        .defaultMinSize(minHeight = 100.dp),
+                        .defaultMinSize(minHeight = 72.dp)
+                        .background(scheme.surfaceContainerHigh, RoundedCornerShape(20.dp))
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = scheme.onSurface),
+                    cursorBrush = SolidColor(scheme.primary),
+                    minLines = 2,
+                    maxLines = 4,
                     visualTransformation = imgMarkerTransformation(
                         imageCount = imageSlots.size,
                         atMentions = atSlots,
@@ -745,26 +770,59 @@ fun ChatInputScreen(
                         marketFaceCount = marketFaceSlots.size,
                         highlightColor = scheme.primary,
                     ),
-                    placeholder = {
-                        Text("输入消息", style = MaterialTheme.typography.bodySmall)
+                    decorationBox = { innerTextField ->
+                        if (textFieldValue.text.isEmpty()) {
+                            Text(
+                                "输入消息",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = scheme.outline,
+                            )
+                        }
+                        innerTextField()
                     },
-                    minLines = 3,
-                    maxLines = 6,
-                    shape = RoundedCornerShape(20.dp),
-                    colors = MaterialTextFieldDefaults.colors(
-                        focusedContainerColor = scheme.surfaceContainerHigh,
-                        unfocusedContainerColor = scheme.surfaceContainerHigh,
-                        disabledContainerColor = scheme.surfaceContainerHigh,
-                        focusedTextColor = scheme.onSurface,
-                        unfocusedTextColor = scheme.onSurface,
-                        cursorColor = scheme.primary,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent,
-                        focusedPlaceholderColor = scheme.onSurfaceVariant,
-                        unfocusedPlaceholderColor = scheme.onSurfaceVariant,
-                    ),
                 )
+            }
+            if (chatType != 100) {
+                item(key = "prediction") {
+                    PredictionSection(
+                        predictionState = predictionState,
+                        onPredict = {
+                            val msgs = vm.messages.value.takeLast(20).map { ui ->
+                                PredictionMessage(
+                                    sender = if (ui.isSelf) "我" else ui.senderNick.ifBlank { ui.senderUid },
+                                    text = ui.text,
+                                    msgId = ui.msgId,
+                                    msgTime = ui.time,
+                                )
+                            }
+                            MessagePredictionController.start(
+                                peerUid = peerUid,
+                                chatType = chatType,
+                                initial = msgs,
+                            )
+                        },
+                        onRetry = {
+                            val msgs = vm.messages.value.takeLast(20).map { ui ->
+                                PredictionMessage(
+                                    sender = if (ui.isSelf) "我" else ui.senderNick.ifBlank { ui.senderUid },
+                                    text = ui.text,
+                                    msgId = ui.msgId,
+                                    msgTime = ui.time,
+                                )
+                            }
+                            MessagePredictionController.retry(
+                                peerUid = peerUid,
+                                chatType = chatType,
+                                initial = msgs,
+                            )
+                        },
+                        onSendSuggestion = { suggestion ->
+                            MessagePredictionController.reset()
+                            onSend(suggestion, activeReplyTarget)
+                            onBack()
+                        },
+                    )
+                }
             }
             item(key = "more") {
                 Button(
@@ -790,6 +848,87 @@ fun ChatInputScreen(
 }
 
 @Composable
+private fun PredictionSection(
+    predictionState: PredictionUiState,
+    onPredict: () -> Unit,
+    onRetry: () -> Unit,
+    onSendSuggestion: (String) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    when (predictionState) {
+        is PredictionUiState.Idle -> {
+            CompactButton(
+                onClick = onPredict,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 10.dp, vertical = 2.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.LargeIconSize),
+                    )
+                },
+            ) { Text("预测回复") }
+        }
+
+        is PredictionUiState.Loading -> {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                Spacer(modifier = Modifier.size(8.dp))
+                Text(
+                    text = "Fluoxetine 预测中…",
+                    color = scheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+
+        is PredictionUiState.Ready -> {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                predictionState.suggestions.forEach { suggestion ->
+                    Button(
+                        onClick = { onSendSuggestion(suggestion) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 2.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                    ) { Text(suggestion) }
+                }
+            }
+        }
+
+        is PredictionUiState.Error -> {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = predictionState.message,
+                    color = scheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+                CompactButton(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 2.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(),
+                ) { Text("重试") }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ChatInputToolsScreen(
     isGroupChat: Boolean,
     onBack: () -> Unit,
@@ -805,24 +944,35 @@ private fun ChatInputToolsScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     BackHandler(onBack = onBack)
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         androidx.wear.compose.foundation.lazy.TransformingLazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = contentPadding,
         ) {
-            // TODO: enable it
             item(key = "emoji") {
-                /*
-                ChatInputToolButton(
-                    icon = Icons.Default.EmojiEmotions,
-                    label = "表情",
-                    description = "插入常用表情",
-                    onClick = onSelectEmoji,
-                    modifier = Modifier.transformedHeight(this, transformationSpec),
-                    transformation = SurfaceTransformation(transformationSpec),
-                )
-                */
+                OfficialReportTargetBox(
+                    key = "aio-input:expression",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec),
+                    elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+                ) { reportTarget ->
+                    ChatInputToolButton(
+                        icon = Icons.Default.EmojiEmotions,
+                        label = "表情",
+                        description = "插入常用表情",
+                        onClick = {
+                            OfficialReportBridge.reportElementClick(
+                                target = reportTarget,
+                                elementId = OfficialReportBridge.ElementIds.EXPRESSION_ENTRY,
+                            )
+                            onSelectEmoji()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
             }
             item(key = "image") {
                 val params = mapOf("rich_media_type" to 1)
@@ -963,8 +1113,25 @@ fun EmotionPickerScreen(
     var marketFaces by remember { mutableStateOf<List<EmotionRepository.Selection.MarketFace>>(emptyList()) }
     var loadingMarketFaces by remember { mutableStateOf(false) }
     val listState = rememberTransformingLazyColumnState()
+    val detailListState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    BackHandler(onBack = onBack)
+    
+    val dismissState = rememberSwipeToDismissBoxState()
+    LaunchedEffect(dismissState.currentValue) {
+        if (dismissState.currentValue == SwipeToDismissValue.Dismissed) {
+            selectedPack = null
+            dismissState.snapTo(SwipeToDismissValue.Default)
+        }
+    }
+
+    BackHandler(onBack = {
+        if (selectedPack != null) {
+            selectedPack = null
+        } else {
+            onBack()
+        }
+    })
+
     LaunchedEffect(Unit) {
         systemFaces = EmotionRepository.loadSystemFaces()
         EmotionRepository.loadSystemFacesAsync { loadedFaces ->
@@ -983,194 +1150,191 @@ fun EmotionPickerScreen(
             loadingMarketFaces = false
         }
     }
-    ScreenScaffold(scrollState = listState) { contentPadding ->
-        OfficialReportTargetBox(
-            key = "emotion-picker:column",
-            modifier = Modifier.fillMaxSize(),
-            elementId = OfficialReportBridge.ElementIds.EMOTICON_COLUMN,
-        ) {
-            TransformingLazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = contentPadding,
-            ) {
-            item(key = "emoji-title") {
-                Text(
-                    text = if (selectedPack == null) "表情" else selectedPack?.name.orEmpty(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.titleSmall,
+
+    SwipeToDismissBox(
+        state = dismissState,
+        userSwipeEnabled = selectedPack != null
+    ) { isBackground ->
+        if (isBackground || selectedPack == null) {
+            QmceScreenScaffold(scrollState = listState) { contentPadding ->
+                val safePadding = PaddingValues(
+                    top = contentPadding.calculateTopPadding() + 32.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 32.dp,
+                    start = 8.dp,
+                    end = 8.dp
                 )
-            }
-            if (selectedPack == null) {
-                item(key = "system-face-heading") {
-                    Text(
-                        text = "系统表情",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                systemFaces.chunked(4).forEachIndexed { rowIndex, row ->
-                    item(key = "system-face-row:$rowIndex") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            row.forEach { face ->
-                                val params = mapOf(
-                                    "sticker_id" to (face.stickerId ?: face.faceIndex.toString()),
-                                    "emoji_type" to "1",
-                                )
-                                val reuseIdentifier = "system:${face.faceType}:${face.faceIndex}"
-                                OfficialReportTargetBox(
-                                    key = "emotion:$reuseIdentifier",
-                                    modifier = Modifier.weight(1f),
-                                    elementId = OfficialReportBridge.ElementIds.EXPRESSION,
-                                    params = params,
-                                    reuseIdentifier = reuseIdentifier,
-                                ) { reportTarget ->
-                                    EmotionOptionButton(
-                                        face = face,
-                                        label = face.label,
-                                        fallbackText = remember(face.faceType, face.faceIndex, face.label) {
-                                            EmotionRepository.systemFaceText(face)
-                                        },
-                                        onClick = {
-                                            OfficialReportBridge.reportElementClick(
-                                                target = reportTarget,
-                                                elementId = OfficialReportBridge.ElementIds.EXPRESSION,
-                                                params = params,
-                                                reuseIdentifier = reuseIdentifier,
-                                            )
-                                            onSelectSystemFace(face)
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-                }
-                item(key = "market-face-heading") {
-                    Text(
-                        text = "系列表情",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec)
-                            .padding(horizontal = 12.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                marketPacks.forEach { pack ->
-                    item(key = "market-pack:${pack.epId}") {
-                        Button(
-                            onClick = { selectedPack = pack },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            transformation = SurfaceTransformation(transformationSpec),
-                        ) {
-                            Text(pack.name)
-                        }
-                    }
-                }
-                if (marketPacks.isEmpty()) {
-                    item(key = "market-pack-empty") {
-                        Text(
-                            text = "暂无可用系列表情",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-            } else {
-                item(key = "market-back") {
-                    TextButton(
-                        onClick = { selectedPack = null },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .transformedHeight(this, transformationSpec),
+                OfficialReportTargetBox(
+                    key = "emotion-picker:column",
+                    modifier = Modifier.fillMaxSize(),
+                    elementId = OfficialReportBridge.ElementIds.EMOTICON_COLUMN,
+                ) {
+                    TransformingLazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = safePadding,
                     ) {
-                        Text("返回表情包")
-                    }
-                }
-                if (loadingMarketFaces) {
-                    item(key = "market-loading") {
-                        Text(
-                            text = "正在加载表情…",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-                marketFaces.chunked(3).forEachIndexed { rowIndex, row ->
-                    item(key = "market-face-row:$rowIndex") {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            row.forEach { face ->
-                                val params = mapOf(
-                                    "sticker_id" to face.eId,
-                                    "emoji_type" to "2",
+                        item(key = "market-face-heading") {
+                            ListHeader(modifier = Modifier.transformedHeight(this, transformationSpec)) {
+                                Text("系列表情")
+                            }
+                        }
+                        if (marketPacks.isEmpty()) {
+                            item(key = "market-pack-empty") {
+                                Text(
+                                    text = "暂无可用系列表情",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, transformationSpec)
+                                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                                    style = MaterialTheme.typography.bodySmall,
                                 )
-                                val reuseIdentifier = "market:${face.epId}:${face.eId}"
-                                OfficialReportTargetBox(
-                                    key = "emotion:$reuseIdentifier",
-                                    modifier = Modifier.weight(1f),
-                                    elementId = OfficialReportBridge.ElementIds.EXPRESSION,
-                                    params = params,
-                                    reuseIdentifier = reuseIdentifier,
-                                ) { reportTarget ->
-                                    MarketFaceOptionButton(
-                                        face = face,
-                                        onClick = {
-                                            OfficialReportBridge.reportElementClick(
-                                                target = reportTarget,
-                                                elementId = OfficialReportBridge.ElementIds.EXPRESSION,
-                                                params = params,
-                                                reuseIdentifier = reuseIdentifier,
-                                            )
-                                            onSelectMarketFace(face)
-                                        },
-                                        modifier = Modifier.fillMaxWidth(),
+                            }
+                        } else {
+                            marketPacks.forEach { pack ->
+                                item(key = "market-pack:${pack.epId}") {
+                                    TitleCard(
+                                        onClick = { selectedPack = pack },
+                                        title = { Text(pack.name) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .transformedHeight(this, transformationSpec)
+                                            .padding(horizontal = 4.dp, vertical = 2.dp),
+                                        transformation = SurfaceTransformation(transformationSpec),
                                     )
                                 }
                             }
-                            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                        }
+                        item(key = "system-face-heading") {
+                            ListHeader(modifier = Modifier.transformedHeight(this, transformationSpec)) {
+                                Text("系统表情")
+                            }
+                        }
+                        systemFaces.chunked(4).forEachIndexed { rowIndex, row ->
+                            item(key = "system-face-row:$rowIndex") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .transformedHeight(this, transformationSpec)
+                                        .padding(vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    row.forEach { face ->
+                                        val params = mapOf(
+                                            "sticker_id" to (face.stickerId ?: face.faceIndex.toString()),
+                                            "emoji_type" to "1",
+                                        )
+                                        val reuseIdentifier = "system:${face.faceType}:${face.faceIndex}"
+                                        OfficialReportTargetBox(
+                                            key = "emotion:$reuseIdentifier",
+                                            modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
+                                            elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                            params = params,
+                                            reuseIdentifier = reuseIdentifier,
+                                        ) { reportTarget ->
+                                            EmotionOptionButton(
+                                                face = face,
+                                                label = face.label,
+                                                fallbackText = remember(face.faceType, face.faceIndex, face.label) {
+                                                    EmotionRepository.systemFaceText(face)
+                                                },
+                                                onClick = {
+                                                    OfficialReportBridge.reportElementClick(
+                                                        target = reportTarget,
+                                                        elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                                        params = params,
+                                                        reuseIdentifier = reuseIdentifier,
+                                                    )
+                                                    onSelectSystemFace(face)
+                                                },
+                                                modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
+                                            )
+                                        }
+                                    }
+                                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                                }
+                            }
                         }
                     }
                 }
-                if (!loadingMarketFaces && marketFaces.isEmpty()) {
-                    item(key = "market-face-empty") {
-                        Text(
-                            text = "该表情包暂时没有可用资源",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .transformedHeight(this, transformationSpec)
-                                .padding(horizontal = 12.dp, vertical = 4.dp),
-                        )
+            }
+        } else {
+            QmceScreenScaffold(scrollState = detailListState) { contentPadding ->
+                val detailPadding = PaddingValues(
+                    top = contentPadding.calculateTopPadding() + 32.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 32.dp,
+                    start = 8.dp,
+                    end = 8.dp
+                )
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (loadingMarketFaces) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                    } else {
+                        TransformingLazyColumn(
+                            state = detailListState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = detailPadding,
+                        ) {
+                            item(key = "detail-title") {
+                                ListHeader(modifier = Modifier.transformedHeight(this, transformationSpec)) {
+                                    Text(selectedPack?.name.orEmpty())
+                                }
+                            }
+                            marketFaces.chunked(3).forEachIndexed { rowIndex, row ->
+                                item(key = "market-face-row:$rowIndex") {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .transformedHeight(this, transformationSpec)
+                                            .padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    ) {
+                                        row.forEach { face ->
+                                            val params = mapOf(
+                                                "sticker_id" to face.eId,
+                                                "emoji_type" to "2",
+                                            )
+                                            val reuseIdentifier = "market:${face.epId}:${face.eId}"
+                                            OfficialReportTargetBox(
+                                                key = "emotion:$reuseIdentifier",
+                                                modifier = Modifier.weight(1f).defaultMinSize(minHeight = 48.dp),
+                                                elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                                params = params,
+                                                reuseIdentifier = reuseIdentifier,
+                                            ) { reportTarget ->
+                                                MarketFaceOptionButton(
+                                                    face = face,
+                                                    onClick = {
+                                                        OfficialReportBridge.reportElementClick(
+                                                            target = reportTarget,
+                                                            elementId = OfficialReportBridge.ElementIds.EXPRESSION,
+                                                            params = params,
+                                                            reuseIdentifier = reuseIdentifier,
+                                                        )
+                                                        onSelectMarketFace(face)
+                                                    },
+                                                    modifier = Modifier.fillMaxWidth().defaultMinSize(minHeight = 48.dp),
+                                                )
+                                            }
+                                        }
+                                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                                    }
+                                }
+                            }
+                            if (marketFaces.isEmpty()) {
+                                item(key = "market-face-empty") {
+                                    Text(
+                                        text = "该表情包暂时没有可用资源",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .transformedHeight(this, transformationSpec)
+                                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
-            }
             }
         }
     }
@@ -1189,7 +1353,7 @@ private fun EmotionOptionButton(
     LaunchedEffect(face) {
         val generation = loadGeneration.incrementAndGet()
         drawable = null
-        EmotionRepository.loadSystemFaceDrawable(face) { loaded ->
+        EmotionRepository.loadSystemFaceDrawable(face, preferStatic = true) { loaded ->
             if (loadGeneration.get() == generation && (loaded != null || drawable == null)) {
                 drawable = loaded
             }

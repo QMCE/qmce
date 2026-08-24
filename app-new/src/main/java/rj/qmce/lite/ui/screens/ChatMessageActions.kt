@@ -18,8 +18,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -31,13 +38,14 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.net.URLConnection
@@ -62,23 +70,30 @@ object MessageActionResolver {
     ): List<MessageAction> = buildList {
         val contents = message.contents
 
-        // 撤回：自己发的已送达消息
-        if (message.isSelf && message.status == 2) {
-            add(MessageAction("recall", "撤回", destructive = true))
+        if (message.msgId > 0L) {
+            add(MessageAction("quote", "引用", icon = Icons.Default.FormatQuote))
+            add(MessageAction("reply", "回复", icon = Icons.AutoMirrored.Filled.Reply))
         }
 
-        // 编辑：自己发的有文本的消息
+        val mediaFile = message.firstLocalMediaFile()
+        if (mediaFile != null) {
+            add(MessageAction("save_media", "保存", icon = Icons.Default.Save))
+            add(MessageAction("share_media", "分享", icon = Icons.Default.Share))
+        }
+
         val copyable = contents.copyableText()
-        if (message.msgId > 0L) add(MessageAction("reply", "回复"))
+        if (copyable.isNotBlank()) {
+            add(MessageAction("copy", "复制", icon = Icons.Default.ContentCopy))
+            if (copyable.length > 80) {
+                add(MessageAction("read_text", "查看全文", icon = Icons.Default.TextFields))
+            }
+            add(MessageAction("share_text", "系统分享", icon = Icons.Default.Share))
+        }
+
         if (message.isSelf && copyable.isNotBlank()) {
             add(MessageAction("edit", "编辑"))
         }
 
-        if (copyable.isNotBlank()) add(MessageAction("copy", "复制"))
-        if (copyable.length > 80) add(MessageAction("read_text", "查看全文"))
-        if (copyable.isNotBlank()) add(MessageAction("share_text", "系统分享"))
-
-        // 重复发送：最后一条消息且与前一条文本相同
         if (context.isLastMessage && copyable.isNotBlank()) {
             val prevText = context.previousMessage?.contents?.copyableText()
             if (prevText == copyable) {
@@ -86,20 +101,20 @@ object MessageActionResolver {
             }
         }
 
-        // 转发：有文本或真实图片。表情暂不伪装成媒体或转发为丢失内容。
         val hasForwardableContent = copyable.isNotBlank() ||
-                contents.any { it is ChatDetailViewModel.MessageContent.Image }
+                contents.any {
+                    it is ChatDetailViewModel.MessageContent.Image ||
+                            it is ChatDetailViewModel.MessageContent.Video
+                }
         if (hasForwardableContent) {
             add(MessageAction("forward", "转发"))
         }
 
         val hasMedia = contents.any {
-            it is ChatDetailViewModel.MessageContent.Image
+            it is ChatDetailViewModel.MessageContent.Image ||
+                    it is ChatDetailViewModel.MessageContent.Video
         }
-        if (hasMedia) add(MessageAction("view_media", "查看图片"))
-
-        val mediaFile = message.firstLocalMediaFile()
-        if (mediaFile != null) add(MessageAction("share_media", "系统分享"))
+        if (hasMedia) add(MessageAction("view_media", "查看媒体"))
 
         if (contents.any { it is ChatDetailViewModel.MessageContent.Forward }) {
             add(MessageAction("forward_detail", "查看聊天记录"))
@@ -114,12 +129,11 @@ object MessageActionResolver {
                 }
             }
 
-        // 多选
-        // TODO: 改进到能用
-        // add(MessageAction("multi_select", "多选"))
+        if (message.isSelf && message.status == 2) {
+            add(MessageAction("recall", "撤回", destructive = true, icon = Icons.AutoMirrored.Filled.Undo))
+        }
 
-        // 删除
-        add(MessageAction("delete", "删除", destructive = true))
+        add(MessageAction("delete", "删除", destructive = true, icon = Icons.Default.Delete))
     }
 
     fun copyableText(message: ChatDetailViewModel.UiMsg): String = message.contents.copyableText()
@@ -168,7 +182,7 @@ fun MessageActionsScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     val scheme = MaterialTheme.colorScheme
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier
@@ -176,6 +190,13 @@ fun MessageActionsScreen(
                 .background(scheme.background),
             contentPadding = contentPadding,
         ) {
+            item(key = "message-actions-header") {
+                QmceListHeader(
+                    text = "消息操作",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
             actions.forEachIndexed { index, action ->
                 item(key = "message-action:$index:${action.id}") {
                     OfficialReportTargetBox(
@@ -196,10 +217,7 @@ fun MessageActionsScreen(
                             colors = if (action.destructive) ButtonDefaults.buttonColors(
                                 containerColor = scheme.errorContainer,
                                 contentColor = scheme.onErrorContainer,
-                            ) else ButtonDefaults.buttonColors(
-                                containerColor = scheme.surfaceContainerHigh,
-                                contentColor = scheme.onSurface,
-                            ),
+                            ) else ButtonDefaults.filledTonalButtonColors(),
                             transformation = SurfaceTransformation(transformationSpec),
                             icon = action.icon?.let { actionIcon ->
                                 { Icon(actionIcon, contentDescription = null) }
@@ -253,7 +271,7 @@ fun MessageTextReaderScreen(
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
     BackHandler(onBack = onDismiss)
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             modifier = Modifier
@@ -426,6 +444,12 @@ fun ChatDetailViewModel.UiMsg.localMediaFiles(): List<File> =
         when (content) {
             is ChatDetailViewModel.MessageContent.Image -> {
                 (content.localPaths + content.thumbnailPaths + listOfNotNull(content.sourcePath))
+                    .map { File(it.removePrefix("file://")) }
+                    .filter(File::isFile)
+            }
+
+            is ChatDetailViewModel.MessageContent.Video -> {
+                listOfNotNull(content.filePath)
                     .map { File(it.removePrefix("file://")) }
                     .filter(File::isFile)
             }

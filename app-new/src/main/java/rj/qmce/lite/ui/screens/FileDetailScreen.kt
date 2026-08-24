@@ -2,29 +2,35 @@ package rj.qmce.lite.ui.screens
 
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.EdgeButton
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.LocalMediaResolver
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.ChatDetailViewModel
 import java.io.File
 import java.text.DateFormat
@@ -40,7 +46,7 @@ internal fun FileDetailScreen(
     onDismiss: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val localFile = remember(content.path) {
         LocalMediaResolver.resolveFile(content.path)
     }
@@ -49,120 +55,208 @@ internal fun FileDetailScreen(
             .format(Date(normalizeEpochMillis(epoch)))
     }
     val status = fileTransferStatus(content, localFile != null)
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
+    val scheme = MaterialTheme.colorScheme
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            "文件详情",
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold
-        )
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = content.name,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        FileDetailLine("大小", Formatter.formatShortFileSize(context, content.sizeBytes))
-        FileDetailLine("状态", status)
-        content.progress?.takeIf { localFile == null }?.let { FileDetailLine("进度", "$it%") }
-        content.downloadError?.takeIf { localFile == null }?.let { FileDetailLine("下载", it) }
-        fileExtensionLabel(content.name)?.let { FileDetailLine("类型", it) }
-        expiry?.let { FileDetailLine("到期", it) }
-        content.invalidState?.takeIf { it != 0 }?.let { FileDetailLine("文件状态", "不可用 ($it)") }
-        content.fileUuid?.let { FileDetailLine("文件标识", it.take(24)) }
+    val listBody: @Composable BoxScope.(PaddingValues) -> Unit = { contentPadding ->
+        TransformingLazyColumn(
+            state = listState,
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            item(key = "file-detail-header") {
+                QmceListHeader(
+                    text = "文件详情",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "file-name") {
+                Text(
+                    text = content.name,
+                    color = scheme.onSurface,
+                    style = MaterialTheme.typography.titleSmall,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+            item(key = "file-info-header") {
+                QmceListHeader(
+                    text = "信息",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "file-size") {
+                FileDetailInfoRow(
+                    label = "大小",
+                    value = Formatter.formatShortFileSize(context, content.sizeBytes),
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            item(key = "file-status") {
+                FileDetailInfoRow(
+                    label = "状态",
+                    value = status,
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
+            content.progress?.takeIf { localFile == null }?.let { progress ->
+                item(key = "file-progress") {
+                    FileDetailInfoRow(
+                        label = "进度",
+                        value = "$progress%",
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
+            }
+            content.downloadError?.takeIf { localFile == null }?.let { error ->
+                item(key = "file-download-error") {
+                    FileDetailInfoRow(
+                        label = "下载",
+                        value = error,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
+            }
+            fileExtensionLabel(content.name)?.let { type ->
+                item(key = "file-type") {
+                    FileDetailInfoRow(
+                        label = "类型",
+                        value = type,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
+            }
+            expiry?.let { expiryText ->
+                item(key = "file-expiry") {
+                    FileDetailInfoRow(
+                        label = "到期",
+                        value = expiryText,
+                        modifier = Modifier.transformedHeight(this, transformationSpec),
+                        transformation = SurfaceTransformation(transformationSpec),
+                    )
+                }
+            }
+            if (localFile == null) {
+                downloadUnavailableReason?.let { reason ->
+                    item(key = "file-unavailable-reason") {
+                        Text(
+                            text = reason,
+                            color = scheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .transformedHeight(this, transformationSpec)
+                                .graphicsLayer {
+                                    with(SurfaceTransformation(transformationSpec)) {
+                                        applyContainerTransformation()
+                                        applyContentTransformation()
+                                    }
+                                }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+            if (localFile != null) {
+                item(key = "file-share") {
+                    Button(
+                        onClick = { shareLocalMedia(context, localFile) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
+                        colors = ButtonDefaults.filledTonalButtonColors(),
+                        icon = { Icon(Icons.Default.Share, contentDescription = null) },
+                    ) {
+                        Text("分享")
+                    }
+                }
+            }
+        }
+    }
 
-        Spacer(Modifier.weight(1f))
-        if (localFile != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(
+    if (localFile != null) {
+        QmceScreenScaffold(
+            scrollState = listState,
+            edgeButton = {
+                EdgeButton(
                     onClick = { onOpenLocalFile(localFile) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("打开")
                 }
-                Button(
-                    onClick = { shareLocalMedia(context, localFile) },
-                    modifier = Modifier.weight(1f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-                ) {
-                    Text("分享")
-                }
-            }
-        } else {
-            downloadUnavailableReason?.let { FileDetailLine("下载", it) }
-            Button(
-                onClick = onDownloadFile,
-                enabled = downloadUnavailableReason == null &&
-                        !content.isDownloading &&
-                        (content.invalidState == null || content.invalidState == 0),
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                Text(
-                    when {
-                        downloadUnavailableReason != null -> "下载不可用"
-                        content.isDownloading -> "正在下载"
-                        content.downloadError != null -> "重新下载"
-                        else -> "下载文件"
-                    },
-                )
-            }
-        }
+            },
+            content = listBody,
+        )
+    } else {
+        QmceScreenScaffold(
+            scrollState = listState,
+            content = listBody,
+        )
     }
 }
 
 @Composable
-private fun FileDetailLine(label: String, value: String) {
-    Row(
-        modifier = Modifier
+private fun FileDetailInfoRow(
+    label: String,
+    value: String,
+    modifier: Modifier,
+    transformation: SurfaceTransformation,
+) {
+    val scheme = MaterialTheme.colorScheme
+    androidx.compose.foundation.layout.Column(
+        modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .graphicsLayer {
+                with(transformation) {
+                    applyContainerTransformation()
+                    applyContentTransformation()
+                }
+            }
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
     ) {
         Text(
             label,
-            modifier = Modifier.width(48.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodySmall
+            color = scheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
         )
         Text(
             value,
-            modifier = Modifier.weight(1f),
-            color = MaterialTheme.colorScheme.onSurface,
+            color = scheme.onSurface,
             style = MaterialTheme.typography.bodyLarge,
+            textAlign = TextAlign.Center,
             maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
 private fun fileTransferStatus(
     content: ChatDetailViewModel.MessageContent.File,
-    hasLocalFile: Boolean
+    hasLocalFile: Boolean,
 ): String = when {
     hasLocalFile -> "已缓存"
     content.invalidState != null && content.invalidState != 0 -> "文件不可用"

@@ -14,7 +14,6 @@ import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,10 +21,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -39,25 +34,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
+import androidx.wear.compose.foundation.lazy.items
+import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.Card
 import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.EdgeButton
-import androidx.wear.compose.material3.EdgeButtonSize
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
+import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.lazy.rememberTransformationSpec
+import androidx.wear.compose.material3.lazy.transformedHeight
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
+import rj.qmce.lite.ui.theme.LocalQmceAdaptive
 
 private data class LocalGalleryImage(
     val id: Long,
@@ -104,12 +105,13 @@ fun LocalImagePickerScreen(
         }
     }
     val scheme = MaterialTheme.colorScheme
-    val scaffoldState = rememberLazyListState()
+    val listState = rememberTransformingLazyColumnState()
+    val transformationSpec = rememberTransformationSpec()
     BackHandler {
         onDismiss()
     }
-    ScreenScaffold(
-        scrollState = scaffoldState,
+    QmceScreenScaffold(
+        scrollState = listState,
         scrollIndicator = null,
         edgeButton = {
             val onConfirmClick = {
@@ -130,29 +132,31 @@ fun LocalImagePickerScreen(
                             onConfirmClick()
                         },
                         enabled = selectedUris.isNotEmpty(),
-                        buttonSize = EdgeButtonSize.Small,
                     ) { Text("添加 ${selectedUris.size}") }
                 }
             } else {
                 EdgeButton(
                     onClick = onConfirmClick,
                     enabled = selectedUris.isNotEmpty(),
-                    buttonSize = EdgeButtonSize.Small,
                 ) { Text("添加 ${selectedUris.size}") }
             }
         },
-        edgeButtonSpacing = 2.5.dp,
+        edgeButtonSpacing = LocalQmceAdaptive.current.edgeButtonSpacing,
     ) { contentPadding ->
         when (val state = galleryState) {
             GalleryLoadState.Loading -> Box(
-                Modifier.fillMaxSize(),
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
             }
 
             is GalleryLoadState.Error -> Box(
-                Modifier.fillMaxSize(),
+                Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -164,7 +168,12 @@ fun LocalImagePickerScreen(
 
             is GalleryLoadState.Ready -> {
                 if (state.images.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(contentPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text(
                             "没有可用图片",
                             color = scheme.onSurfaceVariant,
@@ -172,14 +181,15 @@ fun LocalImagePickerScreen(
                         )
                     }
                 } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                    TransformingLazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = contentPadding,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(state.images, key = { image -> image.id }) { image ->
+                        items(
+                            items = state.images,
+                            key = { image -> image.id },
+                        ) { image ->
                             val uriString = image.uri.toString()
                             val isAdded = uriString in existingUris
                             val isSelected = uriString in selectedUris
@@ -197,7 +207,14 @@ fun LocalImagePickerScreen(
                                 enabled = !isAdded,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(116.dp),
+                                    .height(96.dp)
+                                    .transformedHeight(this, transformationSpec)
+                                    .graphicsLayer {
+                                        with(SurfaceTransformation(transformationSpec)) {
+                                            applyContainerTransformation()
+                                            applyContentTransformation()
+                                        }
+                                    },
                                 colors = CardDefaults.cardColors(
                                     containerColor = scheme.surfaceContainer,
                                 ),
@@ -209,7 +226,9 @@ fun LocalImagePickerScreen(
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .background(Color(0x66000000)),
+                                                .background(
+                                                    MaterialTheme.colorScheme.background.copy(alpha = 0.4f)
+                                                ),
                                         )
                                         Box(
                                             modifier = Modifier
@@ -306,6 +325,7 @@ private fun loadSystemThumbnail(context: Context, image: LocalGalleryImage): Bit
         return runCatching { resolver.loadThumbnail(image.uri, Size(320, 320), null) }.getOrNull()
     }
     return runCatching {
+        @Suppress("DEPRECATION")
         MediaStore.Images.Thumbnails.getThumbnail(
             resolver,
             image.id,

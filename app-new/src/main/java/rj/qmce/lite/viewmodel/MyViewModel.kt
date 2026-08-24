@@ -49,7 +49,7 @@ class MyViewModel : ViewModel() {
             val selfProfileService = KernelBridge.getSelfProfileService()
             val localNickname = selfProfileService?.getCurrentAccountNickName(uin).orEmpty()
             val localAvatarPath = selfProfileService?.getCurrentAccountAvatarPath(uin).orEmpty()
-            val profileService = KernelBridge.getKernelService()?.profileService
+            val profileService = KernelBridge.getKernelService()?.getProfileService()
             val uid = profileService
                 ?.getUidByUin("QMCE-My", arrayListOf(uin.toLongOrNull() ?: 0L))
                 ?.values
@@ -58,9 +58,9 @@ class MyViewModel : ViewModel() {
             val info = profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
             applyProfile(uin, localNickname, localAvatarPath, info)
 
-            if (forceRefresh) {
+            if (forceRefresh && profileService != null) {
                 runCatching {
-                    profileService?.getUserSimpleInfo(
+                    profileService.getUserSimpleInfo(
                         true,
                         arrayListOf(uid.ifBlank { uin }),
                         object : IOperateCallback {
@@ -72,7 +72,7 @@ class MyViewModel : ViewModel() {
                 }.onFailure { error -> Log.w(TAG, "profile refresh request failed", error) }
                 Thread.sleep(700)
                 val refreshed =
-                    profileService?.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
+                    profileService.getCoreAndBaseInfo("QMCE-My", arrayListOf(uid))?.get(uid)
                 applyProfile(
                     uin = uin,
                     localNickname = selfProfileService?.getCurrentAccountNickName(uin).orEmpty(),
@@ -88,27 +88,6 @@ class MyViewModel : ViewModel() {
         _operationStatus.value = "正在同步消息…"
         chatListVm.refreshContacts()
         _operationStatus.value = "已请求消息同步"
-    }
-
-    fun clearChatCache() {
-        val storageService = KernelBridge.getKernelService()?.storageCleanService
-        if (storageService == null) {
-            _operationStatus.value = "缓存服务暂不可用"
-            return
-        }
-        _operationStatus.value = "正在清理聊天缓存…"
-        runCatching {
-            storageService.clearAllChatCacheInfo(object : IOperateCallback {
-                override fun onResult(code: Int, errMsg: String?) {
-                    _operationStatus.value =
-                        if (code == 0) "聊天缓存已清理" else "清理失败: ${errMsg.orEmpty()}"
-                    Log.d(TAG, "clear chat cache: code=$code, errMsg=$errMsg")
-                }
-            })
-        }.onFailure { error ->
-            _operationStatus.value = "清理失败: ${error.javaClass.simpleName}"
-            Log.w(TAG, "clear chat cache failed", error)
-        }
     }
 
     fun clearOperationStatus() {

@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -39,17 +40,18 @@ import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
-import com.tencent.qqnt.kernel.nativeinterface.MemberRole
+import com.tencent.qqnt.kernelpublic.nativeinterface.MemberRole
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rj.qmce.lite.data.media.MediaStoreSaver
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.GroupInfoState
 import rj.qmce.lite.viewmodel.GroupInfoViewModel
 import java.io.File
@@ -119,7 +121,7 @@ fun GroupInfoScreen(
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -203,6 +205,13 @@ fun GroupInfoScreen(
                     }
                 }
             }
+            item(key = "group-info-actions-header") {
+                QmceListHeader(
+                    text = "操作",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
             item(key = "group-info-members") {
                 Button(
                     onClick = onOpenMembers,
@@ -274,14 +283,10 @@ fun GroupInfoScreen(
                 }
             }
             item(key = "group-bulletin-title") {
-                Text(
-                    "群公告",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                QmceListHeader(
+                    text = "群公告",
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                    transformation = SurfaceTransformation(transformationSpec),
                 )
             }
             if (state.bulletinLoading && state.bulletins.isEmpty()) {
@@ -321,7 +326,7 @@ fun GroupInfoScreen(
                                 Text(
                                     if (bulletin.pinned) "置顶公告" else "群公告",
                                     style = MaterialTheme.typography.labelMedium,
-                                    color = MaterialTheme.colorScheme.primary,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Text(
                                     bulletin.text.ifBlank { "该公告没有可显示的文字内容" },
@@ -371,9 +376,15 @@ private fun androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScop
             modifier = Modifier
                 .fillMaxWidth()
                 .transformedHeight(this, transformationSpec)
+                .graphicsLayer {
+                    with(SurfaceTransformation(transformationSpec)) {
+                        applyContainerTransformation()
+                        applyContentTransformation()
+                    }
+                }
                 .padding(horizontal = 16.dp, vertical = 5.dp),
         ) {
-            Text(label, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+            Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
             Text(value.ifBlank { "未知" }, style = MaterialTheme.typography.bodySmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
 }

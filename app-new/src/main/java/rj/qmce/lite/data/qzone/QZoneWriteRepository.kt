@@ -173,7 +173,7 @@ class QZoneWriteRepository {
                 options.inJustDecodeBounds = true
                 BitmapFactory.decodeFile(file.absolutePath, options)
                 E = options.outWidth
-                F = options.outHeight
+                G = options.outHeight
             }
         }
     }

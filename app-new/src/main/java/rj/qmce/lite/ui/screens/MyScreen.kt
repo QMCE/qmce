@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -39,9 +40,10 @@ import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
+import androidx.wear.compose.material3.TextDefaults
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
@@ -68,20 +70,33 @@ fun MyScreen(
 
     LaunchedEffect(uin) { vm.load(uin) }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
             modifier = Modifier.fillMaxSize(),
         ) {
             item(key = "my-profile") {
-                ProfileHeader(
-                    profile = profile,
-                    avatarModel = avatarModel,
-                    onAvatarError = {
-                        if (profile.avatarPath.isBlank() && avatarIndex < profile.avatarUrls.lastIndex) avatarIndex++
-                    },
-                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(TextDefaults.minimumTopListContentPadding)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        },
+                ) {
+                    ProfileHeader(
+                        profile = profile,
+                        avatarModel = avatarModel,
+                        onAvatarError = {
+                            if (profile.avatarPath.isBlank() && avatarIndex < profile.avatarUrls.lastIndex) avatarIndex++
+                        },
+                    )
+                }
             }
             item(key = "my-refresh-profile") {
                 val params = mapOf("function_name" to "刷新资料")
@@ -144,6 +159,13 @@ fun MyScreen(
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
+                        .graphicsLayer {
+                            with(SurfaceTransformation(transformationSpec)) {
+                                applyContainerTransformation()
+                                applyContentTransformation()
+                            }
+                        }
                         .padding(horizontal = 16.dp, vertical = 5.dp),
                 )
             }
@@ -209,6 +231,13 @@ fun MyScreen(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .graphicsLayer {
+                                with(SurfaceTransformation(transformationSpec)) {
+                                    applyContainerTransformation()
+                                    applyContentTransformation()
+                                }
+                            }
                             .padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                 }

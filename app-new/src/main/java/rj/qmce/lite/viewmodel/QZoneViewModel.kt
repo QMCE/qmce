@@ -25,6 +25,11 @@ class QZoneViewModel : ViewModel() {
     companion object {
         private const val TAG = "QMCE-QZone"
         private const val AVATAR_BASE = "https://thirdqq.qlogo.cn/headimg_dl?spec=100&dst_uin="
+
+        // A refresh can return "success" while the first page has not arrived yet (slow
+        // backend). Retry a few times before settling on an empty space.
+        private const val MAX_EMPTY_REFRESH_RETRIES = 3
+        private const val EMPTY_REFRESH_RETRY_DELAY_MS = 4_000L
     }
 
     data class FeedItem(
@@ -112,6 +117,15 @@ class QZoneViewModel : ViewModel() {
     private val _loading = MutableStateFlow(false)
     val loading: StateFlow<Boolean> = _loading
 
+    private val _feedError = MutableStateFlow<String?>(null)
+    val feedError: StateFlow<String?> = _feedError
+
+    private val _loadMoreError = MutableStateFlow<String?>(null)
+    val loadMoreError: StateFlow<String?> = _loadMoreError
+
+    private val _noMoreData = MutableStateFlow(false)
+    val noMoreData: StateFlow<Boolean> = _noMoreData
+
     private var runtime: AppRuntime? = null
     private var loaded = false
     private val feedLoadLock = Any()
@@ -119,12 +133,14 @@ class QZoneViewModel : ViewModel() {
     private var activeFeedLoad: Job? = null
     private var loadingMore = false
     private var lastLoadMoreTime = 0L
-    private var noMoreData = false
     private val _loadingMore = MutableStateFlow(false)
     val loadingMoreFlow: StateFlow<Boolean> = _loadingMore
     private var loadMoreStartTime = 0L
     private val feedRetryLock = Any()
     private var feedRetryJob: Job? = null
+    private val emptyRetryLock = Any()
+    private var emptyRetryJob: Job? = null
+    private var emptyRefreshAttempts = 0
     private val feedDataById = HashMap<String, BusinessFeedData>()
     private var lastSubmittedFingerprint = ""
     private val qZoneFeedRepository = QZoneFeedRepository()
@@ -156,12 +172,50 @@ class QZoneViewModel : ViewModel() {
         }
     }
 
+    /**
+     * A feed refresh can report success before the first page has actually landed (slow
+     * backend / cold cache). Rather than permanently showing 暂无动态, re-run the refresh a
+     * bounded number of times. The counter is reset to 0 in [processFeeds] the moment real
+     * feeds arrive, so this never loops once data exists.
+     */
+    private fun scheduleEmptyRefreshRetry() {
+        synchronized(emptyRetryLock) {
+            if (emptyRefreshAttempts >= MAX_EMPTY_REFRESH_RETRIES) {
+                Log.d(TAG, "empty feed refresh retry budget exhausted; keeping empty state")
+                _statusText.value = "暂无动态"
+                _loading.value = false
+                loaded = true
+                return
+            }
+            if (emptyRetryJob?.isActive == true) return
+            emptyRefreshAttempts++
+            val attempt = emptyRefreshAttempts
+            _statusText.value = "加载空间动态..."
+            _loading.value = true
+            emptyRetryJob = viewModelScope.launch(Dispatchers.IO) {
+                delay(EMPTY_REFRESH_RETRY_DELAY_MS)
+                synchronized(emptyRetryLock) { emptyRetryJob = null }
+                if (_feeds.value.isEmpty()) {
+                    Log.d(TAG, "retrying empty feed refresh, attempt=$attempt")
+                    loadFeeds(forceRefresh = true)
+                }
+            }
+        }
+    }
+
+    private fun cancelEmptyRefreshRetry() {
+        synchronized(emptyRetryLock) {
+            emptyRetryJob?.cancel()
+            emptyRetryJob = null
+        }
+    }
+
     fun isLoadingMore(): Boolean = loadingMore
 
-    fun hasMoreData(): Boolean = !noMoreData
+    fun hasMoreData(): Boolean = !_noMoreData.value
 
     fun resetNoMoreData() {
-        noMoreData = false
+        _noMoreData.value = false
     }
 
     fun publishText(text: String) {
@@ -408,10 +462,11 @@ class QZoneViewModel : ViewModel() {
     }
 
     fun loadMore() {
-        if (loadingMore || noMoreData) return
+        if (loadingMore || _noMoreData.value) return
         if (System.currentTimeMillis() - lastLoadMoreTime < 3000) return
         loadingMore = true
         _loadingMore.value = true
+        _loadMoreError.value = null
         lastLoadMoreTime = System.currentTimeMillis()
         loadMoreStartTime = System.currentTimeMillis()
         Log.d(TAG, "loadMore via svc.n()")
@@ -419,19 +474,22 @@ class QZoneViewModel : ViewModel() {
             try {
                 val prevSize = _feeds.value.size
                 val newSize = qZoneFeedRepository.loadMore(prevSize, ::processFeeds) ?: run {
+                    // Feed service not ready yet — a normal cold-start race. The original
+                    // implementation ignored this silently; surfacing it as an error made
+                    // ordinary launches show a spurious "加载更多失败".
                     Log.w(TAG, "loadMore ignored: feed service unavailable")
                     return@launch
                 }
                 val elapsed = System.currentTimeMillis() - loadMoreStartTime
                 if (elapsed < 500) Thread.sleep(500 - elapsed)
-                loadingMore = false
-                _loadingMore.value = false
                 Log.d(TAG, "loadMore done: prev=$prevSize, now=$newSize")
                 if (newSize > prevSize) {
-                    noMoreData = false
                     Log.d(TAG, "loadMore received more feeds: prev=$prevSize, now=$newSize")
                 } else {
-                    noMoreData = false
+                    // The feed backend exposes no terminal "end of list" signal: a page
+                    // with no new items only means nothing arrived within the poll window.
+                    // Keep pagination retryable (do NOT flip _noMoreData) so a slow page
+                    // does not permanently stop further loading.
                     Log.d(TAG, "loadMore produced no new page; keeping pagination retryable")
                 }
             } catch (e: Exception) {
@@ -453,7 +511,10 @@ class QZoneViewModel : ViewModel() {
             loaded = false
             activeFeedLoad = null
         }
-        noMoreData = false
+        if (forceRefresh) cancelFeedRetry()
+        cancelEmptyRefreshRetry()
+        _noMoreData.value = false
+        _feedError.value = null
         _loading.value = true
         _statusText.value = "加载空间动态..."
 
@@ -465,14 +526,33 @@ class QZoneViewModel : ViewModel() {
                 )) {
                     QZoneFeedRepository.RefreshResult.Success -> {
                         val hasFeeds = _feeds.value.isNotEmpty()
-                        finishFeedLoad(generation, hasFeeds)
-                        if (hasFeeds) cancelFeedRetry()
-                        else scheduleFeedRetry("empty-success")
+                        if (hasFeeds) {
+                            finishFeedLoad(generation, success = true)
+                            cancelFeedRetry()
+                            cancelEmptyRefreshRetry()
+                        } else {
+                            // Keep loading UI through the empty-retry budget; only settle on
+                            // "暂无动态" once retries are exhausted.
+                            cancelFeedRetry()
+                            val canRetry = synchronized(emptyRetryLock) {
+                                emptyRefreshAttempts < MAX_EMPTY_REFRESH_RETRIES
+                            }
+                            if (canRetry) {
+                                _statusText.value = "加载空间动态..."
+                                _loading.value = true
+                                if (!isCurrentFeedLoad(generation)) return@launch
+                                scheduleEmptyRefreshRetry()
+                            } else {
+                                _statusText.value = "暂无动态"
+                                finishFeedLoad(generation, success = true, preserveStatus = true)
+                            }
+                        }
                     }
                     QZoneFeedRepository.RefreshResult.Cancelled -> Unit
                     is QZoneFeedRepository.RefreshResult.Unavailable -> {
                         _statusText.value = result.reason
-                        finishFeedLoad(generation, false)
+                        _feedError.value = result.reason
+                        finishFeedLoad(generation, success = false, preserveStatus = true)
                         scheduleFeedRetry("unavailable-${result.reason}")
                     }
                 }
@@ -480,7 +560,8 @@ class QZoneViewModel : ViewModel() {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "loadFeeds error", e)
                 _statusText.value = "加载失败: ${e.message}"
-                finishFeedLoad(generation, false)
+                _feedError.value = _statusText.value
+                finishFeedLoad(generation, success = false, preserveStatus = true)
                 scheduleFeedRetry("exception-${e.javaClass.simpleName}")
             } finally {
                 synchronized(feedLoadLock) {
@@ -596,19 +677,28 @@ class QZoneViewModel : ViewModel() {
         if (distinctItems.isNotEmpty()) {
             lastSubmittedFingerprint = currentFingerprint
             _feeds.value = distinctItems
+            // Real feeds arrived (initial load, retry, or late observer event) — the
+            // empty-refresh retry budget no longer applies.
+            synchronized(emptyRetryLock) { emptyRefreshAttempts = 0 }
         }
         _statusText.value = if (distinctItems.isEmpty()) "暂无动态" else ""
         if (finishLoading) _loading.value = false
         Log.d(TAG, "processed ${distinctItems.size} feeds")
     }
 
-    private fun finishFeedLoad(generation: Long, success: Boolean) {
+    private fun finishFeedLoad(
+        generation: Long,
+        success: Boolean,
+        preserveStatus: Boolean = false,
+    ) {
         if (!isCurrentFeedLoad(generation)) return
         _loading.value = false
         synchronized(feedLoadLock) {
             if (feedLoadGeneration == generation) loaded = success
         }
-        if (!success && _feeds.value.isEmpty()) _statusText.value = "加载失败，请重试"
+        if (!success && _feeds.value.isEmpty() && !preserveStatus && _statusText.value.isBlank()) {
+            _statusText.value = "加载失败，请重试"
+        }
     }
 
     private fun isCurrentFeedLoad(generation: Long): Boolean = synchronized(feedLoadLock) {
@@ -689,6 +779,7 @@ class QZoneViewModel : ViewModel() {
 
     override fun onCleared() {
         cancelFeedRetry()
+        cancelEmptyRefreshRetry()
         qZoneFeedRepository.close()
         super.onCleared()
     }

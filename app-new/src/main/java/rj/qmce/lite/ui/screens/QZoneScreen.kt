@@ -28,19 +28,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
-import androidx.wear.compose.material3.ButtonDefaults
-import androidx.wear.compose.material3.Card
+import androidx.wear.compose.material3.AppCard
+import androidx.wear.compose.material3.CardDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.CompactButton
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.TransformationSpec
@@ -63,11 +65,15 @@ fun QZoneScreen(
     val feeds by vm.feeds.collectAsState()
     val statusText by vm.statusText.collectAsState()
     val loading by vm.loading.collectAsState()
+    val feedError by vm.feedError.collectAsState()
     val isLoadingMore by vm.loadingMoreFlow.collectAsState()
+    val loadMoreError by vm.loadMoreError.collectAsState()
+    val noMoreData by vm.noMoreData.collectAsState()
     val operationStatus by vm.operationStatus.collectAsState()
     val scheme = MaterialTheme.colorScheme
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
+    val isFeedError = feedError != null
 
     LaunchedEffect(listState.canScrollForward, feeds.isNotEmpty(), loading, isLoadingMore) {
         if (!listState.canScrollForward && feeds.isNotEmpty() && !loading && !isLoadingMore && vm.hasMoreData()) {
@@ -75,7 +81,7 @@ fun QZoneScreen(
         }
     }
 
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             modifier = Modifier.fillMaxSize(),
             state = listState,
@@ -89,24 +95,52 @@ fun QZoneScreen(
                         .transformedHeight(this, transformationSpec),
                     elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
                 ) { reportTarget ->
-                    CompactButton(
-                        onClick = {
-                            OfficialReportBridge.reportElementClick(
-                                target = reportTarget,
-                                elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
-                            )
-                            onOpenComposer()
-                        },
-                        modifier = Modifier.padding(vertical = 3.dp),
-                        colors = ButtonDefaults.filledVariantButtonColors(),
-                        transformation = SurfaceTransformation(transformationSpec),
-                        icon = { Icon(Icons.Default.Add, contentDescription = "发表动态") },
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CompactButton(
+                            onClick = {
+                                OfficialReportBridge.reportElementClick(
+                                    target = reportTarget,
+                                    elementId = OfficialReportBridge.ElementIds.RELEASE_DYNAMIC,
+                                )
+                                onOpenComposer()
+                            },
+                            transformation = SurfaceTransformation(transformationSpec),
+                            icon = {
+                                Icon(Icons.Default.Add, contentDescription = "发表动态")
+                            },
+                        )
+                    }
+                }
+            }
+            if (statusText.isNotEmpty() && statusText != "暂无动态") {
+                item(key = "qzone-status") {
+                    QZoneListNotice(
+                        statusText,
+                        if (isFeedError) scheme.error else scheme.outline,
+                        transformationSpec,
                     )
                 }
             }
-            if (statusText.isNotEmpty()) {
-                item(key = "qzone-status") {
-                    QZoneListNotice(statusText, scheme.outline, transformationSpec)
+            if (isFeedError) {
+                item(key = "qzone-retry-feed") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        Button(
+                            onClick = { vm.loadFeeds(forceRefresh = true) },
+                            enabled = !loading,
+                            transformation = SurfaceTransformation(transformationSpec),
+                        ) {
+                            Text(if (loading) "重试中…" else "重试")
+                        }
+                    }
                 }
             }
             if (operationStatus.isNotEmpty()) {
@@ -135,7 +169,7 @@ fun QZoneScreen(
                     }
                 }
 
-                feeds.isEmpty() -> {
+                feeds.isEmpty() && !isFeedError -> {
                     item(key = "qzone-empty") {
                         QZoneListNotice(
                             "暂无动态",
@@ -146,7 +180,7 @@ fun QZoneScreen(
                     }
                 }
 
-                else -> {
+                feeds.isNotEmpty() -> {
                     feeds.forEach { feed ->
                         item(key = "feed:${feed.feedId}") {
                             OfficialReportTargetBox(
@@ -217,7 +251,26 @@ fun QZoneScreen(
                         )
                     }
                 }
-            } else if (feeds.isNotEmpty() && !vm.hasMoreData()) {
+            } else if (loadMoreError != null) {
+                item(key = "qzone-load-more-error") {
+                    QZoneListNotice(loadMoreError.orEmpty(), scheme.error, transformationSpec)
+                }
+                item(key = "qzone-retry-load-more") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CompactButton(
+                            onClick = vm::loadMore,
+                            transformation = SurfaceTransformation(transformationSpec),
+                            label = { Text("重试加载") },
+                        )
+                    }
+                }
+            } else if (feeds.isNotEmpty() && noMoreData) {
                 item(key = "qzone-end") {
                     QZoneListNotice(
                         "— 已经到底了 —",
@@ -242,6 +295,7 @@ private fun TransformingLazyColumnItemScope.QZoneListNotice(
         text = text,
         style = MaterialTheme.typography.bodySmall,
         color = color,
+        textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
             .transformedHeight(this, transformationSpec)
@@ -268,57 +322,39 @@ private fun FeedPreviewCard(
         feed.displayTime,
         feed.time
     ) { feed.displayTime.ifBlank { feedTimeText(feed.time) } }
-    Card(
+    AppCard(
         onClick = onOpenDetail,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 3.dp),
         transformation = transformation,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(CircleShape)
-                        .background(scheme.surfaceContainerHigh),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AsyncImage(
-                        model = avatarUrl,
-                        contentDescription = null,
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Column {
-                    Text(
-                        feed.nick,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
-                    Text(
-                        timeText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.outline
-                    )
-                }
-            }
-            if (feed.content.isNotBlank()) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    feed.content,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
+        appImage = {
+            Box(
+                modifier = Modifier
+                    .size(CardDefaults.AppImageSize)
+                    .clip(CircleShape)
+                    .background(scheme.surfaceContainerHigh),
+                contentAlignment = Alignment.Center,
+            ) {
+                AsyncImage(
+                    model = avatarUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
                 )
             }
+        },
+        appName = { Text(feed.nick, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        time = { Text(timeText) },
+        title = {
+            Text(
+                feed.content.ifBlank { "该动态没有文字内容" },
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             feed.forward?.let {
                 Spacer(Modifier.height(6.dp))
                 ForwardFeedContent(it, hasMedia = feed.picUrls.isNotEmpty())
@@ -379,6 +415,7 @@ internal fun feedTimeText(time: Long): String =
 internal fun ForwardFeedContent(
     forward: QZoneViewModel.ForwardInfo,
     hasMedia: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val author = forward.author.ifBlank { "原作者" }
@@ -389,7 +426,7 @@ internal fun ForwardFeedContent(
         else -> "该动态没有文字内容"
     }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(scheme.surfaceContainerHigh)

@@ -779,7 +779,10 @@ public object ScreenScaffoldDefaults {
     /** The minimum space between [EdgeButton] and list content in [ScreenScaffold]. */
     public val EdgeButtonMinSpacing: Dp = EdgeButtonVerticalPadding
 
-    /** Default contentPadding added to the [ScreenScaffold]. */
+    /**
+     * Default contentPadding added to the [ScreenScaffold].
+     * Matches Wear Material 3: ~5.2% horizontal and ~10% vertical of screen size.
+     */
     public val contentPadding: PaddingValues
         @Composable
         get() =

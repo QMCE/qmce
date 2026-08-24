@@ -11,7 +11,8 @@ import com.tencent.qqnt.kernel.nativeinterface.IOperateCallback
 import com.tencent.qqnt.kernel.nativeinterface.MsgRecord
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactInfo
 import com.tencent.qqnt.kernel.nativeinterface.RecentContactListChangedInfo
-import com.tencent.qqnt.kernel.utils.RecentThreadDispatcher
+import com.tencent.qqnt.kernelpublic.nativeinterface.MsgAbstract
+import com.tencent.qqnt.kernelpublic.nativeinterface.MsgAbstractElement
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +23,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import mqq.app.AppRuntime
+import rj.qmce.lite.agent.AgentSession
+import rj.qmce.lite.data.chat.MediaSdkAccess
 import rj.qmce.lite.kernel.KernelBridge
+import rj.qmce.lite.kernel.SdkCompat
 
 class ChatListViewModel : ViewModel() {
 
@@ -85,6 +89,14 @@ class ChatListViewModel : ViewModel() {
                 loadContacts(runtime)
             }
         }
+    }
+
+    fun markWaitingForKernel() {
+        mainHandler.post { _statusText.value = "等待内核会话服务…" }
+    }
+
+    fun markKernelInitFailed() {
+        mainHandler.post { _statusText.value = "内核会话初始化失败，稍后自动重试" }
     }
 
     private fun cancelLoadRetry() {
@@ -204,6 +216,18 @@ class ChatListViewModel : ViewModel() {
                 publishCache("sent-message")
             }
         }
+        scope.launch {
+            rj.qmce.lite.agent.AgentSubsystem.active.collect {
+                mainHandler.post { publishCache("agent-active") }
+            }
+        }
+        scope.launch {
+            AgentSession.lastText.collect {
+                if (rj.qmce.lite.agent.AgentSubsystem.isActive) {
+                    mainHandler.post { publishCache("agent-summary") }
+                }
+            }
+        }
     }
 
     private fun patchSentMessages() = synchronized(cacheLock) {
@@ -213,7 +237,7 @@ class ChatListViewModel : ViewModel() {
             val text = stored.elements?.firstOrNull { it.elementType == 1 }
                 ?.textElement?.content ?: ""
             if (text.isNotBlank()) {
-                val el = com.tencent.qqnt.kernel.nativeinterface.MsgAbstractElement()
+                val el = MsgAbstractElement()
                 el.content = text
                 el.elementType = 1
                 c.abstractContent = arrayListOf(el)
@@ -226,13 +250,41 @@ class ChatListViewModel : ViewModel() {
         }
     }
 
-    private fun replaceCache(contacts: Collection<RecentContactInfo>, source: String) =
+    private fun contactComparator(): Comparator<RecentContactInfo> =
+        compareByDescending<RecentContactInfo> { it.topFlag.toInt() == 1 }
+            .thenByDescending { contact ->
+                val sortField = contact.sortField
+                if (sortField != 0L) sortField else contact.msgTime
+            }
+
+    private fun orderedContactIds(contacts: Collection<RecentContactInfo>): List<Long> =
+        contacts.sortedWith(contactComparator()).map { it.contactId }
+
+    private fun runOnRecentThread(block: () -> Unit) {
+        val dispatched = runCatching {
+            MediaSdkAccess.dispatchOnRecentThread(block)
+            true
+        }.onFailure {
+            Log.w(TAG, "recentDispatcher unavailable, applying inline", it)
+        }.getOrDefault(false)
+        if (!dispatched) {
+            runCatching(block).onFailure {
+                Log.w(TAG, "recent apply fallback failed", it)
+            }
+        }
+    }
+
+    private fun replaceCache(
+        contacts: Collection<RecentContactInfo>,
+        source: String,
+        preferredOrder: List<Long>? = null,
+    ) =
         synchronized(cacheLock) {
             contactsById.clear()
             contacts.forEach { contact -> contactsById[contact.contactId] = contact }
-            sortedContactIds = contacts
-                .sortedByDescending { it.msgTime }
-                .map { it.contactId }
+            sortedContactIds = preferredOrder
+                ?.takeIf { it.isNotEmpty() }
+                ?: orderedContactIds(contactsById.values)
             Log.d(TAG, "recentCache[$source]: replace=${contactsById.size}")
         }
 
@@ -269,11 +321,10 @@ class ChatListViewModel : ViewModel() {
             contactsById[incoming.contactId] = incoming
         }
         val nativeOrder = info.sortedContactList.orEmpty()
-        if (nativeOrder.isNotEmpty()) {
-            sortedContactIds = nativeOrder
-        } else if (info.notificationType == 1) {
-            sortedContactIds =
-                contactsById.values.sortedByDescending { it.msgTime }.map { it.contactId }
+        sortedContactIds = if (nativeOrder.isNotEmpty()) {
+            nativeOrder
+        } else {
+            orderedContactIds(contactsById.values)
         }
         Log.d(
             TAG,
@@ -317,8 +368,9 @@ class ChatListViewModel : ViewModel() {
                     finishActivePullRefresh("nt-sync-end")
                     scope.launch {
                         delay(2_000)
-                        val target = runCatching { recentService.l(LIST_TYPE) }
-                            .getOrNull()
+                        val target = runCatching {
+                            SdkCompat.getRecentContactFromCache(recentService, LIST_TYPE)
+                        }.getOrNull()
                             ?.firstOrNull { it.peerUid == TARGET_PEER_UID }
                         target?.let { logDebugContacts("sync-end+2s", listOf(it)) }
                     }
@@ -342,7 +394,7 @@ class ChatListViewModel : ViewModel() {
                 "onMsgAbstractUpdate" -> {
                     @Suppress("UNCHECKED_CAST")
                     val abstracts =
-                        args?.getOrNull(0) as? List<com.tencent.qqnt.kernel.nativeinterface.MsgAbstract>
+                        args?.getOrNull(0) as? List<MsgAbstract>
                     abstracts.orEmpty()
                         .filter { it.peer?.peerUid == TARGET_PEER_UID }
                         .forEach { abstract ->
@@ -361,7 +413,7 @@ class ChatListViewModel : ViewModel() {
                 else -> null
             }
         } as IKernelMsgListener
-        msgService.s(listener)
+        SdkCompat.addMsgListener(msgService, listener)
         this.msgService = msgService
         syncProbeListener = listener
         Log.d(TAG, "syncProbe: registered")
@@ -379,10 +431,12 @@ class ChatListViewModel : ViewModel() {
             }
             contactsById.values
                 .filter { it.contactId !in emittedIds }
-                .sortedByDescending { it.msgTime }
+                .sortedWith(contactComparator())
                 .forEach(ordered::add)
             ordered
         }
+        // Agent pseudo-contact pinned at the top of the chat list.
+        prependAgentPseudoContact(visible)
         logDebugContacts("publish-$source", visible)
         _contacts.value = ContactsSnapshot(++cacheRevision, visible)
         _statusText.value = "${visible.size} 条会话"
@@ -393,6 +447,26 @@ class ChatListViewModel : ViewModel() {
                 visible.take(3).map { "${it.id}:${it.msgTime}" }
             }"
         )
+    }
+
+    /** Prepends the Agent pseudo-contact at the top of the chat list. */
+    private fun prependAgentPseudoContact(list: MutableList<RecentContactInfo>) {
+        if (!rj.qmce.lite.agent.AgentSubsystem.isActive) return
+        val summary = AgentSession.summary()
+        list.add(0, RecentContactInfo().apply {
+            peerUid = AgentSession.PEER_UID
+            peerUin = AgentSession.PEER_UIN
+            peerName = AgentSession.PEER_NAME
+            chatType = AgentSession.CHAT_TYPE
+            id = AgentSession.PEER_UID
+            msgTime = if (summary.lastTimeMillis > 0L) summary.lastTimeMillis / 1000L else 0L
+            unreadCnt = summary.unreadCount.toLong()
+            abstractContent = arrayListOf(
+                com.tencent.qqnt.kernelpublic.nativeinterface.MsgAbstractElement().apply {
+                    content = summary.lastText.ifBlank { "点此与 Fluoxetine 对话" }
+                },
+            )
+        })
     }
 
     fun loadContacts(runtime: AppRuntime?) {
@@ -415,7 +489,7 @@ class ChatListViewModel : ViewModel() {
                 }.getOrNull()
                 Log.d(TAG, "chatPoll: kernelService=$ks")
                 if (ks == null) {
-                    for (i in 0 until 30) {
+                    for (i in 0 until 15) {
                         if (!running) return@Thread
                         Thread.sleep(1000)
                         ks = runCatching {
@@ -425,42 +499,31 @@ class ChatListViewModel : ViewModel() {
                         if (ks != null) break
                     }
                     if (ks == null) {
-                        mainHandler.post { _statusText.value = "IKernelService 不可用" }
+                        mainHandler.post { _statusText.value = "等待内核会话服务…" }
                         scheduleLoadRetry(runtime, "kernel-service-unavailable")
                         return@Thread
                     }
                 }
-                val kernelService = ks!!
+                val kernelService = ks
 
-                // 等 isNTStartFinish=true，否则 recentService 永远返回 null
-                runCatching {
-                    val ksImplCls =
-                        Class.forName("com.tencent.qqnt.kernel.api.impl.KernelServiceImpl")
-                    val field = ksImplCls.getDeclaredField("isNTStartFinish"); field.isAccessible =
-                    true
-                    val atomicBool = field.get(kernelService)
-                    val getMethod = atomicBool.javaClass.getMethod("get")
-                    for (i in 0 until 60) {
-                        if (!running) return@Thread
-                        val ready = getMethod.invoke(atomicBool) as Boolean
-                        if (ready) {
-                            Log.d(TAG, "chatPoll: isNTStartFinish=true after ${i}s"); break
-                        }
-                        Log.d(TAG, "chatPoll: isNTStartFinish=false, waiting... $i")
-                        Thread.sleep(1000)
-                    }
-                }.onFailure { Log.e(TAG, "chatPoll: wait isNTStartFinish failed", it) }
+                // 等核心服务 Ready（含强制 start session），再读 recentService
+                mainHandler.post { _statusText.value = "等待内核会话服务…" }
+                val coreReady = KernelBridge.awaitCoreServices(
+                    timeoutMillis = 30_000,
+                    runtimeOverride = runtime,
+                )
+                Log.d(TAG, "chatPoll: awaitCoreServices ready=$coreReady")
 
                 val rc = KernelBridge.getRecentContactService()
-                    ?: runCatching { kernelService.recentContactService }.getOrNull()
+                    ?: runCatching { kernelService.getRecentContactService() }.getOrNull()
                 Log.d(TAG, "chatPoll: recentService=$rc")
                 var recentService = rc
                 if (recentService == null) {
-                    for (i in 0 until 30) {
+                    for (i in 0 until 15) {
                         if (!running) return@Thread
                         Thread.sleep(1000)
-                        recentService =
-                            runCatching { kernelService.recentContactService }.getOrNull()
+                        recentService = KernelBridge.getRecentContactService()
+                            ?: runCatching { kernelService.getRecentContactService() }.getOrNull()
                         Log.d(TAG, "chatPoll: recentService retry $i=$recentService")
                         if (recentService != null) break
                     }
@@ -468,14 +531,16 @@ class ChatListViewModel : ViewModel() {
                 Log.d(TAG, "chatPoll: recentService final=$recentService")
                 this@ChatListViewModel.recentService = recentService
                 if (recentService == null) {
-                    mainHandler.post { _statusText.value = "IRecentContactService 不可用" }
+                    mainHandler.post { _statusText.value = "等待内核会话服务…" }
                     scheduleLoadRetry(runtime, "recent-service-unavailable")
                     return@Thread
                 }
 
                 // 1. 先读本地缓存 (official: l(listType))
-                val cached = runCatching { recentService.l(LIST_TYPE) }.getOrNull()
-                Log.d(TAG, "chatPoll: cached(l(1))=${cached?.size}")
+                val cached = runCatching {
+                    SdkCompat.getRecentContactFromCache(recentService, LIST_TYPE)
+                }.getOrNull()
+                Log.d(TAG, "chatPoll: cached(getRecentContactFromCache(1))=${cached?.size}")
                 if (cached != null && cached.isNotEmpty()) {
                     logDebugContacts("cached", cached)
                     replaceCache(cached, "cached")
@@ -484,7 +549,6 @@ class ChatListViewModel : ViewModel() {
                 }
 
                 // 2. 立即注册 listeners（不等 buddy init，官方也是这样）
-                // 2a. 注册 V2 listener (official: w(listType, listener))
                 // 所有更新统一走 RecentThreadDispatcher，和官方一致
                 val recentContactListener: (RecentContactListChangedInfo) -> Unit = { info ->
                     Log.d(
@@ -492,18 +556,18 @@ class ChatListViewModel : ViewModel() {
                         "v2Listener: type=${info.notificationType}, changed=${info.changedList?.size}, sorted=${info.sortedContactList?.size}, listType=${info.listType}"
                     )
                     logDebugContacts("v2-changed(type=${info.notificationType})", info.changedList)
-                    RecentThreadDispatcher.a.a {
+                    runOnRecentThread {
                         applyRecentChange(info)
                         patchSentMessages()
                         publishCache("v2")
                     }
                 }
-                recentService.w(LIST_TYPE, recentContactListener)
+                SdkCompat.addRecentContactListenerV2(recentService, LIST_TYPE, recentContactListener)
                 Log.d(TAG, "chatPoll: v2Listener registered")
 
                 // 通知内核我们正在看会话列表 → 开启实时推送（官方 MiniMsgFragment.onCreateView 调用）
                 val enterInfo = com.tencent.qqnt.kernel.nativeinterface.EnterOrExitMsgListInfo(7, 1)
-                recentService.enterOrExitMsgList(enterInfo, object : IOperateCallback {
+                SdkCompat.enterOrExitMsgList(recentService, enterInfo, object : IOperateCallback {
                     override fun onResult(code: Int, errMsg: String?) {
                         Log.d(TAG, "enterOrExitMsgList(enter) code=$code, errMsg=$errMsg")
                     }
@@ -511,12 +575,19 @@ class ChatListViewModel : ViewModel() {
 
                 // 3. 主动拉取（V2 listener 已就绪）
                 val anchor = AnchorPointContactInfo()
-                Log.d(TAG, "chatPoll: calling v() to fetch contacts")
-                recentService.v(anchor, true, LIST_TYPE, 200, object : IOperateCallback {
-                    override fun onResult(code: Int, errMsg: String?) {
-                        Log.d(TAG, "chatPoll: v() result code=$code, errMsg=$errMsg")
-                    }
-                })
+                Log.d(TAG, "chatPoll: calling fetchRecentContactInfo to fetch contacts")
+                SdkCompat.fetchRecentContactInfo(
+                    recentService,
+                    anchor,
+                    true,
+                    LIST_TYPE,
+                    200,
+                    object : IOperateCallback {
+                        override fun onResult(code: Int, errMsg: String?) {
+                            Log.d(TAG, "chatPoll: fetchRecentContactInfo result code=$code, errMsg=$errMsg")
+                        }
+                    },
+                )
 
                 val msgService = KernelBridge.getMsgService()
                     ?: run {
@@ -536,7 +607,9 @@ class ChatListViewModel : ViewModel() {
                             Log.d(TAG, "recentSync: switchForeGround code=$code, errMsg=$errMsg")
                         }
                     })
-                    installSyncProbe(msgService, recentService)
+                    if (rj.qmce.lite.BuildConfig.DEBUG) {
+                        installSyncProbe(msgService, recentService)
+                    }
                     runCatching { msgService.startMsgSync() }
                         .onSuccess { Log.d(TAG, "recentSync: startMsgSync initial") }
                         .onFailure { Log.w(TAG, "recentSync: initial startMsgSync failed", it) }
@@ -606,7 +679,11 @@ class ChatListViewModel : ViewModel() {
                                 val contacts = info.changedList
                                 if (contacts != null && contacts.isNotEmpty()) {
                                     logDebugContacts("snapshot-initial", contacts)
-                                    replaceCache(contacts, "snapshot-initial")
+                                    replaceCache(
+                                        contacts,
+                                        "snapshot-initial",
+                                        info.sortedContactList,
+                                    )
                                     patchSentMessages()
                                     publishCache("snapshot-initial")
                                 }
@@ -614,8 +691,8 @@ class ChatListViewModel : ViewModel() {
                         }
                     }
 
-                // 轮询等待内核数据就绪
-                for (i in 0 until 60) {
+                // 轮询等待内核数据就绪（缩短空转，空则更早重试）
+                for (i in 0 until 30) {
                     if (!running) return@Thread
                     // 尝试通过 snapShot 获取
                     val got = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -634,7 +711,11 @@ class ChatListViewModel : ViewModel() {
                                 )
                                 if (cacheIsEmpty() && code == 0 && info?.changedList != null && info.changedList.isNotEmpty()) {
                                     logDebugContacts("snapshot-poll[$i]", info.changedList)
-                                    replaceCache(info.changedList, "snapshot-poll[$i]")
+                                    replaceCache(
+                                        info.changedList,
+                                        "snapshot-poll[$i]",
+                                        info.sortedContactList,
+                                    )
                                     patchSentMessages()
                                     publishCache("snapshot-poll[$i]")
                                     got.set(true)
@@ -645,14 +726,21 @@ class ChatListViewModel : ViewModel() {
                     if (got.get()) break
                     // 也检查 V2 listener 是否已经填充了 localCache
                     if (!cacheIsEmpty()) break
-                    if (i % 5 == 0) Log.d(TAG, "chatPoll: poll $i, still empty, retrying v()")
+                    if (i % 5 == 0) Log.d(TAG, "chatPoll: poll $i, still empty, retrying I()")
                     if (i > 0 && i % 5 == 0) {
-                        recentService.v(AnchorPointContactInfo(), true, LIST_TYPE, 200, null)
+                        SdkCompat.fetchRecentContactInfo(
+                            recentService,
+                            AnchorPointContactInfo(),
+                            true,
+                            LIST_TYPE,
+                            200,
+                            null,
+                        )
                     }
                     Thread.sleep(500)
                 }
                 if (cacheIsEmpty()) {
-                    Log.d(TAG, "chatPoll: 60s poll exhausted, no contacts")
+                    Log.d(TAG, "chatPoll: poll exhausted, no contacts")
                     mainHandler.post { _statusText.value = "暂无会话" }
                     scheduleLoadRetry(runtime, "empty-contact-cache")
                 }
@@ -691,7 +779,7 @@ class ChatListViewModel : ViewModel() {
                 }.onFailure { Log.d(TAG, "chatPoll: buddy init skipped: ${it.message}") }
 
                 runCatching {
-                    val buddySvc = runCatching { kernelService.buddyService }.getOrNull()
+                    val buddySvc = runCatching { kernelService.getBuddyService() }.getOrNull()
                     if (buddySvc != null) {
                         val nativeSvc = runCatching {
                             val m = buddySvc.javaClass.getMethod("getService"); m.invoke(buddySvc)
@@ -727,14 +815,16 @@ class ChatListViewModel : ViewModel() {
         scope.cancel()
         cancelLoadRetry()
         workerThread?.interrupt()
-        syncProbeListener?.let { listener -> runCatching { msgService?.g(listener) } }
+        syncProbeListener?.let { listener ->
+            msgService?.let { svc -> runCatching { SdkCompat.removeMsgListener(svc, listener) } }
+        }
         syncProbeListener = null
         msgService = null
         // 通知内核离开会话列表（官方 MiniMsgFragment.onDestroy 调用）
         runCatching {
             recentService?.let { svc ->
                 val exitInfo = com.tencent.qqnt.kernel.nativeinterface.EnterOrExitMsgListInfo(7, 2)
-                svc.enterOrExitMsgList(exitInfo, object : IOperateCallback {
+                SdkCompat.enterOrExitMsgList(svc, exitInfo, object : IOperateCallback {
                     override fun onResult(code: Int, errMsg: String?) {
                         Log.d(TAG, "enterOrExitMsgList(exit) code=$code")
                     }

@@ -34,14 +34,17 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.CircularProgressIndicator
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListHeaderDefaults
 import androidx.wear.compose.material3.MaterialTheme
-import androidx.wear.compose.material3.ScreenScaffold
+import rj.qmce.lite.ui.wear.QmceScreenScaffold
 import androidx.wear.compose.material3.SurfaceTransformation
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
 import rj.qmce.lite.data.chat.GroupMemberRepository
+import rj.qmce.lite.ui.wear.QmceConfirmScreen
+import rj.qmce.lite.ui.wear.QmceListHeader
 import rj.qmce.lite.viewmodel.GroupManagementState
 import rj.qmce.lite.viewmodel.GroupManagementViewModel
 import java.util.Locale
@@ -109,7 +112,7 @@ fun GroupManagementScreen(
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -126,6 +129,15 @@ fun GroupManagementScreen(
                     Icon(Icons.Default.Refresh, contentDescription = "刷新群权限")
                 }
             }
+            item(key = "group-management-header") {
+                QmceListHeader(
+                    text = "群管理",
+                    modifier = Modifier
+                        .transformedHeight(this, transformationSpec)
+                        .minimumVerticalContentPadding(ListHeaderDefaults.minimumTopListContentPadding),
+                    transformation = SurfaceTransformation(transformationSpec),
+                )
+            }
             item(key = "group-management-context") {
                 Column(
                     modifier = Modifier
@@ -134,7 +146,6 @@ fun GroupManagementScreen(
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("群管理", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "群号：${groupCode.takeIf { it > 0L } ?: "未知"}",
                         style = MaterialTheme.typography.bodySmall,
@@ -311,7 +322,7 @@ private fun GroupMemberManagementScreen(
 
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -351,6 +362,7 @@ private fun GroupMemberManagementScreen(
                     onValueChange = { query = it },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .transformedHeight(this, transformationSpec)
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
                         .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -373,7 +385,9 @@ private fun GroupMemberManagementScreen(
             if (loading && members.isEmpty()) {
                 item(key = "member-management-loading") {
                     CircularProgressIndicator(
-                        modifier = Modifier.padding(vertical = 12.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 12.dp),
                         strokeWidth = 2.dp,
                     )
                 }
@@ -383,6 +397,7 @@ private fun GroupMemberManagementScreen(
                         "暂无可管理成员",
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
                             .padding(16.dp),
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -428,7 +443,9 @@ private fun GroupMemberManagementScreen(
                         onClick = onClearError,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 8.dp, vertical = 3.dp),
+                        transformation = SurfaceTransformation(transformationSpec),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = MaterialTheme.colorScheme.errorContainer,
                             contentColor = MaterialTheme.colorScheme.onErrorContainer,
@@ -447,66 +464,16 @@ private fun GroupMemberKickConfirmScreen(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    BackHandler(onBack = onCancel)
-    val listState = rememberTransformingLazyColumnState()
-    val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
-        TransformingLazyColumn(
-            state = listState,
-            contentPadding = contentPadding,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            item(key = "member-kick-confirm-warning") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null)
-                    Text(
-                        "移出 ${member.displayName}？",
-                        style = MaterialTheme.typography.titleSmall,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        "成员将离开本群；此操作由服务端执行，失败不会从本地列表移除。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-            item(key = "member-kick-confirm-action") {
-                Button(
-                    onClick = onConfirm,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) { Text(if (busy) "处理中…" else "确认移出") }
-            }
-            item(key = "member-kick-confirm-cancel") {
-                Button(
-                    onClick = onCancel,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.filledVariantButtonColors(),
-                ) { Text("取消") }
-            }
-        }
-    }
+    QmceConfirmScreen(
+        title = "移出 ${member.displayName}？",
+        detail = "成员将离开本群；此操作由服务端执行，失败不会从本地列表移除。",
+        confirmLabel = if (busy) "处理中…" else "确认移出",
+        destructive = true,
+        confirmEnabled = !busy,
+        backEnabled = !busy,
+        onConfirm = onConfirm,
+        onBack = onCancel,
+    )
 }
 
 @Composable
@@ -528,7 +495,7 @@ private fun GroupBulletinEditorScreen(
     }
     val listState = rememberTransformingLazyColumnState()
     val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
+    QmceScreenScaffold(scrollState = listState) { contentPadding ->
         TransformingLazyColumn(
             state = listState,
             contentPadding = contentPadding,
@@ -629,6 +596,7 @@ private fun GroupBulletinEditorScreen(
                         message,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center,
@@ -641,6 +609,7 @@ private fun GroupBulletinEditorScreen(
                         message,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
                             .padding(horizontal = 14.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
@@ -650,7 +619,9 @@ private fun GroupBulletinEditorScreen(
             if (state.bulletinLoading) {
                 item(key = "bulletin-editor-loading") {
                     CircularProgressIndicator(
-                        modifier = Modifier.padding(vertical = 8.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .padding(vertical = 8.dp),
                         strokeWidth = 2.dp,
                     )
                 }
@@ -658,7 +629,9 @@ private fun GroupBulletinEditorScreen(
                 item(key = "bulletin-editor-existing-title") {
                     Text(
                         "当前公告",
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        modifier = Modifier
+                            .transformedHeight(this, transformationSpec)
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
                         style = MaterialTheme.typography.titleSmall,
                     )
                 }
@@ -691,6 +664,7 @@ private fun GroupBulletinEditorScreen(
                         "当前没有群公告",
                         modifier = Modifier
                             .fillMaxWidth()
+                            .transformedHeight(this, transformationSpec)
                             .padding(14.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -708,61 +682,13 @@ private fun GroupManagementConfirmScreen(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    BackHandler(onBack = onCancel)
-    val listState = rememberTransformingLazyColumnState()
-    val transformationSpec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = listState) { contentPadding ->
-        TransformingLazyColumn(
-            state = listState,
-            contentPadding = contentPadding,
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            item(key = "group-management-confirm-warning") {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Icon(Icons.Default.Warning, contentDescription = null)
-                    Text(
-                        if (enabled) "开启全员禁言？" else "关闭全员禁言？",
-                        style = MaterialTheme.typography.titleSmall,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        if (enabled) "群成员将暂时不能发言。" else "群成员将恢复发言。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-            }
-            item(key = "group-management-confirm-action") {
-                Button(
-                    onClick = onConfirm,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.filledTonalButtonColors(),
-                ) { Text(if (busy) "处理中…" else "确认") }
-            }
-            item(key = "group-management-confirm-cancel") {
-                Button(
-                    onClick = onCancel,
-                    enabled = !busy,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .transformedHeight(this, transformationSpec)
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                    transformation = SurfaceTransformation(transformationSpec),
-                    colors = ButtonDefaults.filledVariantButtonColors(),
-                ) { Text("取消") }
-            }
-        }
-    }
+    QmceConfirmScreen(
+        title = if (enabled) "开启全员禁言？" else "关闭全员禁言？",
+        detail = if (enabled) "群成员将暂时不能发言。" else "群成员将恢复发言。",
+        confirmLabel = if (busy) "处理中…" else "确认",
+        confirmEnabled = !busy,
+        backEnabled = !busy,
+        onConfirm = onConfirm,
+        onBack = onCancel,
+    )
 }
