@@ -43,7 +43,8 @@ class AuthViewModel : ViewModel() {
         private const val SERVICE_INIT_TIMEOUT_MS = 18_000L
         private const val FETCH_TIMEOUT_MS = 12_000L
         private const val CALLBACK_TIMEOUT_MS = 35_000L
-        private const val MAX_TICKET_ATTEMPTS = 3
+        /** Explicit type=3 failures may retry once (2 total sends). Pure watchdog timeout does not. */
+        private const val MAX_TICKET_ATTEMPTS = 2
         private const val TICKET_RETRY_DELAY_MS = 1_500L
         private const val MAX_QR_FETCH_ATTEMPTS = 3
         private const val QR_FETCH_RETRY_DELAY_MS = 1_000L
@@ -373,7 +374,14 @@ class AuthViewModel : ViewModel() {
         callbackWatchdogJob = viewModelScope.launch {
             delay(CALLBACK_TIMEOUT_MS)
             if (isCurrent(generation) && _loginUiState.value == LoginUiState.ExchangingTicket) {
-                scheduleTicketRetry(generation, "登录票据返回超时")
+                // Same QR sig is effectively one-shot; retrying without a fresh code rarely helps.
+                failRequest(
+                    generation,
+                    "登录票据返回超时，请刷新二维码重试",
+                    detail = "type=3 watchdog after ${CALLBACK_TIMEOUT_MS}ms " +
+                        "attempt=$ticketAttempt transition=${QmceApplication.isLoginTransitionActive()} " +
+                        "observer=${loginObserver != null} runtime=$appRuntime",
+                )
             }
         }
     }
@@ -393,18 +401,26 @@ class AuthViewModel : ViewModel() {
 
         ticketAttempt += 1
         val attempt = ticketAttempt
+        val observer = loginObserver
         setState(
             LoginUiState.ExchangingTicket,
             if (attempt == 1) {
                 "正在换取登录票据..."
             } else {
-                "票据返回较慢，正在重试 ($attempt/$MAX_TICKET_ATTEMPTS)"
+                "换票失败，正在重试 ($attempt/$MAX_TICKET_ATTEMPTS)"
             },
             busy = true,
         )
+        QmceLog.d(
+            TAG,
+            "auth: requestTicket attempt=$attempt account=$account " +
+                "transition=${QmceApplication.isLoginTransitionActive()} " +
+                "observer=${observer != null} runtime=$appRuntime",
+        )
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { service.getStWithQrSig(account, LOGIN_APP_ID, null) }
+                // Prefer the registered observer on the Intent; null falls back to class notify.
+                runCatching { service.getStWithQrSig(account, LOGIN_APP_ID, observer) }
             }
             if (!isCurrent(generation)) return@launch
             val immediateRet = result.getOrNull()
@@ -606,11 +622,12 @@ class AuthViewModel : ViewModel() {
                         val lastError = data.getParcelable("lastError") as? ErrMsg
                         val error = data.getString("error")
                         val errorUrl = data.getString("errorurl")
-                        QmceLog.d(
+                        QmceLog.important(
                             TAG,
                             "auth type=3 ret=$ret account=$userAccount " +
+                                "transition=${QmceApplication.isLoginTransitionActive()} " +
                                 "errTitle=${lastError?.title} errMsg=${lastError?.message} " +
-                                "errOther=${lastError?.otherinfo} error=$error errorurl=$errorUrl",
+                                "error=$error errorurl=$errorUrl",
                         )
                         viewModelScope.launch {
                             if (!isCurrent(generation)) return@launch

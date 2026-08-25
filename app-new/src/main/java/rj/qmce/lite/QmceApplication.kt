@@ -75,7 +75,17 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
                 Constants.LogoutReason.expired,
                 Constants.LogoutReason.suspend,
                 -> {
-                    // Always force UI back to login — never suppress expired/kicked.
+                    // Bind/login can emit transitional forced-offline noise. Suppress only while
+                    // the intentional login transition is active; after markLoginEstablished(),
+                    // the same reasons still force UI back to QR.
+                    if (loginTransitionActive.get()) {
+                        QmceLog.w(
+                            "QMCE",
+                            "account: suppress transitional logout reason=$reason " +
+                                "(login transition active)",
+                        )
+                        return
+                    }
                 }
             }
             forcedOfflineLatch.set(true)
@@ -142,6 +152,8 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
         }
 
         fun isForcedOfflineLatched(): Boolean = forcedOfflineLatch.get()
+
+        fun isLoginTransitionActive(): Boolean = loginTransitionActive.get()
 
         fun consumeLogoutReason() {
             _logoutReason.value = null
