@@ -42,6 +42,7 @@ class GetGroupInfoTool : ReadOnlyTool(
     inputSchema = mapOf(
         "groupCode" to schemaInt("群号，来自 list_groups"),
     ),
+    requiredParams = listOf("groupCode"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val groupCode = requireLong(input, "groupCode") ?: return err("缺少 groupCode")
@@ -66,6 +67,7 @@ class SetGroupAllMutedTool : WriteTool(
         "groupCode" to schemaInt("群号"),
         "enabled" to schemaBool("true=开启全员禁言，false=解除"),
     ),
+    requiredParams = listOf("groupCode", "enabled"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val groupCode = requireLong(input, "groupCode") ?: return err("缺少 groupCode")
@@ -94,6 +96,7 @@ class KickGroupMemberTool : WriteTool(
         "memberUid" to schemaString("成员 UID"),
         "targetRole" to schemaString("成员角色：OWNER/ADMIN/MEMBER，默认 MEMBER"),
     ),
+    requiredParams = listOf("groupCode", "memberUid"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val groupCode = requireLong(input, "groupCode") ?: return err("缺少 groupCode")
@@ -125,6 +128,7 @@ class PublishGroupBulletinTool : WriteTool(
         "text" to schemaString("公告内容"),
         "pinned" to schemaBool("是否置顶，默认 false"),
     ),
+    requiredParams = listOf("groupCode", "text"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val groupCode = requireLong(input, "groupCode") ?: return err("缺少 groupCode")

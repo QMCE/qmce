@@ -18,6 +18,7 @@ import com.tencent.watch.qzone_impl.utils.UinUtils
 import kotlinx.coroutines.delay
 import mqq.app.MobileQQ
 import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 class QZoneFeedRepository {
@@ -34,6 +35,7 @@ class QZoneFeedRepository {
     private var observedFeedService: QZoneFeedService? = null
     private var feedService: QZoneFeedService? = null
     private val lastRequestFailure = AtomicReference<String?>(null)
+    private val lastNetworkSucceeded = AtomicBoolean(false)
 
     suspend fun refresh(
         isCurrent: () -> Boolean,
@@ -64,18 +66,20 @@ class QZoneFeedRepository {
 
         val feedManager = service.i ?: return RefreshResult.Unavailable("FeedManager 不可用")
         lastRequestFailure.set(null)
+        lastNetworkSucceeded.set(false)
         val cached = feedManager.n()
         if (!cached.isNullOrEmpty()) {
             Log.d(TAG, "loaded ${cached.size} cached feeds")
             onFeeds(cached, false)
         }
 
-        requestRefresh(feedManager, force = false)
-        Log.d(TAG, "requested network feed refresh force=false")
+        val cacheEmpty = cached.isNullOrEmpty()
+        requestRefresh(feedManager, force = cacheEmpty)
+        Log.d(TAG, "requested network feed refresh force=$cacheEmpty")
 
         var lastFingerprint = feedFingerprint(cached.orEmpty())
         var sawNonEmpty = !cached.isNullOrEmpty()
-        var forced = false
+        var forced = cacheEmpty
         repeat(POLL_COUNT) { round ->
             delay(POLL_INTERVAL_MILLIS)
             if (!isCurrent()) return RefreshResult.Cancelled
@@ -106,11 +110,15 @@ class QZoneFeedRepository {
         val finalSize = feedManager.n()?.size ?: 0
         Log.d(
             TAG,
-            "feed refresh settled size=$finalSize forced=$forced failure=${lastRequestFailure.get()}",
+            "feed refresh settled size=$finalSize forced=$forced " +
+                "networkOk=${lastNetworkSucceeded.get()} failure=${lastRequestFailure.get()}",
         )
         val failure = lastRequestFailure.get()
         if (finalSize == 0 && failure != null) {
             return RefreshResult.Unavailable(failure)
+        }
+        if (finalSize == 0 && !lastNetworkSucceeded.get()) {
+            return RefreshResult.Unavailable("空间动态加载超时，请重试")
         }
         return RefreshResult.Success
     }
@@ -155,6 +163,7 @@ class QZoneFeedRepository {
                     )
                 } else {
                     lastRequestFailure.set(null)
+                    lastNetworkSucceeded.set(true)
                 }
             }
 
@@ -188,12 +197,33 @@ class QZoneFeedRepository {
     }
 
     private suspend fun awaitFeedService(isCurrent: () -> Boolean): QZoneFeedService? {
+        ensureFeedService()
         repeat(50) {
             if (!isCurrent()) return null
             QZoneFeedService.h()?.let { return it }
+            ensureFeedService()
             delay(300)
         }
-        return QZoneFeedService.h()
+        return QZoneFeedService.h() ?: run {
+            Log.w(TAG, "QZoneFeedService still unavailable after wait")
+            null
+        }
+    }
+
+    private fun ensureFeedService() {
+        if (QZoneFeedService.h() != null) return
+        runCatching {
+            val clazz = QZoneFeedService::class.java
+            clazz.declaredConstructors
+                .filter { it.parameterCount == 0 }
+                .minByOrNull { it.parameterCount }
+                ?.let { constructor ->
+                    constructor.isAccessible = true
+                    constructor.newInstance()
+                }
+        }.onFailure { error ->
+            Log.w(TAG, "failed to construct QZoneFeedService", error)
+        }
     }
 
     suspend fun loadMore(

@@ -54,8 +54,9 @@ class ChatRepository {
     private var listenerService: IMsgService? = null
     private var kernelListener: IKernelMsgListener? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var boundRichMedia = false
 
-    fun connect(runtime: AppRuntime?): Connection {
+    fun connect(runtime: AppRuntime?, bindRichMedia: Boolean = true): Connection {
         val ready = KernelBridge.awaitCoreServices()
         val kernelService = KernelBridge.getKernelService() ?: runCatching {
             runtime?.getRuntimeService(IKernelService::class.java, "")
@@ -68,7 +69,10 @@ class ChatRepository {
         if (messageService == null) return Connection.MsgServiceUnavailable(timedOut = !ready)
 
         service = messageService
-        RichMediaRepository.attachMessageService(messageService)
+        if (bindRichMedia) {
+            RichMediaRepository.attachMessageService(messageService)
+            boundRichMedia = true
+        }
         return Connection.Ready(messageService)
     }
 
@@ -635,7 +639,10 @@ class ChatRepository {
 
     fun close() {
         stopListening()
-        RichMediaRepository.detachMessageService(service)
+        if (boundRichMedia) {
+            RichMediaRepository.detachMessageService(service)
+            boundRichMedia = false
+        }
         service = null
     }
 

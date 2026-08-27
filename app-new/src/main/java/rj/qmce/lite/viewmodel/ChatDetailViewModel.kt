@@ -9,6 +9,7 @@ import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.aio.api.IAIOFileTransfer
 import com.tencent.qqnt.kernelpublic.nativeinterface.Contact
@@ -28,8 +29,13 @@ import com.tencent.qqnt.kernel.nativeinterface.RichMediaFilePathInfo
 import com.tencent.qqnt.kernel.nativeinterface.TextElement
 import com.tencent.qqnt.kernel.nativeinterface.VideoElement
 import com.tencent.qqnt.msg.api.IMsgUtilApi
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import mqq.app.AppRuntime
 import rj.qmce.lite.data.chat.AtMention
 import rj.qmce.lite.data.ai.MessageSummaryClient
@@ -452,6 +458,8 @@ class ChatDetailViewModel : ViewModel() {
     private val replyTimeoutHandler = Handler(Looper.getMainLooper())
     private val forwardDetailBackStack = ArrayDeque<ForwardDetailState.Ready>()
     private val chatRepository = ChatRepository()
+    private val connectionMutex = Mutex()
+    private var messageLoadJob: Job? = null
     private val replyNicknameCache = ConcurrentHashMap<String, String>()
     private val replyNicknameRequests = ConcurrentHashMap.newKeySet<String>()
     private val pttPlayedMessageIds = ConcurrentHashMap.newKeySet<Long>()
@@ -494,7 +502,6 @@ class ChatDetailViewModel : ViewModel() {
         replyTimeoutHandler.removeCallbacksAndMessages(null)
         forwardDetailBackStack.clear()
         OfficialPttPlayer.stopAndRelease()
-        chatRepository.close()
         synchronized(pendingMessageServiceActions) {
             pendingMessageServiceActions.clear()
         }
@@ -526,25 +533,28 @@ class ChatDetailViewModel : ViewModel() {
 
     private fun loadMessages(runtime: AppRuntime?, session: Long) {
         _statusText.value = "正在等待消息服务..."
-        Thread {
-            if (!isCurrentSession(session)) return@Thread
-            when (val connection = chatRepository.connect(runtime)) {
-                is ChatRepository.Connection.Ready -> {
-                    loadMessagesFromService(session)
-                }
+        messageLoadJob?.cancel()
+        messageLoadJob = viewModelScope.launch(Dispatchers.IO) {
+            connectionMutex.withLock {
+                if (!isCurrentSession(session)) return@launch
+                chatRepository.close()
+                when (val connection = chatRepository.connect(runtime, bindRichMedia = true)) {
+                    is ChatRepository.Connection.Ready -> {
+                        loadMessagesFromService(session)
+                    }
 
-                ChatRepository.Connection.KernelUnavailable -> {
-                    _statusText.value = "KernelService 不可用"
-                }
+                    ChatRepository.Connection.KernelUnavailable -> {
+                        if (isCurrentSession(session)) _statusText.value = "KernelService 不可用"
+                    }
 
-                is ChatRepository.Connection.MsgServiceUnavailable -> {
-                    _statusText.value =
-                        if (connection.timedOut) "消息服务初始化超时" else "MsgService 不可用"
+                    is ChatRepository.Connection.MsgServiceUnavailable -> {
+                        if (isCurrentSession(session)) {
+                            _statusText.value =
+                                if (connection.timedOut) "消息服务初始化超时" else "MsgService 不可用"
+                        }
+                    }
                 }
             }
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
@@ -770,41 +780,48 @@ class ChatDetailViewModel : ViewModel() {
         if (!messageServiceConnectionInFlight.compareAndSet(false, true)) return
 
         val runtime = chatRuntime
-        Thread {
-            val connection = chatRepository.connect(runtime)
-            val pendingActions = synchronized(pendingMessageServiceActions) {
-                pendingMessageServiceActions.toList().also { pendingMessageServiceActions.clear() }
-                    .also {
-                        messageServiceConnectionInFlight.set(false)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                connectionMutex.withLock {
+                    val alreadyReady = chatRepository.isConnected()
+                    val connection = if (alreadyReady) {
+                        null
+                    } else {
+                        chatRepository.connect(runtime, bindRichMedia = true)
                     }
-            }
-            when (connection) {
-                is ChatRepository.Connection.Ready -> {
-                    pendingActions.forEach { (actionSession, pendingAction) ->
-                        if (isCurrentSession(actionSession)) {
-                            _statusText.value = ""
-                            pendingAction()
+                    val pendingActions = synchronized(pendingMessageServiceActions) {
+                        pendingMessageServiceActions.toList()
+                            .also { pendingMessageServiceActions.clear() }
+                    }
+                    val ready = alreadyReady || connection is ChatRepository.Connection.Ready
+                    if (ready) {
+                        pendingActions.forEach { (actionSession, pendingAction) ->
+                            if (isCurrentSession(actionSession)) {
+                                _statusText.value = ""
+                                pendingAction()
+                            }
                         }
-                    }
-                }
-
-                ChatRepository.Connection.KernelUnavailable -> {
-                    if (isCurrentSession(session)) _statusText.value = "KernelService 不可用"
-                }
-
-                is ChatRepository.Connection.MsgServiceUnavailable -> {
-                    if (isCurrentSession(session)) {
-                        _statusText.value = if (connection.timedOut) {
-                            "消息服务初始化超时"
-                        } else {
-                            "MsgService 不可用"
+                    } else when (connection) {
+                        ChatRepository.Connection.KernelUnavailable -> {
+                            if (isCurrentSession(session)) _statusText.value = "KernelService 不可用"
                         }
+
+                        is ChatRepository.Connection.MsgServiceUnavailable -> {
+                            if (isCurrentSession(session)) {
+                                _statusText.value = if (connection.timedOut) {
+                                    "消息服务初始化超时"
+                                } else {
+                                    "MsgService 不可用"
+                                }
+                            }
+                        }
+
+                        else -> Unit
                     }
                 }
+            } finally {
+                messageServiceConnectionInFlight.set(false)
             }
-        }.apply {
-            isDaemon = true
-            start()
         }
     }
 
@@ -1775,6 +1792,7 @@ class ChatDetailViewModel : ViewModel() {
         }.orEmpty()
 
     override fun onCleared() {
+        messageLoadJob?.cancel()
         chatSession.incrementAndGet()
         forwardDetailRequest.incrementAndGet()
         replySourceRequest.incrementAndGet()

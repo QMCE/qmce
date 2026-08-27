@@ -50,7 +50,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val appCenterReportingEnabled: Boolean = true,
         val qmceVerboseLog: Boolean = BuildConfig.DEBUG,
         val qlogLocalWriteEnabled: Boolean = false,
-        val agentEnabled: Boolean = true,
+        val agentEnabled: Boolean = false,
         val agentSendPacketEnabled: Boolean = false,
     )
 
@@ -112,7 +112,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         appCenterReportingEnabled = preferences.getBoolean(KEY_APP_CENTER_REPORTING, true),
         qmceVerboseLog = preferences.getBoolean(KEY_QMCE_VERBOSE_LOG, BuildConfig.DEBUG),
         qlogLocalWriteEnabled = preferences.getBoolean(KEY_QLOG_LOCAL_WRITE, false),
-        agentEnabled = preferences.getBoolean(KEY_AGENT_ENABLED, true),
+        agentEnabled = preferences.getBoolean(KEY_AGENT_ENABLED, false),
         agentSendPacketEnabled = preferences.getBoolean(KEY_AGENT_SEND_PACKET, false),
     )
 

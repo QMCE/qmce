@@ -78,30 +78,34 @@ class PacketSender(
         if (!runtime.isLogin()) return PacketResult.Rejected("当前账号未登录")
         return runCatching {
             val repository = ChatRepository()
-            when (val connection = repository.connect(runtime)) {
-                is ChatRepository.Connection.Ready -> Unit
-                ChatRepository.Connection.KernelUnavailable -> error("内核不可用")
-                is ChatRepository.Connection.MsgServiceUnavailable -> error("消息服务不可用")
-            }
-            val element = MsgElement().apply {
-                elementType = 10
-                elementId = 0L
-                arkElement = ArkElement(arkJson, null, null)
-            }
-            val contact = Contact(target.chatType, target.peerUid, "")
-            if (!repository.sendMessage(
-                    contact,
-                    arrayListOf(element),
-                    callback,
+            try {
+                when (val connection = repository.connect(runtime, bindRichMedia = false)) {
+                    is ChatRepository.Connection.Ready -> Unit
+                    ChatRepository.Connection.KernelUnavailable -> error("内核不可用")
+                    is ChatRepository.Connection.MsgServiceUnavailable -> error("消息服务不可用")
+                }
+                val element = MsgElement().apply {
+                    elementType = 10
+                    elementId = 0L
+                    arkElement = ArkElement(arkJson, null, null)
+                }
+                val contact = Contact(target.chatType, target.peerUid, "")
+                if (!repository.sendMessage(
+                        contact,
+                        arrayListOf(element),
+                        callback,
+                    )
+                ) {
+                    error("消息服务不可用")
+                }
+                Log.d(
+                    TAG,
+                    "packet: queued Ark target=${target.peerUid} bytes=${arkJson.toByteArray().size}"
                 )
-            ) {
-                error("消息服务不可用")
+                PacketResult.Queued("Ark", arkJson.toByteArray().size)
+            } finally {
+                repository.close()
             }
-            Log.d(
-                TAG,
-                "packet: queued Ark target=${target.peerUid} bytes=${arkJson.toByteArray().size}"
-            )
-            PacketResult.Queued("Ark", arkJson.toByteArray().size)
         }.getOrElse { error ->
             Log.w(TAG, "packet: send Ark failed", error)
             PacketResult.Rejected(error.message ?: "Ark 发送失败")

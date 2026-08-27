@@ -21,6 +21,7 @@ class ApproveFriendTool : WriteTool(
         "reqTime" to schemaInt("申请时间戳（秒），可选"),
         "accept" to schemaBool("true=同意，false=拒绝，默认 true"),
     ),
+    requiredParams = listOf("uid"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val uid = requireString(input, "uid") ?: return err("缺少 uid")
@@ -50,6 +51,7 @@ class SetChatTopTool : WriteTool(
         "peerUin" to schemaInt("QQ号（私聊）或群号（群聊）"),
         "enabled" to schemaBool("true=置顶，false=取消置顶"),
     ),
+    requiredParams = listOf("peerUid", "enabled"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val peerUid = requireString(input, "peerUid") ?: return err("缺少 peerUid")
@@ -80,6 +82,7 @@ class SetChatMutedTool : WriteTool(
         "peerUin" to schemaInt("QQ号（私聊）或群号（群聊）"),
         "muted" to schemaBool("true=免打扰，false=恢复提醒"),
     ),
+    requiredParams = listOf("peerUid", "muted"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val peerUid = requireString(input, "peerUid") ?: return err("缺少 peerUid")
@@ -109,6 +112,7 @@ class ApproveGroupNoticeTool : WriteTool(
         "groupCode" to schemaInt("群号"),
         "accept" to schemaBool("true=同意，false=拒绝"),
     ),
+    requiredParams = listOf("seq", "groupCode"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val seq = requireLong(input, "seq") ?: return err("缺少 seq")

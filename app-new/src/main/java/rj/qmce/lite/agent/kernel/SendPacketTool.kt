@@ -24,6 +24,7 @@ class SendPacketTool : WriteTool(
         "chatType" to schemaInt("ark 目标会话类型"),
         "arkJson" to schemaString("ark 模板 JSON"),
     ),
+    requiredParams = listOf("mode"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val mode = requireString(input, "mode") ?: return err("缺少 mode")

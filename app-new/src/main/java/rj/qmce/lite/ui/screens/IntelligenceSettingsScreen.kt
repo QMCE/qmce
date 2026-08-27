@@ -123,6 +123,7 @@ fun IntelligenceSettingsScreen(
                     checked = settings.agentEnabled,
                     onCheckedChange = settingsVm::setAgentEnabled,
                     label = "启用 Fluoxetine",
+                    secondaryLabel = "默认关闭",
                     transformation = SurfaceTransformation(transformationSpec),
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                 )

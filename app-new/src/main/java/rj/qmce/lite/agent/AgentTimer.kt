@@ -84,6 +84,7 @@ class TimerTool : Tool(
     ),
     requiresApproval = true,
     isTimer = true,
+    requiredParams = listOf("duration"),
 ) {
     override suspend fun execute(input: Map<String, Any>): ToolResult {
         val durationRaw = (input["duration"] as? String)?.takeIf { it.isNotBlank() }

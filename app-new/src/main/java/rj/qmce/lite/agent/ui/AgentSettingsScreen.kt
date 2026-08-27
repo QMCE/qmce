@@ -71,7 +71,7 @@ fun AgentSettingsScreen(
                     onCheckedChange = settingsVm::setAgentEnabled,
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                     transformation = SurfaceTransformation(transformationSpec),
-                ) { Text("启用 Fluoxetine") }
+                ) { Text("启用 Fluoxetine（默认关闭）") }
             }
             item(key = "agent-send-packet") {
                 SwitchButton(

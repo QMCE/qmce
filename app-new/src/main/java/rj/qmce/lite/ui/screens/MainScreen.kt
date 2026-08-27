@@ -112,9 +112,14 @@ fun MainScreen(
                 contactsLoaded = true
                 contactsVm.loadBuddies(activeRuntime, forceRefresh = true)
             }
-            2 -> if (!qzoneLoaded) {
-                qzoneLoaded = true
-                qZoneVm.loadFeeds(forceRefresh = true)
+            2 -> {
+                val failedEmpty = qZoneVm.feeds.value.isEmpty() &&
+                    qZoneVm.feedError.value != null &&
+                    !qZoneVm.loading.value
+                if (!qzoneLoaded || failedEmpty) {
+                    qzoneLoaded = true
+                    qZoneVm.loadFeeds(forceRefresh = true)
+                }
             }
         }
     }

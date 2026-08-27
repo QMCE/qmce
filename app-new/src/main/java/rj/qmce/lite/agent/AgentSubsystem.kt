@@ -116,7 +116,7 @@ object AgentSubsystem {
     fun isEnabled(context: Context): Boolean {
         val prefs = context.applicationContext
             .getSharedPreferences(SettingsViewModel.PREFERENCES_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(SettingsViewModel.KEY_AGENT_ENABLED, true)
+        return prefs.getBoolean(SettingsViewModel.KEY_AGENT_ENABLED, false)
     }
 
     fun sendUserMessage(text: String) {

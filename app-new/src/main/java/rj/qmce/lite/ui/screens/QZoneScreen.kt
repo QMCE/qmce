@@ -124,7 +124,7 @@ fun QZoneScreen(
                     )
                 }
             }
-            if (isFeedError) {
+            if (isFeedError || (feeds.isEmpty() && !loading && statusText == "暂无动态")) {
                 item(key = "qzone-retry-feed") {
                     Row(
                         modifier = Modifier

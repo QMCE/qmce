@@ -74,39 +74,42 @@ object MessagePredictionEngine {
         private suspend fun fetchOlder(count: Int): List<String> {
             val runtime = QmceApplication.ensureRuntime() ?: return emptyList()
             val repository = ChatRepository()
-            val connection = repository.connect(runtime)
-            if (connection !is ChatRepository.Connection.Ready) return emptyList()
+            try {
+                val connection = repository.connect(runtime, bindRichMedia = false)
+                if (connection !is ChatRepository.Connection.Ready) return emptyList()
 
-            val oldest = state.messages.firstOrNull() ?: return emptyList()
-            val contact = Contact(state.chatType, state.peerUid, "")
-            val deferred = CompletableDeferred<List<com.tencent.qqnt.kernel.nativeinterface.MsgRecord>>()
-            val requested = repository.loadOlder(
-                ChatRepository.HistoryRequest(
-                    contact = contact,
-                    anchorMessageId = oldest.msgId,
-                    anchorMessageTime = oldest.msgTime,
-                    count = count,
-                ),
-            ) { result, _, _, records ->
-                deferred.complete(if (result == 0) records.orEmpty() else emptyList())
-            }
-            if (!requested) return emptyList()
-            val records = withTimeoutOrNull(5_000) { deferred.await() } ?: return emptyList()
-            if (records.isEmpty()) return emptyList()
+                val oldest = state.messages.firstOrNull() ?: return emptyList()
+                val contact = Contact(state.chatType, state.peerUid, "")
+                val deferred = CompletableDeferred<List<com.tencent.qqnt.kernel.nativeinterface.MsgRecord>>()
+                val requested = repository.loadOlder(
+                    ChatRepository.HistoryRequest(
+                        contact = contact,
+                        anchorMessageId = oldest.msgId,
+                        anchorMessageTime = oldest.msgTime,
+                        count = count,
+                    ),
+                ) { result, _, _, records ->
+                    deferred.complete(if (result == 0) records.orEmpty() else emptyList())
+                }
+                if (!requested) return emptyList()
+                val records = withTimeoutOrNull(5_000) { deferred.await() } ?: return emptyList()
+                if (records.isEmpty()) return emptyList()
 
-            val lines = mutableListOf<String>()
-            for (rec in records) {
-                if (state.messages.size >= MAX_COLLECTED_MESSAGES) break
-                val sender = rec.sendNickName?.takeIf { it.isNotBlank() }
-                    ?: rec.senderUin.takeIf { it > 0L }?.toString()
-                    ?: "未知"
-                val text = msgRecordToText(rec)
-                if (text.isBlank()) continue
-                // Older records returned ascending; insert at the front to keep time order.
-                state.messages.add(0, PredictionMessage(sender, text, rec.msgId, rec.msgTime))
-                lines.add("$sender: $text")
+                val lines = mutableListOf<String>()
+                for (rec in records) {
+                    if (state.messages.size >= MAX_COLLECTED_MESSAGES) break
+                    val sender = rec.sendNickName?.takeIf { it.isNotBlank() }
+                        ?: rec.senderUin.takeIf { it > 0L }?.toString()
+                        ?: "未知"
+                    val text = msgRecordToText(rec)
+                    if (text.isBlank()) continue
+                    state.messages.add(0, PredictionMessage(sender, text, rec.msgId, rec.msgTime))
+                    lines.add("$sender: $text")
+                }
+                return lines
+            } finally {
+                repository.close()
             }
-            return lines
         }
     }
 

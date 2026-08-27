@@ -17,6 +17,8 @@ abstract class Tool(
     val isEventMonitor: Boolean = false,
     /** Relative-time timer tools suspend for a duration then return. */
     val isTimer: Boolean = false,
+    /** JSON-schema `required` list. Optional fields should be omitted here. */
+    val requiredParams: List<String> = emptyList(),
 ) {
     abstract suspend fun execute(input: Map<String, Any>): ToolResult
 
@@ -29,7 +31,7 @@ abstract class Tool(
             "parameters" to mapOf(
                 "type" to "object",
                 "properties" to inputSchema,
-                "required" to inputSchema.keys.toList(),
+                "required" to requiredParams,
             ),
         ),
     )
@@ -45,11 +47,25 @@ abstract class ReadOnlyTool(
     name: String,
     description: String,
     inputSchema: Map<String, Any>,
-) : Tool(name, description, inputSchema, requiresApproval = false)
+    requiredParams: List<String> = emptyList(),
+) : Tool(
+    name,
+    description,
+    inputSchema,
+    requiresApproval = false,
+    requiredParams = requiredParams,
+)
 
 /** Write tool convenience base (always requires user approval). */
 abstract class WriteTool(
     name: String,
     description: String,
     inputSchema: Map<String, Any>,
-) : Tool(name, description, inputSchema, requiresApproval = true)
+    requiredParams: List<String> = emptyList(),
+) : Tool(
+    name,
+    description,
+    inputSchema,
+    requiresApproval = true,
+    requiredParams = requiredParams,
+)
