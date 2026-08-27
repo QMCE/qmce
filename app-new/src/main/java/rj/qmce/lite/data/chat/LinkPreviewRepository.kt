@@ -46,7 +46,7 @@ object LinkPreviewRepository {
     fun firstSupportedUrl(text: String): String? = URL_REGEX.find(text)?.value
 
     fun request(url: String) {
-        if (!isSupportedUrl(url)) return
+        if (!isSupportedUrl(url) || isBlockedUrl(url)) return
         val current = state(url)
         if (current is LinkPreviewState.Loading ||
             current is LinkPreviewState.Ready ||
@@ -66,6 +66,7 @@ object LinkPreviewRepository {
     }
 
     private fun load(url: String): LinkPreviewData {
+        check(!isBlockedUrl(url)) { "blocked preview host" }
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = true
             connectTimeout = 5_000
@@ -77,6 +78,7 @@ object LinkPreviewRepository {
         try {
             val responseCode = connection.responseCode
             check(responseCode in 200..299) { "HTTP $responseCode" }
+            check(!isBlockedUrl(connection.url.toString())) { "blocked preview redirect" }
             val contentType = connection.contentType.orEmpty()
             check(
                 contentType.contains(
@@ -159,6 +161,21 @@ object LinkPreviewRepository {
 
     private fun isSupportedUrl(url: String): Boolean =
         url.startsWith("https://") || url.startsWith("http://")
+
+    private fun isBlockedUrl(url: String): Boolean {
+        val host = runCatching { URL(url).host }.getOrNull()?.trim()?.lowercase() ?: return true
+        if (host.isEmpty() || host == "localhost" || host.endsWith(".localhost") ||
+            host == "0.0.0.0" || host.endsWith(".internal")
+        ) {
+            return true
+        }
+        val address = runCatching { java.net.InetAddress.getByName(host) }.getOrNull() ?: return true
+        return address.isLoopbackAddress ||
+            address.isAnyLocalAddress ||
+            address.isLinkLocalAddress ||
+            address.isSiteLocalAddress ||
+            address.isMulticastAddress
+    }
 
     private val URL_REGEX = Regex("https?://[^\\s<>\\\"]+")
     private val META_TAG_REGEX = Regex("<meta\\b[^>]*>", RegexOption.IGNORE_CASE)

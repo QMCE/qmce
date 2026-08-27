@@ -438,9 +438,11 @@ fun InteractionSettingsScreen(
 
 @Composable
 fun DeveloperToolsSettingsScreen(
+    settingsVm: SettingsViewModel,
     onOpenPacketTool: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val settings by settingsVm.settings.collectAsState()
     var showPacketWarn by remember { mutableStateOf(false) }
     if (showPacketWarn) {
         QmceConfirmScreen(
@@ -483,12 +485,30 @@ fun DeveloperToolsSettingsScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
+            item(key = "developer-packet-enable") {
+                SettingsSwitch(
+                    checked = settings.packetToolEnabled,
+                    onCheckedChange = settingsVm::setPacketToolEnabled,
+                    label = "启用发包工具",
+                    secondaryLabel = "默认关闭，打开后仍需确认",
+                    transformation = SurfaceTransformation(transformationSpec),
+                    modifier = Modifier.transformedHeight(this, transformationSpec),
+                )
+            }
             item(key = "developer-packet-tool") {
                 SettingsNavButton(
                     icon = Icons.AutoMirrored.Filled.Send,
                     title = "发包工具",
-                    subtitle = "发送 PB、OIDB 或 Ark 消息",
-                    onClick = { showPacketWarn = true },
+                    subtitle = if (settings.packetToolEnabled) {
+                        "发送 PB、OIDB 或 Ark 消息"
+                    } else {
+                        "请先打开上方开关"
+                    },
+                    onClick = {
+                        if (settings.packetToolEnabled) {
+                            showPacketWarn = true
+                        }
+                    },
                     transformation = SurfaceTransformation(transformationSpec),
                     modifier = Modifier.transformedHeight(this, transformationSpec),
                 )

@@ -11,7 +11,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 
 internal object QmceIncomingCallAlert {
-    private const val WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1_000L
+    private const val WAKE_LOCK_TIMEOUT_MS = 45_000L
     private val vibrationPattern = longArrayOf(100L, 1_500L, 1_500L, 1_500L, 1_500L)
 
     private var audioManager: AudioManager? = null

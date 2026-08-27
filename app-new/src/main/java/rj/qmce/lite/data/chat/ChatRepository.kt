@@ -72,6 +72,8 @@ class ChatRepository {
         if (bindRichMedia) {
             RichMediaRepository.attachMessageService(messageService)
             boundRichMedia = true
+        } else {
+            boundRichMedia = false
         }
         return Connection.Ready(messageService)
     }

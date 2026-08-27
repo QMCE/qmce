@@ -52,6 +52,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val qlogLocalWriteEnabled: Boolean = false,
         val agentEnabled: Boolean = false,
         val agentSendPacketEnabled: Boolean = false,
+        val packetToolEnabled: Boolean = false,
     )
 
     data class AiEndpoint(
@@ -114,6 +115,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         qlogLocalWriteEnabled = preferences.getBoolean(KEY_QLOG_LOCAL_WRITE, false),
         agentEnabled = preferences.getBoolean(KEY_AGENT_ENABLED, false),
         agentSendPacketEnabled = preferences.getBoolean(KEY_AGENT_SEND_PACKET, false),
+        packetToolEnabled = preferences.getBoolean(KEY_PACKET_TOOL_ENABLED, false),
     )
 
     fun setShowTimeText(show: Boolean) = update { it.copy(showTimeText = show) }
@@ -182,6 +184,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         rj.qmce.lite.agent.AgentToolRegistrar.ensure(getApplication())
     }
 
+    fun setPacketToolEnabled(enabled: Boolean) =
+        update { it.copy(packetToolEnabled = enabled) }
+
     private fun update(transform: (UiSettings) -> UiSettings) {
         val updated = transform(_settings.value)
         _settings.value = updated
@@ -221,6 +226,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 .putBoolean(KEY_QLOG_LOCAL_WRITE, updated.qlogLocalWriteEnabled)
                 .putBoolean(KEY_AGENT_ENABLED, updated.agentEnabled)
                 .putBoolean(KEY_AGENT_SEND_PACKET, updated.agentSendPacketEnabled)
+                .putBoolean(KEY_PACKET_TOOL_ENABLED, updated.packetToolEnabled)
         }
     }
 
@@ -273,6 +279,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         const val KEY_QLOG_LOCAL_WRITE = "qlog_local_write_enabled"
         const val KEY_AGENT_ENABLED = "agent_enabled"
         const val KEY_AGENT_SEND_PACKET = "agent_send_packet"
+        const val KEY_PACKET_TOOL_ENABLED = "packet_tool_enabled"
 
         const val REFRESH_PUSH_ONLY = "push_only"
         const val REFRESH_15S = "15s"

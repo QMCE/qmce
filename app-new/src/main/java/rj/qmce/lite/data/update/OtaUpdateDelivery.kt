@@ -122,12 +122,14 @@ object OtaUpdateDelivery {
             }
             conn.disconnect()
             val expected = available.sha256?.trim()?.takeIf { it.isNotBlank() }
-            if (expected != null) {
-                val actual = sha256Hex(out)
-                if (!actual.equals(expected, ignoreCase = true)) {
-                    out.delete()
-                    return@withContext OtaDeliveryResult.Failed("校验失败（sha256 不匹配）")
-                }
+            if (expected == null) {
+                out.delete()
+                return@withContext OtaDeliveryResult.Failed("缺少校验哈希，已取消安装")
+            }
+            val actual = sha256Hex(out)
+            if (!actual.equals(expected, ignoreCase = true)) {
+                out.delete()
+                return@withContext OtaDeliveryResult.Failed("校验失败（sha256 不匹配）")
             }
             OtaDeliveryResult.InstalledIntent(out)
         }.getOrElse {

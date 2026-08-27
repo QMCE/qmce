@@ -54,8 +54,6 @@ import androidx.wear.compose.material3.lazy.transformedHeight
 import coil3.compose.AsyncImage
 import com.tencent.mobileqq.qroute.QRoute
 import com.tencent.qqnt.avatar.IAvatarLoaderApi
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import rj.qmce.lite.data.reporting.OfficialReportBridge
 import rj.qmce.lite.data.reporting.OfficialReportTargetBox
@@ -68,7 +66,6 @@ import rj.qmce.lite.viewmodel.ContactsViewModel
 import java.io.File
 import java.util.Locale
 
-@OptIn(DelicateCoroutinesApi::class)
 @Composable
 fun ContactsScreen(
     vm: ContactsViewModel,
@@ -282,7 +279,7 @@ fun ContactsScreen(
                                                                         QRoute.api(IAvatarLoaderApi::class.java)
                                                                             .build(context)
                                                                             .target(avatarView)
-                                                                            .loadAvatarByGroupCode(buddy.uin, GlobalScope)
+                                                                            .loadAvatarByGroupCode(buddy.uin, scope)
                                                                     }
                                                                 }
                                                             },

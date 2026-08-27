@@ -487,15 +487,18 @@ class QmceApplication : WatchApplicationDelegate(), SingletonImageLoader.Factory
     }
 
     override fun startService(service: Intent): android.content.ComponentName? {
-        return super.startService(fixIntent(service)!!)
+        val fixed = fixIntent(service) ?: return null
+        return super.startService(fixed)
     }
 
     override fun startForegroundService(service: Intent): android.content.ComponentName? {
-        return super.startForegroundService(fixIntent(service)!!)
+        val fixed = fixIntent(service) ?: return null
+        return super.startForegroundService(fixed)
     }
 
     override fun bindService(service: Intent, conn: ServiceConnection, flags: Int): Boolean {
-        return super.bindService(fixIntent(service)!!, conn, flags)
+        val fixed = fixIntent(service) ?: return false
+        return super.bindService(fixed, conn, flags)
     }
 
     override fun registerReceiver(

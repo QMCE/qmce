@@ -52,7 +52,7 @@
         android:label="QMCE"
         android:icon="@drawable/ic_launcher_qq"
         android:roundIcon="@drawable/ic_launcher_qq"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:supportsRtl="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.AppCompat.NoActionBar">

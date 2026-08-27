@@ -197,33 +197,37 @@ class QZoneFeedRepository {
     }
 
     private suspend fun awaitFeedService(isCurrent: () -> Boolean): QZoneFeedService? {
-        ensureFeedService()
+        ensureFeedService()?.let { return it }
         repeat(50) {
             if (!isCurrent()) return null
-            QZoneFeedService.h()?.let { return it }
-            ensureFeedService()
+            ensureFeedService()?.let { return it }
             delay(300)
         }
-        return QZoneFeedService.h() ?: run {
+        return ensureFeedService() ?: run {
             Log.w(TAG, "QZoneFeedService still unavailable after wait")
             null
         }
     }
 
-    private fun ensureFeedService() {
-        if (QZoneFeedService.h() != null) return
-        runCatching {
+    private fun ensureFeedService(): QZoneFeedService? {
+        QZoneFeedService.h()?.let { return it }
+        feedService?.let { return it }
+        val created = runCatching {
             val clazz = QZoneFeedService::class.java
             clazz.declaredConstructors
-                .filter { it.parameterCount == 0 }
-                .minByOrNull { it.parameterCount }
+                .firstOrNull { it.parameterCount == 0 }
                 ?.let { constructor ->
                     constructor.isAccessible = true
-                    constructor.newInstance()
+                    constructor.newInstance() as? QZoneFeedService
                 }
         }.onFailure { error ->
             Log.w(TAG, "failed to construct QZoneFeedService", error)
+        }.getOrNull()
+        if (created != null) {
+            feedService = created
+            Log.d(TAG, "constructed local QZoneFeedService instance")
         }
+        return QZoneFeedService.h() ?: created
     }
 
     suspend fun loadMore(

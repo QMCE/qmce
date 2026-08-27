@@ -1109,6 +1109,7 @@ private fun WearApp() {
                     }
                     composable("developerToolsSettings") {
                         DeveloperToolsSettingsScreen(
+                            settingsVm = settingsVm,
                             onOpenPacketTool = {
                                 navController.navigate("packetToolSettings") {
                                     launchSingleTop = true

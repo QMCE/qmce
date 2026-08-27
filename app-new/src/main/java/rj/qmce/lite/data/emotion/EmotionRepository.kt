@@ -118,6 +118,9 @@ object EmotionRepository {
             isDaemon = true
         }
     }
+    private val marketFaceWaitExecutor = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "QMCE-MarketFace-Wait").apply { isDaemon = true }
+    }
     private val marketJsonPaths = ConcurrentHashMap<Int, String>()
     private val marketPreviewPathCache = ConcurrentHashMap<String, String>()
     private val animatedDrawableCache = ConcurrentHashMap<String, IAniStickerLottieDrawable>()
@@ -1139,23 +1142,31 @@ object EmotionRepository {
     }
 
     private fun resolveMarketFaceInfo(element: MarketFaceElement): IPicEmoticonInfo? = runCatching {
-        val result = runBlocking {
-            withTimeoutOrNull(MARKET_FACE_RENDER_TIMEOUT_MS) {
-                QRoute.api(IMarketFaceApi::class.java)
-                    .fetchMarketFaceInfoSuspend(element)
-            }
+        val future = java.util.concurrent.CompletableFuture<IPicEmoticonInfo?>()
+        marketFaceWaitExecutor.execute {
+            future.complete(
+                runCatching {
+                    val result = runBlocking {
+                        withTimeoutOrNull(MARKET_FACE_RENDER_TIMEOUT_MS) {
+                            QRoute.api(IMarketFaceApi::class.java)
+                                .fetchMarketFaceInfoSuspend(element)
+                        }
+                    }
+                    Log.d(
+                        TAG,
+                        "resolve market face result=" +
+                            "code=${result?.resultCode ?: -1} message=${result?.errorMsg.orEmpty()} " +
+                            "package=${element.emojiPackageId} eId=${element.emojiId}",
+                    )
+                    if (result?.resultCode == 0) {
+                        result.data.emoticonInfo
+                    } else {
+                        null
+                    } ?: queryMarketFaceInfoFromRuntime(element)
+                }.getOrElse { null },
+            )
         }
-        Log.d(
-            TAG,
-            "resolve market face result=" +
-                "code=${result?.resultCode ?: -1} message=${result?.errorMsg.orEmpty()} " +
-                "package=${element.emojiPackageId} eId=${element.emojiId}",
-        )
-        if (result?.resultCode == 0) {
-            result.data.emoticonInfo
-        } else {
-            null
-        } ?: queryMarketFaceInfoFromRuntime(element)
+        future.get(MARKET_FACE_RENDER_TIMEOUT_MS + 1_000L, java.util.concurrent.TimeUnit.MILLISECONDS)
     }.onFailure {
         Log.w(
             TAG,

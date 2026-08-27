@@ -192,6 +192,7 @@ class ChatListViewModel : ViewModel() {
         }.orEmpty()
 
     private fun logDebugContacts(source: String, contacts: Collection<RecentContactInfo>?) {
+        if (!rj.qmce.lite.BuildConfig.DEBUG) return
         contacts.orEmpty()
             .filter(::isDebugContact)
             .forEach { contact ->
